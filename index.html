@@ -545,13 +545,6 @@
             <input type="range" id="dynamic-markup" min="0.00" max="0.08" step="0.005" value="0.020" data-suffix="">
           </div>
           <div class="form-group">
-            <label for="profile-loss">Zonnepanelen Profielverlies <span class="info-icon" tabindex="0">i<span
-                  class="info-tooltip">Het verschil tussen wat je saldeert en wat je werkelijk ontvangt door
-                  profielverschillen. Zonnepanelen leveren vaak terug op momenten dat de spotprijs laag is, waardoor de
-                  vergoeding tegenvalt.</span></span> <span class="val-badge" id="profile-loss-val">10%</span></label>
-            <input type="range" id="profile-loss" min="0" max="40" step="1" value="10" data-suffix="%">
-          </div>
-          <div class="form-group">
             <label for="dynamic-vastrecht">Vaste Leveringskosten/mnd <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">Maandelijkse vaste leveringskosten bij een dynamisch contract. Doorgaans iets
                   lager dan bij vaste contracten door minder risicobuffer voor de leverancier.</span></span> <span
@@ -691,6 +684,17 @@
                 <input type="checkbox" id="bat-arbitrage" checked>
                 <span class="slider-round"></span>
               </label>
+            </div>
+          </div>
+
+          <!-- Sweet Spot Finder: automatische accu-grootte optimalisatie (ROI) -->
+          <div style="margin-top: 0.75rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.75rem;">
+            <button class="btn-secondary" id="optimize-battery-btn"
+              style="background: rgba(56, 239, 125, 0.08); border-color: var(--accent-green); color: #ffffff; width: 100%;">
+              📊 Bereken Ideale Accu Formaat (ROI)
+            </button>
+            <div id="battery-optimization-result"
+              style="font-size: 0.75rem; margin-top: 0.6rem; color: var(--text-muted); line-height: 1.6; display: none; background: rgba(0,0,0,0.2); padding: 0.6rem; border-radius: 8px;">
             </div>
           </div>
 
@@ -1067,7 +1071,7 @@
 
   </div><!-- /.app-container -->
 
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=20"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
