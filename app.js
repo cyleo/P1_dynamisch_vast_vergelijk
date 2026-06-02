@@ -12,8 +12,9 @@ let liveEnergyTax = 0.11084;   // updated by fetchTarieven()
 // ── Data-ingest & jaarprojectie ─────────────────────────────────────────────
 let isDemoData    = true;   // demo/voorbeeld actief? eerste upload vervangt i.p.v. mergt
 let fullYearData  = null;   // 8760-uurs jaarprojectie (echte + gesynthetiseerde uren); null = geen synthese
-let fullYearStamp = "";     // cache-stempel: vermijdt herbouw als energyData ongewijzigd is
-let dataMeta      = { synthesized: false, realDays: 0, realHours: 0, synthHours: 0 };
+let fullYearStamp = "";     // cache-stempel: vermijdt herbouw als energyData/toggle ongewijzigd is
+let yearScale     = 1.0;    // normaliseert de som van de loop naar exact één jaar (8760u / #uren)
+let dataMeta      = { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 };
 
 // Constant market prices & taxes (fallback if live fetch fails)
 const ENERGY_TAX_2026 = 0.11084; // €/kWh (including VAT)
@@ -81,6 +82,27 @@ function getFallbackSpot(month, hour) {
   else season = 'winter';
   const raw = EPEX_PROFILES[season][hour];
   return raw >= 0 ? raw * 1.21 : raw;
+}
+
+// ─── Leverancier-presets (indicatieve waarden 2025/2026 — controleer eigen contract) ──
+// Vult de tariefschuiven; teruglevertarief/VTK volgens gevonden marktcijfers, piek/dal
+// en opslag als typische NL-marktbenadering. Stappen sluiten aan op de slider-steps.
+const SUPPLIER_PRESETS = {
+  vattenfall:  { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.045, "dynamic-markup": 0.025 },
+  eneco:       { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.030, "dynamic-markup": 0.025 },
+  greenchoice: { "fixed-peak": 0.29, "fixed-dal": 0.26, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.010, "dynamic-markup": 0.020 },
+  budgetthuis: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.020, "dynamic-markup": 0.020 },
+  anwb:        { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.020 },
+  zonneplan:   { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.015 },
+};
+
+// Aangeroepen vanuit de leverancier-dropdown (inline onchange). setSlider() (verderop,
+// gehoist) zet de waarde + badge in hetzelfde "€ x.xx"-format als de live-fetch.
+function applySupplierPreset(key) {
+  const preset = SUPPLIER_PRESETS[key];
+  if (!preset) return;   // lege keuze → niets doen
+  for (const [id, val] of Object.entries(preset)) setSlider(id, val);
+  runSimulation();
 }
 
 // Initialize Application
@@ -955,6 +977,7 @@ async function fetchTarieven() {
       // Energiebelasting is constant across hours — take from first entry
       const eb = prices[0].energyTaxPrice;
       liveEnergyTax = eb;
+      setSlider("energy-tax", eb);   // schuif = single source of truth voor runSimulation
 
       // Average inkoop opslag (constant at Frank, but average across hours)
       const avgOpslag = prices.reduce((s, p) => s + p.sourcingMarkupPrice, 0) / prices.length;
@@ -1057,17 +1080,24 @@ function _daylightShape(hour) {
 const DAY_MS = 24 * 3600 * 1000;
 
 /**
- * Bouwt — indien de echte data < 365 dagen beslaat — een volledige 8760-uurs
- * jaarprojectie. Echte uren blijven 1-op-1 behouden; ontbrekende uren worden
- * gesynthetiseerd uit de waargenomen baseload en zoncapaciteit van de gebruiker.
- * Resultaat wordt gecachet (fullYearData/dataMeta) en alleen herbouwd als de
- * onderliggende energyData wijzigt. Cfg-onafhankelijk: hardware komt in de loop.
+ * Bepaalt hoe de loop een vol jaar krijgt. Drie modi (jaarbasis blijft altijd):
+ *  - "full"     ≥365 dagen data → geen synthese; energie genormaliseerd naar 1 jaar.
+ *  - "seasonal" <365 dagen + prognose AAN → 8760-uurs projectie met seizoensprofiel.
+ *  - "linear"   <365 dagen + prognose UIT → gemeten periode lineair → jaar (geen seizoenscorrectie).
+ * `yearScale` (8760 / #uren) normaliseert de loop-som naar exact één jaar; voor de
+ * seizoensprojectie is dat 1.0 (de array is al 8760u). Gecachet op data + togglestand.
  */
 function ensureFullYearData() {
-  if (energyData.length === 0) { fullYearData = null; dataMeta = { synthesized: false, realDays: 0, realHours: 0, synthHours: 0 }; return; }
+  const prognose = document.getElementById("prognose-toggle")?.checked ?? true;
 
-  // Cache-stempel: lengte + eerste/laatste timestamp. Sliderwijzigingen → geen herbouw.
-  const stamp = `${energyData.length}|${energyData[0].timestamp}|${energyData[energyData.length - 1].timestamp}`;
+  if (energyData.length === 0) {
+    fullYearData = null; yearScale = 1.0;
+    dataMeta = { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 };
+    return;
+  }
+
+  // Cache-stempel: togglestand + lengte + eerste/laatste timestamp. Sliders → geen herbouw.
+  const stamp = `${prognose}|${energyData.length}|${energyData[0].timestamp}|${energyData[energyData.length - 1].timestamp}`;
   if (stamp === fullYearStamp) return;
   fullYearStamp = stamp;
 
@@ -1075,6 +1105,7 @@ function ensureFullYearData() {
   const firstMs = new Date(energyData[0].timestamp).getTime();
   const lastMs  = new Date(energyData[energyData.length - 1].timestamp).getTime();
   const spanDays = (lastMs - firstMs) / DAY_MS;
+  const realHoursTot = energyData.length;
 
   // Tel unieke kalenderdagen (lokaal) voor de prognose-badge.
   const daySet = new Set();
@@ -1085,9 +1116,18 @@ function ensureFullYearData() {
   const realDays = daySet.size;
 
   if (spanDays >= 365) {
-    // Genoeg data: geen synthese, loop draait direct over de echte reeks.
+    // Genoeg data: geen synthese, energie genormaliseerd naar exact één jaar.
     fullYearData = null;
-    dataMeta = { synthesized: false, realDays, realHours: energyData.length, synthHours: 0 };
+    yearScale = 8760 / realHoursTot;
+    dataMeta = { mode: "full", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale };
+    return;
+  }
+
+  if (!prognose) {
+    // Prognose UIT: geen synthese, gemeten periode lineair doorrekenen naar een jaar.
+    fullYearData = null;
+    yearScale = 8760 / realHoursTot;
+    dataMeta = { mode: "linear", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale };
     return;
   }
 
@@ -1148,7 +1188,8 @@ function ensureFullYearData() {
   }
 
   fullYearData = out;
-  dataMeta = { synthesized: true, realDays, realHours, synthHours };
+  yearScale = 1.0;   // de projectie is al exact 8760u — geen extra normalisatie
+  dataMeta = { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, yearScale: 1 };
 }
 
 // =============================================================================
@@ -1348,9 +1389,15 @@ function _simulateCore(cfg, full = false) {
     }
   });
 
+  // ── Jaarnormalisatie ──────────────────────────────────────────────────────
+  // Schaal de loop-som naar exact één jaar. Bij de seizoensprojectie is yearScale
+  // 1.0 (de array is al 8760u); bij "linear"/"full" normaliseert 8760/#uren de
+  // gemeten energie naar een jaar. Profielen (charts) blijven ongeschaald.
+  fxPeakImp *= yearScale; fxDalImp *= yearScale; fxPeakExp *= yearScale; fxDalExp *= yearScale;
+  dynImpCost *= yearScale; dynExpRev *= yearScale; dynImpKwh *= yearScale; dynExpKwh *= yearScale;
+
   // ── Eindtotalen (jaarbasis) ───────────────────────────────────────────────
-  // De engine modelleert nu altijd een volledig kalenderjaar (8760u via de season
-  // filler, of ≥365 dagen echte data). Vastrecht daarom strikt 12 maanden.
+  // De engine modelleert altijd een volledig kalenderjaar. Vastrecht = 12 maanden.
   const totFxExp     = fxPeakExp + fxDalExp;
   const fxImpCost    = fxPeakImp * fixedPeakRate + fxDalImp * fixedDalRate;
   const fxFeedCredit = totFxExp * fixedFeedInRate;
@@ -1401,6 +1448,10 @@ function computeBillForConfig(cfg) {
 // =============================================================================
 function runSimulation() {
   if (energyData.length === 0) return;
+
+  // ── Energiebelasting uit de schuif lezen (live-fetch werkt deze schuif bij) ──
+  const ebEl = document.getElementById("energy-tax");
+  if (ebEl) liveEnergyTax = parseFloat(ebEl.value);
 
   // ── Jaarprojectie (8760u) opbouwen/cachen vóór de simulatie ──────────────
   ensureFullYearData();
@@ -1466,6 +1517,7 @@ function runSimulation() {
   updateUIElements();
   renderChart();
   renderOverviewChart();
+  renderMonthlyChart();
   renderSimChart();
   renderHwChart();
 }
@@ -1476,18 +1528,25 @@ function runSimulation() {
 function updateUIElements() {
   const sim = activeSimulation;
 
-  // ── Prognose-badge: tonen wanneer de jaarrekening op gesynthetiseerde data berust ──
+  // ── Prognose-badge: toelichting op de jaarbasis afhankelijk van de modus ──
   const badge = document.getElementById("prognosis-badge");
+  const extrapolated = dataMeta.mode === "seasonal" || dataMeta.mode === "linear";
   if (badge) {
-    if (dataMeta.synthesized) {
+    if (dataMeta.mode === "seasonal") {
       badge.style.display = "";
-      document.getElementById("prognosis-text").textContent =
+      document.getElementById("prognosis-text").innerHTML =
         `${dataMeta.realDays} dagen eigen data aangevuld tot een volledig jaarverbruik via slimme seizoensprofielen.`;
+    } else if (dataMeta.mode === "linear") {
+      badge.style.display = "";
+      document.getElementById("prognosis-text").innerHTML =
+        `${dataMeta.realDays} dagen eigen data <strong>lineair</strong> doorgerekend naar een jaar (×${dataMeta.yearScale.toFixed(1)}, géén seizoenscorrectie). Zet <em>Jaarprognose</em> aan voor een seizoensgewogen schatting.`;
     } else {
       badge.style.display = "none";
     }
   }
-  const synthTag = dataMeta.synthesized ? ` <span style="color:var(--accent-cyan);font-size:0.7rem;" title="Geëxtrapoleerd via seizoensprofiel">· prognose</span>` : "";
+  const synthTag = extrapolated
+    ? ` <span style="color:var(--accent-cyan);font-size:0.7rem;" title="Geëxtrapoleerd naar jaarbasis">· prognose</span>`
+    : "";
 
   // Header and stats
   document.getElementById("stat-savings-val").textContent = `${sim.totalSavings.toFixed(2)}`;
@@ -1527,8 +1586,9 @@ function updateUIElements() {
   expEl.title = expRev < 0 ? "Negatief: export tijdens uren met negatieve EPEX-prijs kost geld" : "";
   document.getElementById("tbl-dyn-net-kwh").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh`;
   document.getElementById("tbl-dyn-net-cost").textContent = `€ ${dynNetCost.toFixed(2)}`;
-  // EB over netto afname (2027-model): niet over bruto import
-  document.getElementById("tbl-dyn-tax-vol").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
+  // EB 2027: over BRUTO afname van het net (geen saldering) — volume = totale import,
+  // zodat volume × tarief exact gelijk is aan het getoonde bedrag.
+  document.getElementById("tbl-dyn-tax-vol").textContent = `${sim.totalImportKwh.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
   document.getElementById("tbl-dyn-tax").textContent = `€ ${sim.dynamicNetTax.toFixed(2)}`;
   document.getElementById("tbl-dyn-subcost").textContent = `€ ${sim.dynamicSubscription.toFixed(2)}`;
   document.getElementById("tbl-dyn-total").textContent = `€ ${sim.dynamicTotalBill.toFixed(2)}`;
@@ -1792,7 +1852,7 @@ function renderChart() {
 }
 
 // Window resizing
-window.addEventListener("resize", () => { renderChart(); renderOverviewChart(); renderSimChart(); renderHwChart(); });
+window.addEventListener("resize", () => { renderChart(); renderOverviewChart(); renderMonthlyChart(); renderSimChart(); renderHwChart(); });
 
 // ── Sim chart mode/drill-down controls ───────────────────────────────────────
 function setSimMode(mode) {
@@ -2204,6 +2264,68 @@ function renderAfnameDetailDay(body, viewToggle) {
         </tr>
       </tfoot>
     </table>`;
+}
+
+// Maandelijkse kostenvergelijking: aggregeert perDayTotals (energiekosten excl.
+// vastrecht) per kalendermaand en tekent 12 gegroepeerde staafparen (vast vs dynamisch).
+function renderMonthlyChart() {
+  const card = document.getElementById("monthly-chart-card");
+  const perDay = activeSimulation?.perDayTotals;
+  if (!card || !perDay) { if (card) card.style.display = "none"; return; }
+
+  const months = Array.from({ length: 12 }, () => ({ fixed: 0, dyn: 0, has: false }));
+  for (const [dk, d] of Object.entries(perDay)) {
+    const m = parseInt(dk.slice(5, 7), 10) - 1;
+    if (m < 0 || m > 11) continue;
+    months[m].fixed += d.fixedCost;
+    months[m].dyn   += d.dynCost;
+    months[m].has = true;
+  }
+  if (!months.some(m => m.has)) { card.style.display = "none"; return; }
+  card.style.display = "";
+
+  const svg = document.getElementById("monthly-svg");
+  const container = document.getElementById("monthly-svg-container");
+  const W = container.clientWidth, H = container.clientHeight;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+  const padL = 46, padR = 12, padT = 14, padB = 24;
+  const cw = W - padL - padR, ch = H - padT - padB;
+  const labels = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
+  const maxV = Math.max(1, ...months.map(m => Math.max(m.fixed, m.dyn)));
+
+  // y-as gridlijnen + labels
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ch - (ch * i / 4);
+    svg.appendChild(mk("line", { x1: padL, y1: y, x2: W - padR, y2: y, stroke: "rgba(255,255,255,0.06)", "stroke-width": 1 }));
+    const lbl = mk("text", { x: padL - 6, y: y + 3, "text-anchor": "end", "font-size": 9, fill: "var(--text-muted)" });
+    lbl.textContent = `€${Math.round(maxV * i / 4)}`;
+    svg.appendChild(lbl);
+  }
+
+  const groupW = cw / 12;
+  const barW = Math.min(13, groupW / 2 - 2);
+  months.forEach((m, i) => {
+    const gx = padL + groupW * i + groupW / 2;
+    const bar = (val, offset, color) => {
+      const h = ch * (val / maxV);
+      const r = mk("rect", { x: gx + offset, y: padT + ch - h, width: barW, height: Math.max(0, h), fill: color, rx: 2, opacity: 0.85 });
+      const t = document.createElementNS(NS, "title");
+      t.textContent = `${labels[i]} — €${val.toFixed(0)}`;
+      r.appendChild(t);
+      svg.appendChild(r);
+    };
+    if (m.has) {
+      bar(m.fixed, -barW - 1, "var(--accent-indigo)");
+      bar(m.dyn, 1, "var(--accent-cyan)");
+    }
+    const lbl = mk("text", { x: gx, y: H - 7, "text-anchor": "middle", "font-size": 9, fill: m.has ? "var(--text-muted)" : "rgba(255,255,255,0.22)" });
+    lbl.textContent = labels[i];
+    svg.appendChild(lbl);
+  });
 }
 
 const hwOpenState = { hp: false, ev: false, bat: false };
