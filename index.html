@@ -763,11 +763,34 @@
       <!-- RIGHT DASHBOARD: Charts & Metrics -->
       <main class="main-dashboard">
 
+        <!-- Uitleg voor nieuwe gebruikers — inklapbaar, standaard open -->
+        <details class="glass-panel" id="intro-explainer" style="margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
+          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
+            💡 Hoe werkt dit?
+          </summary>
+          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
+            <p style="margin:0 0 0.6rem;">Deze tool vergelijkt voor <strong>jouw eigen stroomverbruik</strong> twee
+              soorten contract:</p>
+            <ul style="margin:0 0 0.6rem 1.1rem;padding:0;">
+              <li><strong>Vast contract</strong> — een vaste prijs per kWh (piek &amp; dal), het hele jaar gelijk.</li>
+              <li><strong>Dynamisch contract</strong> — de prijs volgt elk uur de stroombeurs (EPEX): 's nachts en bij
+                veel zon/wind goedkoop, in de avondpiek duur.</li>
+            </ul>
+            <p style="margin:0 0 0.6rem;">⚠️ <strong>Dit is een 2027-model.</strong> Vanaf 1 januari 2027 vervalt de
+              <em>salderingsregeling</em> — je mag teruggeleverde zonnestroom niet meer wegstrepen tegen je afname.
+              Daarom rekenen we energiebelasting over je <em>bruto</em> afname en krijg je een aparte, lagere
+              terugleververgoeding. Met de regels van vandaag zou de uitkomst er anders uitzien.</p>
+            <p style="margin:0;">📊 <strong>Let vooral op het <span style="color:var(--accent-green);">verschil</span>
+                tussen beide contracten</strong> — niet op de absolute bedragen (zie de toelichting bij de cijfers
+              hieronder).</p>
+          </div>
+        </details>
+
         <!-- Top Metrics Cards -->
         <div class="stats-row">
 
           <div class="glass-panel stat-card savings" id="stat-savings-card">
-            <div class="stat-header" id="stat-savings-header">Jouw besparing</div>
+            <div class="stat-header" id="stat-savings-header">Jouw besparing <span class="info-icon" tabindex="0">i<span class="info-tooltip">Het verschil tussen beide contracten voor jóuw verbruik. Dit zijn alleen leveringskosten — netbeheerkosten en de belastingvermindering zijn voor beide contracten gelijk en vallen weg in de vergelijking.</span></span></div>
             <div class="stat-value" id="stat-savings-value" style="color: var(--accent-green);">
               <span class="curr">€</span>
               <span id="stat-savings-val">0.00</span>
@@ -800,6 +823,16 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- Scope-toelichting bij de kerncijfers -->
+        <div style="font-size:0.76rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem;display:flex;gap:0.45rem;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:0.6rem 0.8rem;">
+          <span style="flex-shrink:0;">ℹ️</span>
+          <span>Deze bedragen zijn <strong>alleen de stroom-leveringskosten</strong> (energie + opslag/belasting + vast
+            leveringstarief). <strong>Niet</strong> inbegrepen: netbeheerkosten (~€400–600/jaar) en de vaste
+            belastingvermindering (~€525/jaar korting) — die zijn voor beide contracten gelijk en vallen weg in de
+            vergelijking. Vergelijk daarom het <strong>verschil</strong>, niet het absolute bedrag met je echte
+            jaarafrekening.</span>
         </div>
 
         <!-- Prognose-badge: getoond wanneer minder dan een jaar eigen data is aangevuld -->
@@ -987,7 +1020,7 @@
             <div class="panel-header-badge">
               <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Vast Contract
                 Specificatie</h2>
-              <span class="badge fixed">Vast model</span>
+              <span class="badge fixed">Vast model</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Berekening voor een <strong>vast contract</strong>: vaste piek/dal-tarieven, een vaste terugleververgoeding en eventuele vaste terugleverkosten (VTK). Onafhankelijk van de beursprijs.</span></span>
             </div>
             <table class="detail-table">
               <thead>
@@ -1037,7 +1070,7 @@
             <div class="panel-header-badge">
               <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Dynamisch Contract
                 Specificatie</h2>
-              <span class="badge dynamic">Beurs model</span>
+              <span class="badge dynamic">Beurs model</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Teruglevering wordt vergoed tegen de spotprijs van dat uur, energiebelasting over je bruto afname.</span></span>
             </div>
             <table class="detail-table">
               <thead>
@@ -1052,6 +1085,10 @@
                   title="Klik voor dagelijkse uitwerking">
                   <td style="display:flex;align-items:center;gap:0.4rem;">
                     Afname (EPEX + opslag + BTW)
+                    <span class="info-icon" tabindex="0">i<span class="info-tooltip">Wat je per kWh betaalt bij een
+                        dynamisch contract: de <strong>EPEX-beursprijs</strong> van dat uur (de groothandelsprijs voor
+                        stroom) + de <strong>opslag</strong> van je leverancier + 21% BTW. Klik op de rij voor de
+                        uitwerking per dag.</span></span>
                     <span id="afname-toggle-icon"
                       style="font-size:0.7rem;opacity:0.5;transition:transform 0.2s;">▼</span>
                   </td>
@@ -1074,9 +1111,11 @@
                   <td id="tbl-dyn-net-cost">-</td>
                 </tr>
                 <tr>
-                  <td>Energiebelasting <span style="font-size:0.68rem;color:var(--text-muted);"
-                      title="2027-model: EB over bruto afname van het net — geen EB-netting op teruglevering na einde saldering">(bruto
-                      afname — 2027)</span></td>
+                  <td>Energiebelasting <span style="font-size:0.68rem;color:var(--text-muted);">(bruto afname —
+                      2027)</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Belasting die de
+                        overheid per kWh heft. <strong>Bruto afname:</strong> vanaf 2027 (einde saldering) wordt deze
+                        geheven over álle stroom die je van het net haalt — je teruglevering wordt er niet meer van
+                        afgetrokken. Zonnestroom verlaagt je belasting dus minder dan vroeger.</span></span></td>
                   <td id="tbl-dyn-tax-vol">-</td>
                   <td id="tbl-dyn-tax">-</td>
                 </tr>
@@ -1103,7 +1142,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=25"></script>
+  <script src="/energie/app.js?v=26"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
