@@ -55,36 +55,90 @@ function toConsumerPrice(spot) {
 // Seizoensgebonden EPEX-fallbackprofielen (ruwe beursprijzen €/kWh, excl. BTW, excl. EB, excl. opslag)
 // Gebaseerd op typische Nederlandse EPEX-patronen per seizoen.
 // getFallbackSpot() past automatisch BTW toe (×1.21) op positieve uren.
+//
+// HERIJKT (v=23): de oude profielen maakten de lente/zomer-middag te diep negatief,
+// waardoor de export-gewogen "capture price" van zonnestroom ≈ €0,00/kWh werd. Empirisch
+// (NL 2024-2025 kwartierdata) is teruggeleverde zonnestroom ~52% van het jaargemiddelde
+// waard. Deze set is geijkt op: vlak jaargemiddelde €0,091, solar-capture €0,048 (53%),
+// verbruik-gewogen €0,109, ~3% negatieve uren — gevalideerd via _validate/tune_profiles.js.
+// NB: dit is de NOODOPLOSSING; met live/gekalibreerde EPEX-data (buildCalibratedProfile)
+// worden deze waarden overschreven door echte marktprijzen.
 const EPEX_PROFILES = {
-  // Dec · Jan · Feb — hoge nachten/avonden, koude pieken, zelden negatief
+  // Dec · Jan · Feb — hoge nachten/avonden, koude pieken, weinig zon → zelden negatief
   winter: {
-    0: 0.08, 1: 0.07, 2: 0.07, 3: 0.07, 4: 0.07, 5: 0.08,
-    6: 0.11, 7: 0.14, 8: 0.16, 9: 0.14, 10: 0.12, 11: 0.10,
-    12: 0.10, 13: 0.10, 14: 0.11, 15: 0.12, 16: 0.14, 17: 0.18,
-    18: 0.16, 19: 0.14, 20: 0.12, 21: 0.10, 22: 0.09, 23: 0.08
+    0: 0.07, 1: 0.06, 2: 0.06, 3: 0.06, 4: 0.06, 5: 0.07,
+    6: 0.10, 7: 0.13, 8: 0.14, 9: 0.12, 10: 0.10, 11: 0.09,
+    12: 0.09, 13: 0.09, 14: 0.10, 15: 0.11, 16: 0.13, 17: 0.16,
+    18: 0.15, 19: 0.13, 20: 0.11, 21: 0.09, 22: 0.08, 23: 0.07
   },
-  // Mrt · Apr · Mei — zonnepanelen drukken middag sterk negatief
+  // Mrt · Apr · Mei — zon drukt de middag, ondiep negatief rond zon-noon
   spring: {
-    0: 0.06, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.06,
-    6: 0.08, 7: 0.10, 8: 0.10, 9: 0.04, 10: 0.00, 11: -0.02,
-    12: -0.05, 13: -0.06, 14: -0.05, 15: -0.02, 16: 0.02, 17: 0.08,
-    18: 0.12, 19: 0.14, 20: 0.12, 21: 0.10, 22: 0.08, 23: 0.07
+    0: 0.05, 1: 0.04, 2: 0.04, 3: 0.04, 4: 0.04, 5: 0.05,
+    6: 0.07, 7: 0.09, 8: 0.09, 9: 0.07, 10: 0.06, 11: 0.05,
+    12: 0.01, 13: -0.01, 14: 0.04, 15: 0.07, 16: 0.08, 17: 0.10,
+    18: 0.12, 19: 0.13, 20: 0.11, 21: 0.09, 22: 0.07, 23: 0.06
   },
-  // Jun · Jul · Aug — diepe negatieve middagen, zeer goedkope nachten
+  // Jun · Jul · Aug — diepste zon-kannibalisatie, goedkope nachten
   summer: {
-    0: 0.04, 1: 0.03, 2: 0.03, 3: 0.02, 4: 0.02, 5: 0.04,
-    6: 0.06, 7: 0.08, 8: 0.08, 9: 0.04, 10: 0.00, 11: -0.02,
-    12: -0.04, 13: -0.04, 14: -0.03, 15: 0.00, 16: 0.04, 17: 0.08,
-    18: 0.11, 19: 0.13, 20: 0.12, 21: 0.10, 22: 0.08, 23: 0.06
+    0: 0.03, 1: 0.02, 2: 0.02, 3: 0.02, 4: 0.02, 5: 0.04,
+    6: 0.06, 7: 0.07, 8: 0.07, 9: 0.06, 10: 0.06, 11: 0.04,
+    12: -0.01, 13: -0.02, 14: 0.03, 15: 0.06, 16: 0.07, 17: 0.09,
+    18: 0.11, 19: 0.12, 20: 0.11, 21: 0.09, 22: 0.07, 23: 0.05
   },
   // Sep · Okt · Nov — mix, loopt op richting winter
   autumn: {
-    0: 0.07, 1: 0.06, 2: 0.06, 3: 0.06, 4: 0.06, 5: 0.07,
-    6: 0.09, 7: 0.12, 8: 0.14, 9: 0.10, 10: 0.08, 11: 0.06,
-    12: 0.05, 13: 0.05, 14: 0.06, 15: 0.08, 16: 0.12, 17: 0.16,
-    18: 0.17, 19: 0.15, 20: 0.12, 21: 0.10, 22: 0.09, 23: 0.08
+    0: 0.06, 1: 0.05, 2: 0.05, 3: 0.05, 4: 0.05, 5: 0.06,
+    6: 0.08, 7: 0.11, 8: 0.13, 9: 0.10, 10: 0.07, 11: 0.06,
+    12: 0.05, 13: 0.04, 14: 0.05, 15: 0.08, 16: 0.12, 17: 0.15,
+    18: 0.15, 19: 0.13, 20: 0.11, 21: 0.09, 22: 0.08, 23: 0.07
   }
 };
+
+// Seizoen-helper (gedeeld door getFallbackSpot + buildCalibratedProfile).
+function seasonOf(month) {
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  if (month >= 9 && month <= 11) return 'autumn';
+  return 'winter';
+}
+
+// ── Zelf-kalibrerende fallback ──────────────────────────────────────────────
+// Wanneer er echte EPEX-historie is opgehaald (epexHistory), leiden we hieruit een
+// (seizoen × uur)-prijsprofiel af en gebruiken dat om de geprojecteerde/synthetische
+// uren te vullen — verankerd aan de eigen regio/periode i.p.v. de generieke profielen.
+let calibratedProfile = null;   // { winter:{0..23}, ... } in €/kWh incl. BTW, of null
+let calibrationMeta = { buckets: 0, samples: 0 };
+const CALIB_MIN_SAMPLES = 3;    // minimaal aantal echte prijzen per (seizoen,uur)-emmer
+
+function buildCalibratedProfile() {
+  calibratedProfile = null;
+  calibrationMeta = { buckets: 0, samples: 0 };
+  if (epexHistory.size < 24) return;   // te weinig historie om op te kalibreren
+
+  const acc = {};  // seizoen → uur → { sum, n }
+  for (const [key, price] of epexHistory.entries()) {
+    const m = parseInt(key.slice(5, 7), 10);   // key = "YYYY-MM-DDTHH"
+    const h = parseInt(key.slice(11, 13), 10);
+    if (!Number.isFinite(m) || !Number.isFinite(h)) continue;
+    const s = seasonOf(m);
+    (acc[s] ||= {});
+    (acc[s][h] ||= { sum: 0, n: 0 });
+    acc[s][h].sum += price; acc[s][h].n++;
+  }
+
+  const prof = {};
+  let buckets = 0;
+  for (const s of Object.keys(acc)) {
+    for (const h of Object.keys(acc[s])) {
+      const b = acc[s][h];
+      if (b.n >= CALIB_MIN_SAMPLES) { (prof[s] ||= {})[h] = b.sum / b.n; buckets++; }
+    }
+  }
+  if (buckets > 0) {
+    calibratedProfile = prof;
+    calibrationMeta = { buckets, samples: epexHistory.size };
+  }
+}
 
 /**
  * Geeft de fallback EPEX-spotprijs voor een specifieke maand + uur.
@@ -95,11 +149,11 @@ const EPEX_PROFILES = {
  * @returns {number} spot in €/kWh, incl. BTW, excl. EB en opslag
  */
 function getFallbackSpot(month, hour) {
-  let season;
-  if (month >= 3 && month <= 5) season = 'spring';
-  else if (month >= 6 && month <= 8) season = 'summer';
-  else if (month >= 9 && month <= 11) season = 'autumn';
-  else season = 'winter';
+  const season = seasonOf(month);
+  // Voorkeur: gekalibreerd op eigen EPEX-historie (al incl. BTW → geen extra ×1.21).
+  const cal = calibratedProfile?.[season]?.[hour];
+  if (cal != null) return cal;
+  // Anders: generiek seizoensprofiel (ruwe beurs → ×1.21 op positieve uren).
   const raw = EPEX_PROFILES[season][hour];
   return raw >= 0 ? raw * 1.21 : raw;
 }
@@ -246,8 +300,37 @@ function restoreHACredentials() {
 }
 
 // Load Personalized HA Demo Data
+// Compacte demo-arrays (window.DEMO_PROFILE uit demo-year.js) → uurrecords met
+// een schoon, niet-schrikkel referentiejaar (geen DST-gaten/dubbele uren).
+function expandDemoProfile(p) {
+  const DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const p2 = n => (n < 10 ? "0" : "") + n;
+  const rows = [];
+  let i = 0;
+  for (let m = 1; m <= 12 && i < p.hours; m++)
+    for (let day = 1; day <= DAYS[m - 1] && i < p.hours; day++)
+      for (let h = 0; h < 24 && i < p.hours; h++, i++)
+        rows.push({
+          timestamp: `${p.startYear}-${p2(m)}-${p2(day)}T${p2(h)}:00:00`,
+          import_t1: p.imp[i], import_t2: 0,
+          export_t1: p.exp[i], export_t2: 0,
+          solar_yield: p.sol[i],
+        });
+  return rows;
+}
+
 async function loadDemoData() {
   try {
+    // Voorkeur: gebundeld realistisch jaarprofiel (OPSD residential4, NL-geschaald).
+    if (window.DEMO_PROFILE && Array.isArray(window.DEMO_PROFILE.imp)) {
+      energyData = expandDemoProfile(window.DEMO_PROFILE);
+      isDemoData = true;
+      document.getElementById("data-status").textContent =
+        `Voorbeelddata geladen — realistisch jaarprofiel (${Math.round(energyData.length / 24)} dagen) · koppel jouw HA voor je eigen data`;
+      runSimulation();
+      return;
+    }
+    // Fallback: lokaal p1_sample.json (eigen data, niet meegeleverd in de repo).
     const response = await fetch("p1_sample.json");
     if (!response.ok) throw new Error("Sample file missing");
     energyData = await response.json();
@@ -297,6 +380,7 @@ async function handleFileSelect(e) {
   if (files.length === 0) return;
   for (const f of files) await processFile(f);
   e.target.value = "";   // reset zodat hetzelfde bestand opnieuw gekozen kan worden
+  autoFetchEpex();        // best-effort: echte EPEX-prijzen ophalen + herberekenen
 }
 
 function processFile(file) {
@@ -1067,6 +1151,21 @@ async function fetchEPEXHistory(fromISO, tillISO) {
   });
 }
 
+// Best-effort: probeer ALTIJD echte EPEX-historie te laden voor de geladen periode.
+// Stilletjes terugvallen op het (gekalibreerde of generieke) profiel als het mislukt
+// (offline / CORS / periode buiten dekking). Herberekent na een geslaagde fetch.
+async function autoFetchEpex() {
+  if (energyData.length === 0) return;
+  const before = epexHistory.size;
+  try {
+    await fetchEPEXHistory(energyData[0].timestamp, energyData[energyData.length - 1].timestamp);
+  } catch (err) {
+    console.warn("autoFetchEpex: live EPEX niet beschikbaar, fallback actief —", err.message);
+    return;
+  }
+  if (epexHistory.size > before) runSimulation();   // herbereken met echte prijzen
+}
+
 // Helper: update slider + badge atomically
 function setSlider(id, value) {
   const el = document.getElementById(id);
@@ -1143,7 +1242,9 @@ function ensureFullYearData() {
   energyData.forEach(r => daySet.add(rowMeta(r).dayKey));
   const realDays = daySet.size;
 
-  if (spanDays >= 365) {
+  // Een compleet jaar telt 8760 uur maar spant van het eerste tot het laatste uur
+  // slechts ~364,96 dagen — daarom óók op uren/dagen toetsen, niet enkel op spanwijdte.
+  if (spanDays >= 365 || realHoursTot >= 8760 || realDays >= 365) {
     // Genoeg data: geen synthese, energie genormaliseerd naar exact één jaar.
     fullYearData = null;
     yearScale = 8760 / realHoursTot;
@@ -1649,6 +1750,9 @@ function runSimulation() {
 
   // ── Jaarprojectie (8760u) opbouwen/cachen vóór de simulatie ──────────────
   ensureFullYearData();
+
+  // ── Fallback kalibreren op opgehaalde EPEX-historie (vult geprojecteerde uren) ──
+  buildCalibratedProfile();
 
   // ── Alle DOM-reads EENMALIG voor de loop ─────────────────────────────────
   const cfg = readSimConfig();
@@ -2570,15 +2674,29 @@ function renderHwChart() {
   const container = document.getElementById("hw-chart-body");
   container.innerHTML = "";
 
-  // EPEX warning
+  // EPEX warning — onderscheidt 3 lagen: volledig live · gekalibreerd · generiek
   const epexPct = activeSimulation.epexPct ?? 0;
   if (epexPct < 100) {
     const warn = document.createElement("div");
     warn.style.cssText = "background:rgba(255,165,0,0.12);border:1px solid rgba(255,165,0,0.3);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--accent-orange);";
-    warn.innerHTML = epexPct === 0
-      ? `⚠ <strong>Let op: geen echte EPEX-uurprijzen.</strong> De simulatie gebruikt <em>seizoensprofielen</em> als noodoplossing (winter = hogere prijzen, zomer = negatieve middagen) —
-         dit geeft een redelijke schatting maar mist de echte piekdagen. Klik <strong>Ophalen</strong> om actuele historische EPEX-prijzen te laden voor een exacte berekening.`
-      : `⚠ ${epexPct}% echte EPEX-prijzen geladen, ${100 - epexPct}% gesimuleerd via seizoensprofiel.`;
+    const calibrated = calibratedProfile && calibrationMeta.buckets > 0;
+    if (epexPct === 0 && !calibrated) {
+      // Niets live, geen kalibratie → generiek noodprofiel (grote waarschuwing).
+      warn.innerHTML = `⚠ <strong>Let op: geen echte EPEX-uurprijzen.</strong> De simulatie gebruikt generieke
+         <em>seizoensprofielen</em> als noodoplossing (geijkt op NL-marktpatronen: zon-export ≈ 50% van het
+         jaargemiddelde) — een redelijke schatting, maar zonder de echte piek- en negatieve dagen.
+         Klik <strong>Ophalen</strong> of laad HA-data om actuele historische EPEX-prijzen te gebruiken.`;
+    } else if (epexPct === 0 && calibrated) {
+      // Gemeten periode valt buiten de loop, maar projectie draait op eigen prijsprofiel.
+      warn.innerHTML = `ℹ De jaarprognose is gevuld met een <strong>prijsprofiel uit je eigen EPEX-historie</strong>
+         (${calibrationMeta.samples} echte uurprijzen, ${calibrationMeta.buckets} seizoen×uur-buckets) i.p.v. de generieke profielen.`;
+    } else {
+      // Deels live, rest gevuld via kalibratie of generiek.
+      warn.innerHTML = `⚠ ${epexPct}% echte EPEX-prijzen geladen; de overige ${100 - epexPct}% is `
+        + (calibrated
+            ? `gevuld met je <strong>eigen gekalibreerde prijsprofiel</strong> (${calibrationMeta.samples} echte uurprijzen).`
+            : `geschat via het generieke seizoensprofiel.`);
+    }
     container.appendChild(warn);
   }
 
