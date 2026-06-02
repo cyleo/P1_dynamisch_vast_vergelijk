@@ -7,7 +7,7 @@
   <title>P1 Energie Contract Analysator | Dynamisch vs Vast</title>
   <meta name="description"
     content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2026 het goedkoopste is voor jouw situatie.">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/energie/style.css">
   <style>
     /* CORS Setup Modal */
     #modal-backdrop {
@@ -616,13 +616,6 @@
 
           <div class="expandable-panel open" id="has-ev-panel">
             <div class="form-group">
-              <label for="ev-cap">Accucapaciteit <span class="info-icon" tabindex="0">i<span class="info-tooltip">De
-                    totale bruikbare accucapaciteit van je EV. Hogere capaciteit betekent meer flexibiliteit om goedkoop
-                    op te laden bij lage spotprijzen.</span></span> <span class="val-badge" id="ev-cap-val">60
-                  kWh</span></label>
-              <input type="range" id="ev-cap" min="20" max="100" step="5" value="60" data-suffix=" kWh">
-            </div>
-            <div class="form-group">
               <label for="ev-dist">Wekelijkse Afstand <span class="info-icon" tabindex="0">i<span
                     class="info-tooltip">Gemiddeld aantal km dat je per week rijdt. Dit bepaalt hoeveel energie de EV
                     wekelijks nodig heeft en dus hoeveel laadstroom er via het net (of zonnepanelen)
@@ -694,8 +687,11 @@
             </div>
             <div class="switch-control" style="padding: 0.5rem; margin-bottom: 0;">
               <div class="switch-label-desc">
-                <strong>Net Arbitrage</strong>
-                <span>Laden bij goedkope/negatieve stroom</span>
+                <strong>Net Arbitrage (inkoop) <span class="info-icon" tabindex="0">i<span class="info-tooltip">Laat
+                      de accu goedkope/negatieve stroom van het net <strong>inkopen</strong> om later eigen verbruik
+                      te dekken. Dit verkoopt nog niets terug — om ook bij hoge prijzen aan het net te <em>verkopen</em>,
+                      zet je hieronder "Terugleveren aan net" aan.</span></span></strong>
+                <span>Laden bij goedkope/negatieve stroom (alleen inkoop)</span>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="bat-arbitrage" checked>
@@ -1101,7 +1097,7 @@
 
   </div><!-- /.app-container -->
 
-  <script src="app.js?v=21"></script>
+  <script src="/energie/app.js?v=22"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

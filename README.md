@@ -1,118 +1,150 @@
 # P1 Energie Contract Analysator
 
-Bereken of een **dynamisch** of **vast** energiecontract goedkoper is voor jouw situatie — op basis van je eigen P1 smart meter data uit Home Assistant.
+Bereken of een **dynamisch** of **vast** energiecontract goedkoper is voor jouw situatie — op basis van je eigen P1 smart meter data uit Home Assistant, gerekend met de **fiscale regels van 2027** (einde saldering, energiebelasting over bruto afname).
 
 ![screenshot placeholder](https://placehold.co/800x400?text=P1+Energie+Contract+Analysator)
 
 ## Wat doet het?
 
-- **Koppelt met Home Assistant** via WebSocket API om tot ~2 jaar historische P1-data op te halen
-- **Vergelijkt twee contractvormen** met de 2027-tariefregels (einde saldering, EB op bruto afname):
-  - Vast contract: piek/dal tarieven, teruglevertarief, VTK
-  - Dynamisch contract: EPEX spotprijzen per uur (Frank Energie / EnergyZero)
-- **Simuleert hardware-scenario's**: warmtepomp, elektrische auto, thuisbatterij, zonnepanelen dimmen bij negatieve spotprijzen
-- **Grafieken**: dagprofiel (24u), overzicht per dag/week, simulatievergelijking
+- **Koppelt met Home Assistant** via de WebSocket-API om tot ~2 jaar historische P1-data op te halen (of upload een CSV/JSON-export — meerdere bestanden worden samengevoegd en ontdubbeld).
+- **Vergelijkt vast vs. dynamisch** met het 2027-model:
+  - **Vast** — piek/dal-tarieven, teruglevertarief, Vaste Terugleverkosten (VTK), vastrecht.
+  - **Dynamisch** — EPEX-uurprijzen (Frank Energie / EnergyZero) + opslag + energiebelasting over **bruto** afname.
+- **Jaarprognose** — heb je minder dan een jaar data? Een slim seizoensprofiel vult de ontbrekende maanden aan tot een volledig, realistisch jaarverbruik (winter zwaarder, zomer lichter, avondpiek voor koken/verlichting).
+- **Hardware-simulaties** — warmtepomp, elektrische auto (thuis/forens), thuisbatterij (zelfconsumptie óf netarbitrage), zonnepanelen dimmen bij negatieve prijzen.
+- **Sweet Spot Finder** — berekent automatisch het ideale accuformaat met terugverdientijd.
+- **Stresstest** — vermenigvuldig de marktprijzen om te zien of dynamisch ook in een energiecrisis nog loont.
+- **Grafieken** — 24-uurs dagprofiel, dag/week-overzicht, maandelijkse kostenvergelijking en hardware-effect per apparaat.
 
-## Geen installatie vereist
+## Het 2027-model (einde saldering)
 
-Puur HTML/CSS/JavaScript — geen server, geen database, geen npm. Alles draait lokaal in je browser.
+Vanaf **1 januari 2027** vervalt de salderingsregeling. De app rekent hier al volledig mee:
+
+- **Energiebelasting (EB)** wordt geheven over de **bruto afname** van het net — niet meer netto na aftrek van teruglevering.
+- **Geen saldering**: teruggeleverde stroom verlaagt je EB-grondslag niet meer; je krijgt er enkel het (lage) teruglevertarief voor, minus eventuele VTK.
+- Daardoor is **zonnepanelen dimmen** bij negatieve EPEX-prijzen eerder voordelig dan onder saldering.
+
+> ⚠️ Het exacte **EB-tarief voor 2027 is nog niet vastgesteld** (verwacht op Prinsjesdag, september 2026). De standaardwaarde is een 2026-benadering (~11,1 ct/kWh) en is in de app instelbaar. Alle bedragen zijn indicatief — controleer altijd je eigen contract.
 
 ## Snel starten
 
-### Optie 1 — Lokaal bestand (geen HA-koppeling)
+Puur HTML/CSS/JavaScript — geen build-stap, geen database, geen tracking.
 
-Open `index.html` direct in je browser. Je kunt tarieven aanpassen en grafieken bekijken met de ingebouwde voorbeelddata.
+> **Belangrijk:** de pagina laadt `app.js` en `style.css` onder het pad-prefix **`/energie/`** (productie-deploy). Serveer de app daarom onder dat subpad — zie hieronder.
 
-> **Let op**: Verbinding met Home Assistant werkt niet via `file://` vanwege browser CORS-beleid.
+### Lokaal draaien
 
-### Optie 2 — Met Home Assistant koppeling
-
-Start een lokale HTTP-server in de projectmap:
+Serveer de map onder `/energie/`, bijvoorbeeld met een symlink + statische server:
 
 ```bash
+# vanuit de projectmap
+ln -sfn . energie                 # maakt /energie/ → projectmap
 python3 -m http.server 8080
+# open http://localhost:8080/energie/
 ```
 
-Open dan `http://localhost:8080` in je browser.
+Of plaats de bestanden in een map `energie/` achter je webserver.
 
-#### Nginx CORS-configuratie (voor externe HA-instanties)
+> Een directe `file://`-opening werkt niet: de Home Assistant-koppeling vereist een HTTP-origin (CORS), en de `/energie/`-paden zijn absoluut.
 
-Als je Home Assistant extern bereikbaar is (bijv. via `hass.jouwdomein.nl`), voeg dan het volgende toe aan je nginx-configuratie voor de HA-locatie:
+### Productie (nginx)
+
+Serveer de statische bestanden onder `/energie/` en sta CORS toe vanaf die origin voor je HA-locatie:
 
 ```nginx
-# Sta CORS toe vanaf localhost (voor de lokale webserver)
-add_header Access-Control-Allow-Origin "http://localhost:8080" always;
+# De app zelf (statische bestanden)
+location /energie/ {
+    alias /var/www/p1-analysator/;   # map met index.html, app.js, style.css
+    try_files $uri $uri/ /energie/index.html;
+}
+
+# CORS voor de Home Assistant-API (in het HA location-blok)
+add_header Access-Control-Allow-Origin "https://jouwdomein.nl" always;
 add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
 add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
-
-if ($request_method = OPTIONS) {
-    return 204;
-}
+if ($request_method = OPTIONS) { return 204; }
 ```
 
-## Home Assistant instellen
+## Home Assistant koppelen
 
-1. Maak een **Long-Lived Access Token** aan in HA: *Profiel → Langdurige toegangstokens*
-2. Open de app en vul je HA-URL + token in
+1. Maak een **Long-Lived Access Token** aan: *Profiel → Langdurige toegangstokens*.
+2. Vul in de app je HA-URL + token in en klik **Verbinden**.
 3. Selecteer je sensoren:
-   - **Import T1/T2**: bijv. `sensor.p1_meter_energy_import_tariff_1/2`
-   - **Export T1/T2**: bijv. `sensor.p1_meter_energy_export_tariff_1/2`
-   - **Zonnepanelen** (optioneel): kWh- of Wh-sensor van je omvormer
-     - Enphase: `sensor.inverter_XXXX_lifetime_energy_production` (Wh → automatisch omgezet)
+   - **Import T1/T2** — bijv. `sensor.p1_meter_energy_import_tariff_1/2`
+   - **Export T1/T2** — bijv. `sensor.p1_meter_energy_export_tariff_1/2`
+   - **Zonnepanelen** (optioneel) — kWh- of Wh-sensor van je omvormer
+     - Enphase: `sensor.inverter_XXXX_lifetime_energy_production` (Wh → automatisch ÷1000)
      - SolarEdge / Fronius: meestal kWh
-4. Kies het aantal dagen historische data (max ~730 dagen)
+4. Kies het aantal dagen historische data (max ~730).
+
+De app gebruikt `recorder/statistics_during_period` (`period:"hour"`) — die levert jarenlange data, in tegenstelling tot de REST history-API (max ~10 dagen).
 
 ## Tariefinstellingen
+
+Kies bovenaan een **leverancier-preset** om piek/dal, teruglevertarief, VTK en opslag in één klik te vullen (indicatieve waarden — daarna handmatig bij te stellen).
 
 ### Vast contract (2027-model)
 | Instelling | Standaard | Omschrijving |
 |------------|-----------|--------------|
-| Piektarief | €0,27/kWh | Tarief buiten dal-uren |
+| Piektarief | €0,27/kWh | Ma–vr 07:00–23:00 |
 | Daltarief | €0,24/kWh | Ma–vr 23:00–07:00 + weekend |
-| Teruglevertarief | €0,07/kWh | Vergoeding voor teruggeleverde stroom |
-| VTK | €0,00/kWh | Vaste Terugleverkosten (kosten per teruggeleverd kWh) |
-| Vastrecht | €7,50/maand | Vaste maandelijkse kosten |
+| Teruglevertarief | €0,07/kWh | Vergoeding per teruggeleverde kWh |
+| VTK | €0,00/kWh | Vaste Terugleverkosten per teruggeleverde kWh |
+| Vastrecht | €7,50/maand | Vaste maandelijkse leveringskosten |
 
 ### Dynamisch contract
 | Instelling | Standaard | Omschrijving |
 |------------|-----------|--------------|
-| Opslag | €0,018/kWh | Opslag boven EPEX spotprijs (excl. BTW) |
-| Profielverlies | 2% | Korting op teruglevering vanwege profielverschillen |
-| Vastrecht | €6,00/maand | Vaste maandelijkse kosten |
+| Opslag | €0,018/kWh | Opslag boven de EPEX-spotprijs (excl. BTW) |
+| Vastrecht | €6,00/maand | Vaste maandelijkse leveringskosten |
+| Energiebelasting | €0,11084/kWh | EB + BTW per kWh (2027 nog niet bekend → 2026-proxy) |
+| Stresstest | 1,0× | Vermenigvuldigt positieve marktprijzen (crisissimulatie) |
 
-## 2027-tariefmodel
+## Jaarprognose (seizoensaanvulling)
 
-Vanaf 1 januari 2027 eindigt de **salderingsregeling** in Nederland. De app rekent al met dit model:
+De toggle **Jaarprognose** bepaalt hoe minder-dan-een-jaar data naar een jaarbedrag wordt gerekend:
 
-- **Energiebelasting (EB)** wordt geheven over de **bruto afname** (niet meer netto na aftrek teruglevering)
-- **Geen saldering**: teruggeleverde stroom vermindert je EB-grondslag niet meer
-- Zonnepanelen dimmen bij negatieve EPEX-prijzen is daardoor eerder voordelig dan bij saldering
+- **Aan** (`seasonal`) — ontbrekende uren worden gesynthetiseerd uit je gemeten nacht-baseload en zonpotentieel, geschaald per seizoen, met een avondpiek (17–21u) voor koken/verlichting. Resultaat: een volledig 8760-uurs jaar.
+- **Uit** (`linear`) — je gemeten periode wordt lineair naar een jaar geschaald, zónder seizoenscorrectie (handig om te zien hoeveel het seizoensmodel uitmaakt).
+- Bij **≥ 365 dagen** data is er geen aanvulling nodig en wordt op exact één jaar genormaliseerd.
 
 ## Hardware-simulaties
 
-De app kan inschatten wat het effect is van extra apparatuur:
+- **Warmtepomp** — extra basislast, seizoens- en tijdgewogen (zwaarder in de winter en 's nachts).
+- **Elektrische auto** — slimme *look-ahead* planning per dag: eerst laden op zonne-overschot (10–16u), daarna op de goedkoopste uren. Profiel **Thuis** (overdag + nacht) of **Forens** (niet thuis ma–vr 08:00–17:00).
+- **Thuisbatterij** — twee strategieën, eerlijk per contract:
+  - *Vast contract:* uitsluitend **zelfconsumptie** (zon opslaan, later eigen verbruik dekken) — een vast-contracthouder heeft immers geen spotsignaal.
+  - *Dynamisch contract:* **spot-arbitrage** — goedkoop/negatief inkopen, ontladen bij hoge prijzen, en optioneel **terugleveren aan het net** (verkopen) voor extra rendement.
+  - De **Sweet Spot Finder** veegt accuformaten van 2–20 kWh door en toont de meerwaarde per jaar en de terugverdientijd (bij €450/kWh).
+- **Zonnepanelen dimmen** bij negatieve EPEX-prijzen (alleen dynamisch):
+  - *Dimmen* — omvormer regelt terug tot eigen verbruik (nul-export).
+  - *Uitschakelen* — binaire keuze tussen volledig uit (alles van het net) en aanhouden, afhankelijk van wat goedkoper is.
 
-- **Warmtepomp**: extra basisverbruik in de winter
-- **Elektrische auto**: extra laadverbruik, optioneel zonne-energie-matching overdag
-- **Thuisbatterij**: opslaan bij lage prijzen, ontladen bij hoge prijzen (arbitrage)
-- **Zonnepanelen dimmen/uitschakelen**: bij negatieve EPEX-spotprijzen
-  - *Dimmen*: omvormer regelt terug tot eigen verbruik (nul-export)
-  - *Uitschakelen*: omvormer volledig uit (alles van het net)
+## Privacy
+
+- Alle berekeningen draaien **lokaal in je browser**. Er gaat geen P1-data naar een server.
+- Externe verzoeken zijn functioneel en door jou geïnitieerd: je eigen Home Assistant, en de prijs-API's (Frank Energie / EnergyZero) bij **Ophalen**.
+- De lettertypes worden via Google Fonts geladen.
+- Je eigen meetdata (`*.json`, `*.csv`) staat in `.gitignore` en wordt niet meegecommit. De demo-knop laadt een lokaal `p1_sample.json`; ontbreekt dat (zoals in een verse deploy), dan toont de app de upload-prompt.
 
 ## Technisch
 
-- **EPEX-prijzen**: opgehaald via Frank Energie GraphQL API en/of EnergyZero API
-- **Fallback**: seizoensprofielen (winter/lente/zomer/herfst) wanneer geen live data beschikbaar
-- **HA WebSocket API**: `recorder/statistics_during_period` met `period:"hour"` — ondersteunt jarenlange data (REST history API max ~10 dagen)
-- Geen externe dependencies, geen tracking, geen cookies
+- **EPEX-prijzen** via Frank Energie GraphQL en/of EnergyZero; **fallback** op seizoensprofielen (winter/lente/zomer/herfst) wanneer geen live data beschikbaar is.
+- **Simulatie-engine** (`_simulateCore`): één pure functie die per uur beide contracten doorrekent over een volledig jaar; geen DOM-reads in de loop; afgeleide tijdvelden gecacht (`rowMeta`).
+- Geen externe JS-dependencies, geen cookies, custom SVG-grafieken (geen charting-library).
 
 ## Bestanden
 
 ```
 index.html   — gebruikersinterface
-app.js       — alle berekeningen en HA-integratie
+app.js       — simulatie-engine, HA-integratie, grafieken
 style.css    — styling
+CLAUDE.md    — technische projectcontext (voor ontwikkelaars/AI)
 ```
+
+## Disclaimer
+
+Dit is een schattingstool. De 2027-tarieven (met name de energiebelasting) liggen nog niet vast, en de leverancier-presets zijn indicatief. Gebruik de uitkomsten als richtlijn, niet als exacte voorspelling, en controleer je eigen contractvoorwaarden.
 
 ## Licentie
 
