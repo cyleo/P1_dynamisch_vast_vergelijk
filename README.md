@@ -125,7 +125,15 @@ De toggle **Jaarprognose** bepaalt hoe minder-dan-een-jaar data naar een jaarbed
 - Alle berekeningen draaien **lokaal in je browser**. Er gaat geen P1-data naar een server.
 - Externe verzoeken zijn functioneel en door jou geïnitieerd: je eigen Home Assistant, en de prijs-API's (Frank Energie / EnergyZero) bij **Ophalen**.
 - De lettertypes worden via Google Fonts geladen.
-- Je eigen meetdata (`*.json`, `*.csv`) staat in `.gitignore` en wordt niet meegecommit. De demo-knop laadt een lokaal `p1_sample.json`; ontbreekt dat (zoals in een verse deploy), dan toont de app de upload-prompt.
+- Je eigen meetdata (`*.json`, `*.csv`) staat in `.gitignore` en wordt niet meegecommit.
+
+## Demo-data
+
+De app start met een **realistisch jaarprofiel op uurbasis** (`demo-year.js`, meegeleverd): een prosument met zonnepanelen, ~3.200 kWh verbruik en ~3.600 kWh opwek over een volledig jaar (8.760 uur). Klik **"Laad voorbeelddata (reset)"** om ernaar terug te keren.
+
+- **Bron:** [Open Power System Data — Household Data](https://data.open-power-system-data.org/household_data/), huishouden *residential4* (kalenderjaar 2017, uurresolutie). De cumulatieve meterstanden zijn omgezet naar uurdeltas en fysisch-consistent herschaald naar een typische Nederlandse prosument.
+- **Licentie brondata:** Creative Commons Attribution (CC-BY) — *"Open Power System Data. 2020. Data Package Household Data. https://doi.org/10.25832/household_data/2020-04-15"*.
+- Heb je een lokaal `p1_sample.json` (je eigen export), dan gebruikt de demo-knop dat in plaats daarvan.
 
 ## Technisch
 
