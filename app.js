@@ -125,6 +125,12 @@ function applySupplierPreset(key) {
   runSimulation();
 }
 
+// Klap een config-kaart in/uit (aangeroepen vanuit de klikbare kaart-titel).
+function toggleCard(titleEl) {
+  const card = titleEl.closest(".glass-panel");
+  if (card) card.classList.toggle("collapsed");
+}
+
 // Initialize Application
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
@@ -1715,9 +1721,20 @@ function updateUIElements() {
     ? ` <span style="color:var(--accent-cyan);font-size:0.7rem;" title="Geëxtrapoleerd naar jaarbasis">· prognose</span>`
     : "";
 
-  // Header and stats
-  document.getElementById("stat-savings-val").textContent = `${sim.totalSavings.toFixed(2)}`;
-  document.getElementById("stat-savings-pct").textContent = `${sim.savingsPct.toFixed(1)}%`;
+  // Header en stats — besparing is teken-bewust: dynamisch goedkoper = groen (besparing),
+  // dynamisch duurder = oranje (extra kosten). Niet langer altijd "groene besparing".
+  const savings  = sim.totalSavings;           // fixedBill − dynBill; > 0 = dynamisch goedkoper
+  const positive = savings >= 0;
+  const col = positive ? "var(--accent-green)" : "var(--accent-orange)";
+  document.getElementById("stat-savings-val").textContent = `${Math.abs(savings).toFixed(2)}`;
+  document.getElementById("stat-savings-pct").textContent = `${Math.abs(sim.savingsPct).toFixed(1)}%`;
+  document.getElementById("stat-savings-value").style.color = col;
+  document.getElementById("stat-savings-pct").style.color = col;
+  document.getElementById("stat-savings-card").classList.toggle("negative", !positive);
+  document.getElementById("stat-savings-header").textContent = positive ? "Jouw besparing" : "Extra kosten dynamisch";
+  const subEl = document.getElementById("stat-savings-sub");
+  subEl.textContent = positive ? "▲ in het voordeel van Dynamisch" : "▼ Vast contract is goedkoper";
+  subEl.style.color = col;
   document.getElementById("stat-fixed-val").textContent = `${sim.fixedTotalBill.toFixed(2)}`;
   document.getElementById("stat-dynamic-val").textContent = `${sim.dynamicTotalBill.toFixed(2)}`;
 

@@ -688,3 +688,91 @@ input:checked + .slider-round:before {
   color: #ffffff;
   text-shadow: var(--glow-cyan);
 }
+
+/* ============================================================================
+   Sidebar UX: stap-clustering, inklapbare kaarten, onafhankelijke scroll
+   ============================================================================ */
+
+/* Groep van kaarten die samen één stap vormen (bijv. beide import-methodes = stap 1) */
+.config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px dashed rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.config-group-label {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.1rem 0.2rem 0.2rem;
+}
+.config-group-label::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+/* Genest in een groep: kaarten iets ingetogener zodat de groep als geheel leest */
+.config-group .glass-panel { box-shadow: none; background: rgba(10, 15, 30, 0.55); }
+
+/* Inklapbare kaarten (alleen in de config-sidebar) */
+.sidebar .section-title {
+  cursor: pointer;
+  user-select: none;
+}
+.sidebar .section-title:hover { color: #ffffff; }
+.collapse-chevron {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+.glass-panel.collapsed .collapse-chevron { transform: rotate(-90deg); }
+/* Verberg alles behalve de titelbalk wanneer ingeklapt */
+.glass-panel.collapsed > *:not(.section-title) { display: none; }
+.glass-panel.collapsed .section-title {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Negatieve besparing (dynamisch duurder dan vast) → niet groen maar waarschuwend */
+.stat-card.savings.negative::before { background: var(--accent-orange); }
+.stat-card.savings.negative { box-shadow: 0 4px 20px rgba(255, 117, 140, 0.06); }
+
+/* Onafhankelijk scrollende kolommen op desktop: links (config) en rechts (resultaten)
+   bewegen los van elkaar; de header blijft staan. Op smal scherm: normaal paginascroll. */
+@media (min-width: 1101px) {
+  .app-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header { flex-shrink: 0; margin-bottom: 1.5rem; }
+  .dashboard-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .sidebar,
+  .main-dashboard {
+    overflow-y: auto;
+    min-height: 0;
+    max-height: 100%;
+    padding-right: 0.5rem;
+    padding-bottom: 1.5rem;
+  }
+}
