@@ -1,0 +1,18 @@
+# Persoonlijke testdata — bevat mogelijk energieverbruiksdata
+energy-3.csv
+p1_sample.json
+*.csv
+*.json
+
+# Claude project bestanden
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Lokale serverbestanden
+*.log
