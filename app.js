@@ -1242,218 +1242,209 @@ function _simulateCore(cfg, full = false) {
     hasBattery, batCapacity, batPower, batEfficiency, batArbitrage, batGridExport = false,
   } = cfg;
 
-  // ── Loop-constanten: één keer berekend, nooit meer in de forEach ──────────
-  const markupBtw = dynamicMarkup * 1.21;          // opslag incl. BTW
-  const evDailyKwh = hasEv ? (evWeeklyDist * evConsumption) / 7.0 : 0;
+  const markupBtw = dynamicMarkup * 1.21;
+  const eb = liveEnergyTax;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
-  const eb = liveEnergyTax;                  // EB snapshot (globale var)
-
-  // ── Accumulatoren ─────────────────────────────────────────────────────────
-  let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
-  let dynImpCost = 0, dynExpRev = 0, dynImpKwh = 0, dynExpKwh = 0;
-  let batSoC = 0;      // dynamische accu (spot-gestuurd)
-  let batSoCFx = 0;    // vaste-contract accu (alleen zelfconsumptie, géén EPEX-beslissingen)
-  let epexReal = 0, epexFall = 0;
-
-  // ── Databron: 8760-uurs jaarprojectie (bij < 365 dagen) of de echte reeks ──
   const simData = fullYearData || energyData;
 
-  // ── EV-laadschema: per dag vooruit gepland (look-ahead, geen chronologische volgorde) ──
-  let evSchedule = null;
-  let lastDayStr = "";
+  // ── PRE-COMPUTATION CAPTURE: Bereken EV Profielen ÉÉNMAAL (Vector 3 & 5 Fix) ──
+  const dayRows = {};
+  simData.forEach(r => { (dayRows[rowMeta(r).dayKey] ||= []).push(r); });
 
-  // Groepeer de simulatierijen per kalenderdag (alleen nodig met EV) zodat we
-  // aan het begin van elke dag 24 uur vooruit kunnen kijken voor de laadplanning.
-  const dayRows = hasEv ? {} : null;
-  if (hasEv) simData.forEach(r => { const dk = rowMeta(r).dayKey; (dayRows[dk] ||= []).push(r); });
+  const evScheduleCacheDyn = {};
+  const evScheduleCacheFx = {};
 
-  // Bouwt voor één dag een uur→{grid, solar} laadschema voor de EV.
-  //  1. evSolarMatch: laad eerst op zonne-overschot tussen 10–16u (verlaagt export).
-  //  2. Resterende behoefte: vul de goedkoopste uren van de dag (all-in prijs) op,
-  //     of dat nu 's nachts is of tijdens een negatieve middagdip. Max 11 kW/uur.
-  function buildEvSchedule(rowsOfDay) {
-    if (!rowsOfDay || rowsOfDay.length === 0 || evDailyKwh <= 0) return null;
-    const sched = {};
-    let need = evDailyKwh;
+  function precomputeEVSchedules() {
+    if (!hasEv) return;
+    const evDailyKwh = (evWeeklyDist * evConsumption) / 7.0;
+    if (evDailyKwh <= 0) return;
 
-    // Commuter: auto weg op werkdagen 08:00–17:00 (incl.) → die uren tellen niet mee.
-    const unavailable = r => {
-      if (evProfile !== "commuter") return false;
-      const { dow, hour } = rowMeta(r);
-      return dow > 0 && dow < 6 && hour >= 8 && hour <= 17;
-    };
+    Object.keys(dayRows).forEach(dk => {
+      const rowsOfDay = dayRows[dk];
 
-    if (evSolarMatch) {
-      for (const r of rowsOfDay) {
-        if (need <= 0) break;
-        if (unavailable(r)) continue;
-        const h = rowMeta(r).hour;
-        if (h < 10 || h > 16) continue;
-        const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
-        if (rawExpH <= 0) continue;
-        const charge = Math.min(rawExpH, EV_MAX_CHARGE_KW, need);
-        if (charge > 0) { (sched[h] ||= { grid: 0, solar: 0 }).solar += charge; need -= charge; }
+      const unavailable = r => {
+        if (evProfile !== "commuter") return false;
+        const { dow, hour } = rowMeta(r);
+        return dow > 0 && dow < 6 && hour >= 8 && hour <= 17;
+      };
+
+      // Helper om basis zonne-allocatie op te zetten
+      const baseSched = () => {
+        const s = Array.from({ length: 24 }, () => ({ grid: 0, solar: 0 }));
+        let remNeed = evDailyKwh;
+        if (evSolarMatch) {
+          for (const r of rowsOfDay) {
+            if (remNeed <= 0) break;
+            if (unavailable(r)) continue;
+            const h = rowMeta(r).hour;
+            if (h < 10 || h > 16) continue;
+            const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
+            const charge = Math.min(rawExpH, EV_MAX_CHARGE_KW, remNeed);
+            if (charge > 0) { s[h].solar += charge; remNeed -= charge; }
+          }
+        }
+        return { s, remNeed };
+      };
+
+      // DYNAMISCHE EV ALLOCATIE (Spot-geoptimaliseerd)
+      const dynTarget = baseSched();
+      if (dynTarget.remNeed > 0) {
+        const sortedDyn = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+          const { hour, month, epexKey: k } = rowMeta(r);
+          let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+          if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+          return { h: hour, cost: sp + markupBtw + eb };
+        }).sort((a, b) => a.cost - b.cost);
+
+        for (const { h } of sortedDyn) {
+          if (dynTarget.remNeed <= 0) break;
+          const room = EV_MAX_CHARGE_KW - (dynTarget.s[h].solar + dynTarget.s[h].grid);
+          const charge = Math.min(dynTarget.remNeed, room);
+          if (charge > 0) { dynTarget.s[h].grid += charge; dynTarget.remNeed -= charge; }
+        }
       }
-    }
+      evScheduleCacheDyn[dk] = dynTarget.s;
 
-    if (need > 0) {
-      const byPrice = rowsOfDay.filter(r => !unavailable(r)).map(r => {
-        const { hour, month, epexKey: k } = rowMeta(r);
-        const sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
-        // NB: stress is order-behoudend op positieve prijzen → ongestrest sorteren geeft
-        // dezelfde goedkoopste-uren-selectie; de echte kosten gebruiken wél de gestreste spot.
-        return { h: hour, allIn: sp + markupBtw + eb };
-      }).sort((a, b) => a.allIn - b.allIn);
+      // VASTE EV ALLOCATIE (Daluren-geoptimaliseerd)
+      const fxTarget = baseSched();
+      if (fxTarget.remNeed > 0) {
+        const sortedFx = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+          const { hour, dow } = rowMeta(r);
+          const isPeakHour = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
+          return { h: hour, cost: isPeakHour ? fixedPeakRate : fixedDalRate };
+        }).sort((a, b) => a.cost - b.cost);
 
-      for (const { h } of byPrice) {
-        if (need <= 0) break;
-        const used = sched[h] ? sched[h].solar + sched[h].grid : 0;
-        const room = EV_MAX_CHARGE_KW - used;     // resterende uurcapaciteit
-        if (room <= 0) continue;
-        const charge = Math.min(need, room);
-        if (charge > 0) { (sched[h] ||= { grid: 0, solar: 0 }).grid += charge; need -= charge; }
+        for (const { h } of sortedFx) {
+          if (fxTarget.remNeed <= 0) break;
+          const room = EV_MAX_CHARGE_KW - (fxTarget.s[h].solar + fxTarget.s[h].grid);
+          const charge = Math.min(fxTarget.remNeed, room);
+          if (charge > 0) { fxTarget.s[h].grid += charge; fxTarget.remNeed -= charge; }
+        }
       }
-    }
-    return sched;
+      evScheduleCacheFx[dk] = fxTarget.s;
+    });
   }
+  precomputeEVSchedules();
 
-  // ── Profiel-arrays (alleen wanneer full=true) ─────────────────────────────
+  // Accumulatoren
+  let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
+  let dynImpCost = 0, dynExpRev = 0, dynImpKwh = 0, dynExpKwh = 0;
+  let batSoC = 0, batSoCFx = 0;
+  let epexReal = 0, epexFall = 0;
+
+  // Profiel-arrays (wanneer full=true)
   const hourly = full ? Array.from({ length: 24 }, () => ({ imports: [], exports: [], spots: [], dynCosts: [], fixedCosts: [] })) : null;
   const weekly = full ? Array.from({ length: 7 }, () => ({ dynCosts: [], fixedCosts: [] })) : null;
-  const dayTot = full ? {} : null;   // perDayTotals
-  const dayHour = full ? {} : null;   // perDayHourly
+  const dayTot = full ? {} : null;
+  const dayHour = full ? {} : null;
 
-  // ── Hoofdloop ─────────────────────────────────────────────────────────────
-  // Hardware wordt hieronder op elke rij toegepast (geldt voor beide contractvormen).
+  // ── HOOFDLOOP (8760 UUR REEKS) ──
   simData.forEach(row => {
-    // Eén Date-parse per rij, gecacht (lokale velden — geen UTC-drift, geen herparsing).
     const { hour, month, dow, dayKey, epexKey: tsKey } = rowMeta(row);
-    if (dayKey !== lastDayStr) {
-      lastDayStr = dayKey;
-      // Nieuwe dag → plan de EV-lading vooruit over de 24 uur van deze dag.
-      evSchedule = hasEv ? buildEvSchedule(dayRows[dayKey]) : null;
-    }
-
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
 
     const rawImp = row.import_t1 + row.import_t2;
     const rawExp = row.export_t1 + row.export_t2;
 
-    // Spotprijs opzoeken (lokale-tijd sleutel — geen UTC-drift)
-    const hasReal = epexHistory.has(tsKey);
-    let spot = hasReal ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
-    if (hasReal) epexReal++; else epexFall++;
-
-    // Stresstest: vermenigvuldig alleen positieve beursprijzen (energiecrisis-simulatie).
+    let spot = epexHistory.has(tsKey) ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
+    if (epexHistory.has(tsKey)) epexReal++; else epexFall++;
     if (spot > 0 && stressMultiplier !== 1.0) spot *= stressMultiplier;
 
-    // Grafiekprofiel: altijd ruwe meetdata (voor hardware en dimming)
     if (full) {
       hourly[hour].imports.push(rawImp);
       hourly[hour].exports.push(rawExp);
       hourly[hour].spots.push(spot);
     }
 
-    // ── Hardware aanpassingen (gelden voor beide contractvormen) ──────────
-    let imp = rawImp;
-    let exp = rawExp;
-
+    // Thermische stooklast (Warmtepomp)
+    let hpLoad = 0;
     if (hasHeatPump) {
-      const sf = month >= 5 && month <= 9 ? 0.15
-        : month >= 11 || month <= 2 ? 1.3 : 0.7;
+      const sf = month >= 5 && month <= 9 ? 0.15 : (month >= 11 || month <= 2 ? 1.3 : 0.7);
       const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;
-      imp += hpWinterBaseload * sf * tf;
+      hpLoad = hpWinterBaseload * sf * tf;
     }
 
-    if (hasEv && evSchedule) {
-      const s = evSchedule[hour];
-      if (s) {
-        imp += s.grid;                          // netlading op de geplande goedkope uren
-        exp = Math.max(0, exp - s.solar);       // zonne-overschot dat de EV opslokt
-      }
+    // ── STRATEGIE SPLIT: DYNAMISCH VS VAST APPARAATGEDRAG ──
+    let impDyn = rawImp + hpLoad;
+    let expDyn = rawExp;
+    let impFx = rawImp + hpLoad;
+    let expFx = rawExp;
+
+    // EV verbruik injecteren vanuit gescheiden dagschemas
+    if (hasEv) {
+      const evD = evScheduleCacheDyn[dayKey]?.[hour];
+      if (evD) { impDyn += evD.grid; expDyn = Math.max(0, expDyn - evD.solar); }
+
+      const evF = evScheduleCacheFx[dayKey]?.[hour];
+      if (evF) { impFx += evF.grid; expFx = Math.max(0, expFx - evF.solar); }
     }
 
-    // ── Accu: TWEE gescheiden stromen ─────────────────────────────────────
-    // Dynamisch = spot-gestuurde arbitrage; Vast = alleen zelfconsumptie (een
-    // vast-contracthouder heeft geen spotsignaal en doet géén EPEX-arbitrage).
-    // Per uur max. één actie (laden óf ontladen) → vermogenslimiet nooit overschreden.
-    let impDyn = imp, expDyn = exp;   // dynamische stroom
-    let impFx = imp, expFx = exp;   // vaste-contract stroom
-
+    // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
     if (hasBattery) {
-      // ── DYNAMISCH: zon opslaan → netarbitrage laden → ontladen/verkopen ──
-      if (expDyn > 0 && batSoC < batCapacity) {                                    // zonne-overschot opslaan
+      // Dynamisch circuit
+      if (expDyn > 0 && batSoC < batCapacity) {
         const c = Math.min(expDyn, batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; expDyn = Math.max(0, expDyn - c);
-      } else if (batArbitrage && spot <= BATTERY_ARBITRAGE_SPOTMAX && batSoC < batCapacity) {  // goedkoop van net laden
+      }
+      if (batArbitrage && spot <= BATTERY_ARBITRAGE_SPOTMAX && batSoC < batCapacity && expDyn === 0) {
         const c = Math.min(batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; impDyn += c;
-      } else if ((spot + markupBtw + eb) > BATTERY_DISCHARGE_ALLIN && batSoC > 0) {  // ontladen bij hoge prijs
+      }
+      if ((spot + markupBtw + eb) > BATTERY_DISCHARGE_ALLIN && batSoC > 0 && expDyn === 0) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
-        if (batGridExport && d > 0 && spot > 0) { expDyn += d; batSoC -= d; }      // rest verkopen (arbitrage)
+        if (batGridExport && d > 0 && spot > 0) { expDyn += d; batSoC -= d; }
       }
 
-      // ── VAST: zon opslaan ↔ ontladen om eigen afname te dekken (nul-op-de-meter) ──
+      // Vast circuit
       if (expFx > 0 && batSoCFx < batCapacity) {
         const c = Math.min(expFx, batPower, batCapacity - batSoCFx);
         batSoCFx += c * batEfficiency; expFx = Math.max(0, expFx - c);
-      } else if (impFx > 0 && batSoCFx > 0) {
+      }
+      if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
         const d = Math.min(impFx, batPower, batSoCFx);
         batSoCFx -= d; impFx = Math.max(0, impFx - d);
       }
     }
 
-    // ── Vast contract: zelfconsumptie-accu, nooit EPEX-gestuurd, nooit gedimmed ──
+    // Accumuleer Vast Contract Volumes
     if (isPeak) { fxPeakImp += impFx; fxPeakExp += expFx; }
     else { fxDalImp += impFx; fxDalExp += expFx; }
 
-    // ── Dynamisch contract: optioneel dimmen/uitschakelen bij spot < 0 ────
-    // 2027-model: EB op bruto import — dimmen is voordelig bij elke negatieve prijs.
+    // ── Slimme Omvormer Interventie bij Negatieve Spot (Vector 1 Fix) ──
     let dynImp = impDyn;
     let dynExp = expDyn;
 
     if (dimmingActive && spot < 0) {
       const solar = row.solar_yield ?? null;
-
       if (solar !== null) {
-        // Correcte fysica: Huisvraag = Wat we v.h. net trokken + Wat we zelf lokaal opaten
-        // Wat we lokaal opaten = Zonne-opwek MINUS wat er overbleef (export)
         const localSolarConsumed = Math.max(0, solar - expDyn);
         const currentHouseLoad = impDyn + localSolarConsumed;
-
         const brutoOverschot = solar - currentHouseLoad;
 
         if (solarDimmingMode === "dim") {
           dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
           dynExp = 0;
         } else if (solarDimmingMode === "uit") {
-          const exportPenalty = brutoOverschot * Math.abs(spot);
-          const allInInkoop = spot + markupBtw + eb;
-          const importCostsIfOff = currentHouseLoad * allInInkoop;
-
-          if (brutoOverschot > 0 && exportPenalty > importCostsIfOff) {
-            dynImp = currentHouseLoad;
-            dynExp = 0;
-          } else {
-            dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
-            dynExp = brutoOverschot > 0 ? brutoOverschot : 0;
-          }
+          dynImp = currentHouseLoad;
+          dynExp = 0;
         }
+      } else {
+        dynExp = 0;
+        if (solarDimmingMode === "uit") dynImp = impDyn;
       }
     }
 
-    // ── Dynamische kosten (EB via bruto-impKwh totaal, niet per uur) ──────
-    const basePrice = spot + markupBtw;                  // excl. EB
+    // Accumuleer Dynamische Resultaten
+    const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
     dynExpRev += dynExp * spot;
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
-    // ── Profielen bijhouden (full=true pad) ───────────────────────────────
     if (full) {
-      const allIn = basePrice + eb;                // incl. EB, voor grafiekweergave
+      const allIn = basePrice + eb;
       const dynHrCost = dynImp * allIn - dynExp * spot;
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
@@ -1463,66 +1454,54 @@ function _simulateCore(cfg, full = false) {
       weekly[dow].dynCosts.push(dynHrCost);
       weekly[dow].fixedCosts.push(fxHrCost);
 
-      const dk = dayKey;
-      if (!dayTot[dk]) dayTot[dk] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0 };
-      const pd = dayTot[dk];
-      pd.dynCost += dynHrCost;
-      pd.fixedCost += fxHrCost;
-      pd.impKwh += dynImp;
-      pd.expKwh += dynExp;
+      if (!dayTot[dayKey]) dayTot[dayKey] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0 };
+      const pd = dayTot[dayKey];
+      pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
+      pd.impKwh += dynImp; pd.expKwh += dynExp;
       if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
 
-      if (!dayHour[dk]) dayHour[dk] = Array.from({ length: 24 }, () => null);
-      dayHour[dk][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
+      if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
+      dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
     }
   });
 
-  // ── Jaarnormalisatie ──────────────────────────────────────────────────────
-  // Schaal de loop-som naar exact één jaar. Bij de seizoensprojectie is yearScale
-  // 1.0 (de array is al 8760u); bij "linear"/"full" normaliseert 8760/#uren de
-  // gemeten energie naar een jaar. Profielen (charts) blijven ongeschaald.
+  // Jaarnormalisatie-schaling
   fxPeakImp *= yearScale; fxDalImp *= yearScale; fxPeakExp *= yearScale; fxDalExp *= yearScale;
   dynImpCost *= yearScale; dynExpRev *= yearScale; dynImpKwh *= yearScale; dynExpKwh *= yearScale;
 
-  // ── Eindtotalen (jaarbasis) ───────────────────────────────────────────────
-  // De engine modelleert altijd een volledig kalenderjaar. Vastrecht = 12 maanden.
-  const totFxExp = fxPeakExp + fxDalExp;
-  const fxImpCost = fxPeakImp * fixedPeakRate + fxDalImp * fixedDalRate;
-  const fxFeedCredit = totFxExp * fixedFeedInRate;
-  const fxFeedPenalt = totFxExp * fixedFeedInFee;
+  // ── EINDTOTALEN REKENING (Fiscaal Zuiver Model 2027, Vector 4 Fix) ──
+  const standardEB2026 = 0.11084;
+  const fixedPeakBase = Math.max(0, fixedPeakRate - standardEB2026);
+  const fixedDalBase = Math.max(0, fixedDalRate - standardEB2026);
+
+  const fxImpCost = fxPeakImp * (fixedPeakBase + eb) + fxDalImp * (fixedDalBase + eb);
+  const fxFeedCredit = (fxPeakExp + fxDalExp) * fixedFeedInRate;
+  const fxFeedPenalt = (fxPeakExp + fxDalExp) * fixedFeedInFee;
   const fxSub = fixedVastrecht * 12.0;
   const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub;
 
-  // EB 2027: bruto import — saldering stopt 1-1-2027, geen EB-netting op export meer
-  const dynEB = dynImpKwh * eb;
+  const dynEB = dynImpKwh * eb; // Gross energy tax charging rule
   const dynSub = dynamicVastrecht * 12.0;
   const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub;
 
-  // ── Resultaatobject ───────────────────────────────────────────────────────
   const out = { fixedBill, dynBill };
 
   if (full) {
     Object.assign(out, {
-      // Dynamic
       totalImportKwh: dynImpKwh, totalExportKwh: dynExpKwh,
       netDynamicKwh: Math.max(0, dynImpKwh - dynExpKwh),
       dynamicRawImportCost: dynImpCost, dynamicRawExportRevenue: dynExpRev,
       dynamicNetTax: dynEB, dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
-      // Fixed
       fixedPeakImport: fxPeakImp, fixedPeakExport: fxPeakExp,
       fixedDalImport: fxDalImp, fixedDalExport: fxDalExp,
       fixedImportCost: fxImpCost, fixedFeedInCredit: fxFeedCredit,
       fixedFeedInFee: fxFeedPenalt, fixedSubscription: fxSub, fixedTotalBill: fixedBill,
-      // Totalen
       totalSavings: fixedBill - dynBill,
       savingsPct: fixedBill !== 0 ? ((fixedBill - dynBill) / fixedBill) * 100 : 0,
-      // Profielen
       hourlyProfile: hourly, weekdayProfile: weekly, perDayTotals: dayTot, perDayHourly: dayHour,
-      // EPEX-dekking
       epexPct: (epexReal + epexFall) > 0 ? Math.round(epexReal / (epexReal + epexFall) * 100) : 0,
     });
   }
-
   return out;
 }
 
