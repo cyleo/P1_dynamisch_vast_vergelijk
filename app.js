@@ -146,7 +146,9 @@ function setupEventListeners() {
 
   // Selector toggles
   document.getElementById("ev-solar-match").addEventListener("change", runSimulation);
+  document.getElementById("ev-profile")?.addEventListener("change", runSimulation);
   document.getElementById("bat-arbitrage").addEventListener("change", runSimulation);
+  document.getElementById("bat-grid-export")?.addEventListener("change", runSimulation);
   // solar-dimming-mode: onchange al in HTML, hier alleen uitleg-tekst tonen
   const solarModeEl = document.getElementById("solar-dimming-mode");
   if (solarModeEl) {
@@ -1172,7 +1174,9 @@ function ensureFullYearData() {
         const synthSolar = hasSolar
           ? peakSolar * (SOLAR_MONTH_FACTOR[month] || 0) * _daylightShape(hour)
           : 0;
-        const net = baseload - synthSolar;               // >0 = afname, <0 = teruglevering
+        // Avondpiek (17–21u): koken/verlichting/activiteit → 3× standby-baseload.
+        const activeBaseload = (hour >= 17 && hour <= 21) ? (baseload * 3.0) : baseload;
+        const net = activeBaseload - synthSolar;          // >0 = afname, <0 = teruglevering
         const mm = String(month).padStart(2, "0");
         const dd = String(day).padStart(2, "0");
         const hh = String(hour).padStart(2, "0");
@@ -1212,11 +1216,11 @@ function ensureFullYearData() {
 function _simulateCore(cfg, full = false) {
   const {
     fixedPeakRate, fixedDalRate, fixedFeedInRate, fixedVastrecht, fixedFeedInFee,
-    dynamicMarkup, dynamicVastrecht,
+    dynamicMarkup, dynamicVastrecht, stressMultiplier = 1.0,
     solarDimmingMode,
     hasHeatPump, hpWinterBaseload,
-    hasEv, evWeeklyDist, evConsumption, evSolarMatch,
-    hasBattery, batCapacity, batPower, batEfficiency, batArbitrage,
+    hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile = "home",
+    hasBattery, batCapacity, batPower, batEfficiency, batArbitrage, batGridExport = false,
   } = cfg;
 
   // ── Loop-constanten: één keer berekend, nooit meer in de forEach ──────────
@@ -1253,9 +1257,18 @@ function _simulateCore(cfg, full = false) {
     let need = evDailyKwh;
     const hourOf = r => new Date(r.timestamp).getHours();
 
+    // Commuter: auto weg op werkdagen 08:00–17:00 (incl.) → die uren tellen niet mee.
+    const unavailable = r => {
+      if (evProfile !== "commuter") return false;
+      const dt = new Date(r.timestamp);
+      const d = dt.getDay(), h = dt.getHours();
+      return d > 0 && d < 6 && h >= 8 && h <= 17;
+    };
+
     if (evSolarMatch) {
       for (const r of rowsOfDay) {
         if (need <= 0) break;
+        if (unavailable(r)) continue;
         const h = hourOf(r);
         if (h < 10 || h > 16) continue;
         const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
@@ -1266,7 +1279,7 @@ function _simulateCore(cfg, full = false) {
     }
 
     if (need > 0) {
-      const byPrice = rowsOfDay.map(r => {
+      const byPrice = rowsOfDay.filter(r => !unavailable(r)).map(r => {
         const dt = new Date(r.timestamp);
         const h = dt.getHours();
         const k = epexKey(dt);
@@ -1314,8 +1327,11 @@ function _simulateCore(cfg, full = false) {
     // Spotprijs opzoeken (epexKey gebruikt lokale tijdzone — geen UTC-drift)
     const tsKey   = epexKey(dt);
     const hasReal = epexHistory.has(tsKey);
-    const spot    = hasReal ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
+    let   spot    = hasReal ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
     if (hasReal) epexReal++; else epexFall++;
+
+    // Stresstest: vermenigvuldig alleen positieve beursprijzen (energiecrisis-simulatie).
+    if (spot > 0 && stressMultiplier !== 1.0) spot *= stressMultiplier;
 
     // Grafiekprofiel: altijd ruwe meetdata (voor hardware en dimming)
     if (full) {
@@ -1354,10 +1370,18 @@ function _simulateCore(cfg, full = false) {
         imp    += c;
       }
       // Ontladen wanneer all-in prijs boven drempel (geen DOM-read)
-      if (imp > 0 && (spot + markupBtw + eb) > 0.25 && batSoC > 0) {
-        const d = Math.min(imp, batPower, batSoC);
-        batSoC -= d;
-        imp     = Math.max(0, imp - d);
+      if ((spot + markupBtw + eb) > 0.25 && batSoC > 0) {
+        let dischargeable = Math.min(batPower, batSoC);   // uur-budget, begrensd door SoC
+        // 1) eerst eigen import dekken (nul-op-de-meter)
+        const toHouse = Math.min(imp, dischargeable);
+        imp           = Math.max(0, imp - toHouse);
+        batSoC       -= toHouse;
+        dischargeable -= toHouse;
+        // 2) optioneel: rest aan het net verkopen (echte arbitrage, alleen bij positieve spot)
+        if (batGridExport && dischargeable > 0 && spot > 0) {
+          exp    += dischargeable;
+          batSoC -= dischargeable;
+        }
       }
     }
 
@@ -1503,6 +1527,7 @@ function readSimConfig() {
     fixedFeedInFee:    parseFloat(document.getElementById("fixed-feedin-fee")?.value) || 0,
     dynamicMarkup:     parseFloat(document.getElementById("dynamic-markup").value),
     dynamicVastrecht:  parseFloat(document.getElementById("dynamic-vastrecht").value),
+    stressMultiplier:  parseFloat(document.getElementById("stress-multiplier")?.value) || 1.0,
     solarDimmingMode:  document.getElementById("solar-dimming-mode")?.value || "off",
     hasHeatPump:       document.getElementById("has-heatpump").checked,
     hpWinterBaseload:  parseFloat(document.getElementById("hp-baseload").value),
@@ -1511,11 +1536,13 @@ function readSimConfig() {
     evWeeklyDist:      parseFloat(document.getElementById("ev-dist").value),
     evConsumption:     parseFloat(document.getElementById("ev-cons").value) / 100.0,
     evSolarMatch:      document.getElementById("ev-solar-match").checked,
+    evProfile:         document.getElementById("ev-profile")?.value || "home",
     hasBattery:        document.getElementById("has-battery").checked,
     batCapacity:       parseFloat(document.getElementById("bat-cap").value),
     batPower:          parseFloat(document.getElementById("bat-power").value),
     batEfficiency:     parseFloat(document.getElementById("bat-eff").value) / 100.0,
     batArbitrage:      document.getElementById("bat-arbitrage").checked,
+    batGridExport:     document.getElementById("bat-grid-export")?.checked || false,
   };
 }
 
