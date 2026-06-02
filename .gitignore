@@ -16,3 +16,6 @@ p1_sample.json
 
 # Lokale serverbestanden
 *.log
+
+# Lokale preview-symlink (/energie/ pad-prefix) — nooit committen (recursief)
+/energie
