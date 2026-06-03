@@ -740,8 +740,10 @@ input:checked + .slider-round:before {
   flex-shrink: 0;
 }
 .glass-panel.collapsed .collapse-chevron { transform: rotate(-90deg); }
-/* Verberg alles behalve de titelbalk wanneer ingeklapt */
-.glass-panel.collapsed > *:not(.section-title) { display: none; }
+/* Verberg alles behalve de titelbalk wanneer ingeklapt.
+   !important overrulet inline display-stijlen die JS zet (bijv. de HA-sensorpicker
+   die op display:block staat na verbinden) — anders blijft die zichtbaar bij inklappen. */
+.glass-panel.collapsed > *:not(.section-title) { display: none !important; }
 .glass-panel.collapsed .section-title {
   margin-bottom: 0;
   border-bottom: none;
