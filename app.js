@@ -1634,6 +1634,7 @@ function _simulateCore(cfg, full = false) {
   //     Day-ahead prijzen zijn de dag ervoor bekend → vooruitblik is realistisch. ──
   const batChargeHrs = {};     // dayKey → Set<uur> om van het net te laden (goedkoop)
   const batDischargeHrs = {};  // dayKey → Set<uur> om te ontladen (duur)
+  const batDayMinAllin = {};   // dayKey → loAllin voor grid-arbitrage controle
   function precomputeBatterySchedule() {
     if (!hasBattery || !batArbitrage || batCapacity <= 0 || batPower <= 0) return;
     const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));   // ~uren om vol/leeg te zijn
@@ -1655,6 +1656,7 @@ function _simulateCore(cfg, full = false) {
       const loAllin = chargeHrs[0].allin;
       batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
       batDischargeHrs[dk] = new Set(expensive.filter(e => e.allin * batEfficiency > loAllin).map(e => e.hour));
+      batDayMinAllin[dk] = loAllin;
     });
   }
   precomputeBatterySchedule();
@@ -1716,15 +1718,21 @@ function _simulateCore(cfg, full = false) {
     if (hasBattery) {
       // Dynamisch circuit
       const isChargeHour = batArbitrage && batChargeHrs[dayKey]?.has(hour);
+      let currentPowerLimit = batPower;
+      
       // 1. Zonoverschot opslaan
       if (expDyn > 0 && batSoC < batCapacity) {
-        const c = Math.min(expDyn, batPower, batCapacity - batSoC);
-        batSoC += c * batEfficiency; expDyn = Math.max(0, expDyn - c);
+        const c = Math.min(expDyn, currentPowerLimit, (batCapacity - batSoC) / batEfficiency);
+        batSoC += c * batEfficiency;
+        expDyn = Math.max(0, expDyn - c);
+        currentPowerLimit -= c;
       }
       // 2. Arbitrage: van het net laden in de geplande goedkope uren
-      if (isChargeHour && batSoC < batCapacity && expDyn === 0) {
-        const c = Math.min(batPower, batCapacity - batSoC);
-        batSoC += c * batEfficiency; impDyn += c;
+      if (isChargeHour && batSoC < batCapacity && expDyn === 0 && currentPowerLimit > 0) {
+        const c = Math.min(currentPowerLimit, (batCapacity - batSoC) / batEfficiency);
+        batSoC += c * batEfficiency;
+        impDyn += c;
+        currentPowerLimit -= c;
       }
       // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
       //    (je bespaart de hele all-in prijs incl. EB, ongeacht de spotprijs), plus de
@@ -1736,12 +1744,19 @@ function _simulateCore(cfg, full = false) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
-        if (batGridExport && d > 0 && spot > 0) { expDyn += d; batSoC -= d; }
+        
+        // Terugleveren aan net mag alleen als het rendement oplevert (winstgevend is).
+        // Opbrengst (spot / 1.21) moet groter zijn dan de laadkosten (loAllin / batEfficiency).
+        const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
+        const minExportSpot = (loAllin / batEfficiency) * 1.21;
+        if (batGridExport && d > 0 && spot > minExportSpot) {
+          expDyn += d; batSoC -= d;
+        }
       }
 
       // Vast circuit
       if (expFx > 0 && batSoCFx < batCapacity) {
-        const c = Math.min(expFx, batPower, batCapacity - batSoCFx);
+        const c = Math.min(expFx, batPower, (batCapacity - batSoCFx) / batEfficiency);
         batSoCFx += c * batEfficiency; expFx = Math.max(0, expFx - c);
       }
       if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
@@ -1781,7 +1796,7 @@ function _simulateCore(cfg, full = false) {
     // Accumuleer Dynamische Resultaten
     const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
-    dynExpRev += dynExp * spot;
+    dynExpRev += dynExp * (spot / 1.21);
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
@@ -1910,7 +1925,7 @@ function downloadDataWithPrices() {
     const real = epexHistory.has(key);
     const spot = real ? epexHistory.get(key) : getFallbackSpot(month, hour);
     const allIn = spot + markupBtw + eb;                       // all-in consumentenprijs dynamisch
-    const dynCost = imp * allIn - exp * spot;                  // netto kosten dat uur (dynamisch)
+    const dynCost = imp * allIn - exp * (spot / 1.21);                  // netto kosten dat uur (dynamisch)
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
     const tariff = isPeak ? cfg.fixedPeakRate : cfg.fixedDalRate;
     const vastCost = imp * tariff - exp * cfg.fixedFeedInRate + exp * cfg.fixedFeedInFee;
