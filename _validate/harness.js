@@ -54,6 +54,17 @@ const driver = `
     ensureCleanData();
     return { data: energyData, quality: dataQuality };
   };
+  globalThis.pipeline = function(rows, cfg){
+    energyData = rows; _cleanedRef = null; fullYearStamp = ""; fullYearData = null; yearScale = 1.0;
+    epexHistory = new Map(); calibratedProfile = null; liveEnergyTax = 0.11084;
+    ensureCleanData();
+    ensureFullYearData();
+    buildCalibratedProfile();
+    const sim = _simulateCore(cfg, true);
+    return { sim, dataMeta: JSON.parse(JSON.stringify(dataMeta)), dataQuality, yearScale,
+             fullYearLen: fullYearData ? fullYearData.length : null,
+             fullYearData };
+  };
 })();
 `;
 

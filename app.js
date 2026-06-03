@@ -1419,20 +1419,50 @@ function ensureFullYearData() {
     return;
   }
 
-  // ── 1. Baseload: mediaan import tijdens nachturen 02:00–04:00 (standby) ──
-  const nightImports = [];
-  const allImports = [];
-  let peakSolar = 0;
+  // ── 1. "Typische dag" uit de eigen data: GEMIDDELD bruto import/export per maand×uur
+  //     (som/telling → energiebehoud bij jaartotalen). Een ongemeten maand leent het
+  //     profiel van de gemeten maand met de meest vergelijkbare daglengte (dichtste
+  //     SOLAR_MONTH_FACTOR) — bv. aug≈apr, nov≈feb, jun/jul≈mei. Vervangt de oude
+  //     vlakke-basislast+piek-zon synthese (verbruik te laag, zon te hoog). ──
+  const mhAcc = {}, shAcc = {}, hAcc = {};   // maand-uur / seizoen-uur / uur → accumulator
+  const daysPerMonth = {};
+  const add = (bucket, key, imp, exp, sol) => {
+    const a = (bucket[key] ||= { imp: 0, exp: 0, sol: 0, solN: 0, n: 0 });
+    a.imp += imp; a.exp += exp; a.n++;
+    if (sol != null) { a.sol += sol; a.solN++; }
+  };
   let hasSolar = false;
   energyData.forEach(r => {
-    const imp = (r.import_t1 || 0) + (r.import_t2 || 0);
-    allImports.push(imp);
-    const h = rowMeta(r).hour;
-    if (h >= 2 && h <= 4) nightImports.push(imp);
-    if (r.solar_yield != null) { hasSolar = true; if (r.solar_yield > peakSolar) peakSolar = r.solar_yield; }
+    const { month, date, hour } = rowMeta(r);
+    const t = _rowTotals(r);
+    if (t.sol != null) hasSolar = true;
+    (daysPerMonth[month] ||= new Set()).add(date);
+    add(mhAcc, `${month}-${hour}`, t.imp, t.exp, t.sol);
+    add(shAcc, `${seasonOf(month)}-${hour}`, t.imp, t.exp, t.sol);
+    add(hAcc, `${hour}`, t.imp, t.exp, t.sol);
   });
-  const baseload = nightImports.length ? _median(nightImports)
-    : (allImports.length ? _median(allImports) : 0.2);   // fallback ~0.2 kW standby
+  const MIN_PROFILE_DAYS = 5;   // een maand telt pas als 'gemeten' bij ≥5 dagen data
+  const measuredMonths = Object.keys(daysPerMonth).map(Number).filter(m => daysPerMonth[m].size >= MIN_PROFILE_DAYS);
+
+  // Bronmaand per kalendermaand: zichzelf (indien gemeten) of de gemeten maand met de
+  // dichtstbijzijnde daglengte. Eénmalig vooraf bepaald.
+  const sourceMonth = {};
+  for (let m = 1; m <= 12; m++) {
+    if (measuredMonths.includes(m)) { sourceMonth[m] = m; }
+    else if (measuredMonths.length === 0) { sourceMonth[m] = null; }
+    else sourceMonth[m] = measuredMonths.reduce((best, c) =>
+      Math.abs(SOLAR_MONTH_FACTOR[c] - SOLAR_MONTH_FACTOR[m]) < Math.abs(SOLAR_MONTH_FACTOR[best] - SOLAR_MONTH_FACTOR[m]) ? c : best);
+  }
+  const mean = a => (a && a.n) ? { imp: a.imp / a.n, exp: a.exp / a.n, sol: a.solN ? a.sol / a.solN : 0 } : null;
+
+  // Beste profiel voor (maand,uur): bronmaand → seizoen → uur → nul.
+  const synthProfileFor = (month, hour) => {
+    const src = sourceMonth[month];
+    return (src != null && mean(mhAcc[`${src}-${hour}`]))
+      || mean(shAcc[`${seasonOf(month)}-${hour}`])
+      || mean(hAcc[`${hour}`])
+      || { imp: 0, exp: 0, sol: 0 };
+  };
 
   // ── 2. Index echte uren op (maand,dag,uur) zodat we ze kunnen hergebruiken ──
   // Schrikkeldag (29 feb) heeft geen 8760-slot → vouw op 28 feb, anders ging die data verloren.
@@ -1455,23 +1485,18 @@ function ensureFullYearData() {
         const real = realByMDH.get(`${month}-${day}-${hour}`);
         if (real) { out.push(real); realHours++; continue; }
 
-        // Synthetische rij: ruwe baseload + seizoens-zon (hardware komt in de loop).
-        const synthSolar = hasSolar
-          ? peakSolar * (SOLAR_MONTH_FACTOR[month] || 0) * _daylightShape(hour)
-          : 0;
-        // Avondpiek (17–21u): koken/verlichting/activiteit → × standby-baseload.
-        const activeBaseload = (hour >= 17 && hour <= 21) ? (baseload * EVENING_PEAK_MULT) : baseload;
-        const net = activeBaseload - synthSolar;          // >0 = afname, <0 = teruglevering
+        // Synthetische rij: gemiddelde "typische dag" van de bronmaand (gelijke daglengte).
+        const p = synthProfileFor(month, hour);
         const mm = String(month).padStart(2, "0");
         const dd = String(day).padStart(2, "0");
         const hh = String(hour).padStart(2, "0");
         out.push({
           timestamp: `${year}-${mm}-${dd}T${hh}:00:00`,  // lokaal-naïef → getHours() klopt
-          import_t1: Math.max(0, net),
+          import_t1: Math.max(0, p.imp),
           import_t2: 0,
-          export_t1: Math.max(0, -net),
+          export_t1: Math.max(0, p.exp),
           export_t2: 0,
-          solar_yield: synthSolar,
+          solar_yield: hasSolar ? p.sol : null,
           _synth: true,
         });
         synthHours++;
@@ -1481,7 +1506,8 @@ function ensureFullYearData() {
 
   fullYearData = out;
   yearScale = 1.0;   // de projectie is al exact 8760u — geen extra normalisatie
-  dataMeta = { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, yearScale: 1 };
+  const synthPct = (realHours + synthHours) > 0 ? synthHours / (realHours + synthHours) : 0;
+  dataMeta = { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 };
 }
 
 // =============================================================================
@@ -2092,12 +2118,22 @@ function updateUIElements() {
   if (badge && prognosisDismissed) {
     badge.style.display = "none";
   } else if (badge) {
+    const setBadgeTone = (orange) => {
+      badge.style.background = orange ? "rgba(255,165,0,0.12)" : "rgba(56,189,248,0.10)";
+      badge.style.borderColor = orange ? "rgba(255,165,0,0.35)" : "rgba(56,189,248,0.30)";
+      badge.style.color = orange ? "var(--accent-orange)" : "var(--accent-cyan)";
+    };
     if (dataMeta.mode === "seasonal") {
       badge.style.display = "";
-      document.getElementById("prognosis-text").innerHTML =
-        `${dataMeta.realDays} dagen eigen data aangevuld tot een volledig jaarverbruik via slimme seizoensprofielen.`;
+      const pct = Math.round((dataMeta.synthPct || 0) * 100);
+      const prominent = (dataMeta.synthPct || 0) > 0.40;   // >40% geschat → nadrukkelijke melding
+      setBadgeTone(prominent);
+      document.getElementById("prognosis-text").innerHTML = prominent
+        ? `je hebt maar <strong>${dataMeta.realDays} dagen</strong> data, dus <strong>~${pct}% van het jaar is geschat</strong>. Ongemeten maanden zijn ingevuld met je eigen typische dag van de maand met gelijke daglengte (bijv. augustus ≈ april). <strong>Meer maanden meten maakt de schatting flink nauwkeuriger.</strong>`
+        : `${dataMeta.realDays} dagen eigen data aangevuld tot een volledig jaar (${pct}% geschat) via je eigen typische dag per maand.`;
     } else if (dataMeta.mode === "linear") {
       badge.style.display = "";
+      setBadgeTone(false);
       document.getElementById("prognosis-text").innerHTML =
         `${dataMeta.realDays} dagen eigen data <strong>lineair</strong> doorgerekend naar een jaar (×${dataMeta.yearScale.toFixed(1)}, géén seizoenscorrectie). Zet <em>Jaarprognose</em> aan voor een seizoensgewogen schatting.`;
     } else {
