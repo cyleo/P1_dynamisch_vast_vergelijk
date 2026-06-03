@@ -50,7 +50,6 @@ function initDismissHandlers() {
 // ── Simulatie-constanten (voorheen verspreide magic numbers) ─────────────────
 const EV_MAX_CHARGE_KW = 11.0;   // max laadvermogen EV per uur (kWh)
 const BATTERY_C_RATE = 0.5;    // laad/ontlaadvermogen = capaciteit × C-rate
-const BATTERY_DISCHARGE_ALLIN = 0.25;   // accu ontlaadt áltijd boven deze all-in prijs (zonne-zelfconsumptie); arbitrage voegt geplande uren toe
 const EVENING_PEAK_MULT = 3.0;    // koken/verlichting: synthetische avond × baseload (17–21u)
 
 // Maandelijkse warmtepomp-belastingfactor o.b.v. NL klimaat-graaddagen (HDD, basis 18°C,
@@ -1716,18 +1715,23 @@ function _simulateCore(cfg, full = false) {
     // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
     if (hasBattery) {
       // Dynamisch circuit
+      const isChargeHour = batArbitrage && batChargeHrs[dayKey]?.has(hour);
+      // 1. Zonoverschot opslaan
       if (expDyn > 0 && batSoC < batCapacity) {
         const c = Math.min(expDyn, batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; expDyn = Math.max(0, expDyn - c);
       }
-      if (batArbitrage && batChargeHrs[dayKey]?.has(hour) && batSoC < batCapacity && expDyn === 0) {
+      // 2. Arbitrage: van het net laden in de geplande goedkope uren
+      if (isChargeHour && batSoC < batCapacity && expDyn === 0) {
         const c = Math.min(batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; impDyn += c;
       }
-      // Ontladen: altijd bij een dure all-in prijs (zonne-zelfconsumptie), én op de
-      // geplande arbitrage-uren (vangt ook een matige avondpiek met goedkope nacht).
-      const wantDischarge = (spot + markupBtw + eb) > BATTERY_DISCHARGE_ALLIN
-        || (batArbitrage && batDischargeHrs[dayKey]?.has(hour));
+      // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
+      //    (je bespaart de hele all-in prijs incl. EB, ongeacht de spotprijs), plus de
+      //    geplande dure arbitrage-uren voor net-export. NIET tijdens een laad-uur,
+      //    anders zou de accu in hetzelfde uur laden én ontladen (rondloop-verlies).
+      const wantDischarge = !isChargeHour
+        && (impDyn > 0 || (batArbitrage && batDischargeHrs[dayKey]?.has(hour)));
       if (wantDischarge && batSoC > 0 && expDyn === 0) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
