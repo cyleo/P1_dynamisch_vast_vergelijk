@@ -50,8 +50,7 @@ function initDismissHandlers() {
 // ── Simulatie-constanten (voorheen verspreide magic numbers) ─────────────────
 const EV_MAX_CHARGE_KW = 11.0;   // max laadvermogen EV per uur (kWh)
 const BATTERY_C_RATE = 0.5;    // laad/ontlaadvermogen = capaciteit × C-rate
-const BATTERY_ARBITRAGE_SPOTMAX = 0.01;   // accu koopt van net wanneer spot ≤ dit (€/kWh)
-const BATTERY_DISCHARGE_ALLIN = 0.25;   // accu ontlaadt wanneer all-in prijs > dit (€/kWh)
+const BATTERY_DISCHARGE_ALLIN = 0.25;   // accu ontlaadt áltijd boven deze all-in prijs (zonne-zelfconsumptie); arbitrage voegt geplande uren toe
 const EVENING_PEAK_MULT = 3.0;    // koken/verlichting: synthetische avond × baseload (17–21u)
 
 // Cacht per rij de afgeleide lokale tijdvelden (één Date-parse i.p.v. tig in de 8760-loops).
@@ -1618,6 +1617,38 @@ function _simulateCore(cfg, full = false) {
   }
   precomputeEVSchedules();
 
+  // ── Accu-arbitrage: per dag de goedkoopste laad- en duurste ontlaad-uren bepalen.
+  //     Vervangt de starre vaste drempels (laden ≤€0,01, ontladen >€0,25), die in
+  //     herfst/winter/lente bijna nooit triggeren. Vangt nu de échte dagspread
+  //     (bv. goedkope nacht → dure avondpiek), gated op het round-trip-rendement.
+  //     Day-ahead prijzen zijn de dag ervoor bekend → vooruitblik is realistisch. ──
+  const batChargeHrs = {};     // dayKey → Set<uur> om van het net te laden (goedkoop)
+  const batDischargeHrs = {};  // dayKey → Set<uur> om te ontladen (duur)
+  function precomputeBatterySchedule() {
+    if (!hasBattery || !batArbitrage || batCapacity <= 0 || batPower <= 0) return;
+    const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));   // ~uren om vol/leeg te zijn
+    Object.keys(dayRows).forEach(dk => {
+      const priced = dayRows[dk].map(r => {
+        const { hour, month, epexKey: k } = rowMeta(r);
+        let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+        if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+        return { hour, allin: sp + markupBtw + eb };
+      });
+      if (priced.length < 3) return;
+      const asc = [...priced].sort((a, b) => a.allin - b.allin);
+      const cheap = asc.slice(0, K), expensive = asc.slice(-K);
+      const hiAllin = expensive[expensive.length - 1].allin;
+      // Zelfconsumptie-arbitrage: ontladen bespaart de all-in importprijs; 1 kWh leveren
+      // kost (1/rendement)×laad-all-in. Rendabel als ontlaad-all-in × rendement > laad-all-in.
+      const chargeHrs = cheap.filter(c => hiAllin * batEfficiency > c.allin);
+      if (chargeHrs.length === 0) return;     // geen rendabele spread vandaag
+      const loAllin = chargeHrs[0].allin;
+      batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
+      batDischargeHrs[dk] = new Set(expensive.filter(e => e.allin * batEfficiency > loAllin).map(e => e.hour));
+    });
+  }
+  precomputeBatterySchedule();
+
   // Accumulatoren
   let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
   let dynImpCost = 0, dynExpRev = 0, dynImpKwh = 0, dynExpKwh = 0;
@@ -1678,11 +1709,15 @@ function _simulateCore(cfg, full = false) {
         const c = Math.min(expDyn, batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; expDyn = Math.max(0, expDyn - c);
       }
-      if (batArbitrage && spot <= BATTERY_ARBITRAGE_SPOTMAX && batSoC < batCapacity && expDyn === 0) {
+      if (batArbitrage && batChargeHrs[dayKey]?.has(hour) && batSoC < batCapacity && expDyn === 0) {
         const c = Math.min(batPower, batCapacity - batSoC);
         batSoC += c * batEfficiency; impDyn += c;
       }
-      if ((spot + markupBtw + eb) > BATTERY_DISCHARGE_ALLIN && batSoC > 0 && expDyn === 0) {
+      // Ontladen: altijd bij een dure all-in prijs (zonne-zelfconsumptie), én op de
+      // geplande arbitrage-uren (vangt ook een matige avondpiek met goedkope nacht).
+      const wantDischarge = (spot + markupBtw + eb) > BATTERY_DISCHARGE_ALLIN
+        || (batArbitrage && batDischargeHrs[dayKey]?.has(hour));
+      if (wantDischarge && batSoC > 0 && expDyn === 0) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
@@ -1763,12 +1798,11 @@ function _simulateCore(cfg, full = false) {
   fxPeakImp *= yearScale; fxDalImp *= yearScale; fxPeakExp *= yearScale; fxDalExp *= yearScale;
   dynImpCost *= yearScale; dynExpRev *= yearScale; dynImpKwh *= yearScale; dynExpKwh *= yearScale;
 
-  // ── EINDTOTALEN REKENING (Fiscaal Zuiver Model 2027, Vector 4 Fix) ──
-  const standardEB2026 = 0.11084;
-  const fixedPeakBase = Math.max(0, fixedPeakRate - standardEB2026);
-  const fixedDalBase = Math.max(0, fixedDalRate - standardEB2026);
-
-  const fxImpCost = fxPeakImp * (fixedPeakBase + eb) + fxDalImp * (fixedDalBase + eb);
+  // ── EINDTOTALEN REKENING (Fiscaal Zuiver Model 2027) ──
+  // Het vaste piek/dal-tarief is het all-in tarief zoals getekend (incl. EB-bij-tekenen).
+  // We rekenen er rechtstreeks mee: de energiebelasting-schuif (een dynamisch-contract-
+  // parameter, ook live bijgewerkt door Frank) mag het vaste contract NIET stil herprijzen.
+  const fxImpCost = fxPeakImp * fixedPeakRate + fxDalImp * fixedDalRate;
   const fxFeedCredit = (fxPeakExp + fxDalExp) * fixedFeedInRate;
   const fxFeedPenalt = (fxPeakExp + fxDalExp) * fixedFeedInFee;
   const fxSub = fixedVastrecht * 12.0;
