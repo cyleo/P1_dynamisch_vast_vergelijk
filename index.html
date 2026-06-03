@@ -785,8 +785,9 @@
             <div class="form-group" style="margin-bottom: 0;">
               <label for="hp-baseload">Winter stooklast <span class="info-icon" tabindex="0">i<span
                     class="info-tooltip">Extra continu elektrisch vermogen (kW) dat de warmtepomp gemiddeld verbruikt
-                    tijdens de wintermaanden voor ruimteverwarming. Dit verhoogt je basisverbruik fors in de koude
-                    periode.</span></span> <span class="val-badge" id="hp-baseload-val">0.0 kW</span></label>
+                    tijdens de wintermaanden voor ruimteverwarming. De last wordt over het jaar verdeeld volgens het
+                    Nederlandse klimaat (graaddagen): piek in jan/dec, geleidelijk aflopend, met een kleine zomer-vloer
+                    voor warmtapwater.</span></span> <span class="val-badge" id="hp-baseload-val">0.0 kW</span></label>
               <input type="range" id="hp-baseload" min="0.0" max="4.0" step="0.1" value="0.0" data-suffix=" kW">
             </div>
           </div>
@@ -1238,7 +1239,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=32"></script>
+  <script src="/energie/app.js?v=33"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

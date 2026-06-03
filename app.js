@@ -53,6 +53,17 @@ const BATTERY_C_RATE = 0.5;    // laad/ontlaadvermogen = capaciteit × C-rate
 const BATTERY_DISCHARGE_ALLIN = 0.25;   // accu ontlaadt áltijd boven deze all-in prijs (zonne-zelfconsumptie); arbitrage voegt geplande uren toe
 const EVENING_PEAK_MULT = 3.0;    // koken/verlichting: synthetische avond × baseload (17–21u)
 
+// Maandelijkse warmtepomp-belastingfactor o.b.v. NL klimaat-graaddagen (HDD, basis 18°C,
+// De Bilt-normaal 1991–2020), genormaliseerd op de wintermaanden (dec–feb gem. ≈ 1,3 =
+// de "winter stooklast"-schuif). Zomer houdt een vloer (~0,15) voor warmtapwater.
+// Realistischere seizoensvorm dan de oude 3-staps 1,3/0,7/0,15: koudste maand (jan) piekt
+// en de schouderseizoenen lopen geleidelijk. NB: dit lijnt nog NIET per dag uit met de
+// EPEX-koudepieken — daarvoor zijn KNMI-daggegevens (graaddagen per dag) nodig.
+const HEATPUMP_HDD_FACTOR = {
+  1: 1.38, 2: 1.21, 3: 1.10, 4: 0.77, 5: 0.44, 6: 0.17,
+  7: 0.15, 8: 0.15, 9: 0.29, 10: 0.66, 11: 1.02, 12: 1.31,
+};
+
 // Cacht per rij de afgeleide lokale tijdvelden (één Date-parse i.p.v. tig in de 8760-loops).
 // Lokale dayKey houdt de daggroepering consistent met getHours()/getDay() (geen UTC-drift).
 function rowMeta(row) {
@@ -1682,8 +1693,8 @@ function _simulateCore(cfg, full = false) {
     // Thermische stooklast (Warmtepomp)
     let hpLoad = 0;
     if (hasHeatPump) {
-      const sf = month >= 5 && month <= 9 ? 0.15 : (month >= 11 || month <= 2 ? 1.3 : 0.7);
-      const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;
+      const sf = HEATPUMP_HDD_FACTOR[month] || 0.15;   // seizoensvorm via klimaat-graaddagen
+      const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;  // 's nachts kouder/setback-herstel
       hpLoad = hpWinterBaseload * sf * tf;
     }
 
