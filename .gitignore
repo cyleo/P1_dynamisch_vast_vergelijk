@@ -3,6 +3,8 @@ energy-3.csv
 p1_sample.json
 *.csv
 *.json
+# Uitzondering: lokale-preview config (geen persoonlijke data)
+!serve.json
 
 # Claude project bestanden
 .claude/

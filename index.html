@@ -1042,6 +1042,44 @@
           <div id="hw-chart-body" style="padding:0 0.25rem;"></div>
         </section>
 
+        <!-- Uitleg: hoe wordt de dynamische prijs berekend? -->
+        <details class="glass-panel" id="dynprice-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;">
+          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
+            💶 Hoe wordt de dynamische prijs per uur berekend?
+            <button type="button" class="dismiss-x" data-dismiss="dynprice-explainer" data-persist title="Verberg deze uitleg">×</button>
+          </summary>
+          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
+            <p style="margin:0 0 0.7rem;">Bij een dynamisch contract verandert je kale stroomprijs <strong>elk
+              uur</strong>. Wat je per kWh <em>afneemt</em> betaalt, is opgebouwd uit vier delen:</p>
+            <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.18);border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.7rem;font-size:0.8rem;">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;line-height:2;">
+                <span style="background:rgba(0,242,254,0.18);padding:0.1rem 0.45rem;border-radius:5px;">EPEX-beursprijs<br><span style="font-size:0.68rem;color:var(--text-muted);">dat uur</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(102,126,234,0.18);padding:0.1rem 0.45rem;border-radius:5px;">opslag<br><span style="font-size:0.68rem;color:var(--text-muted);">leverancier</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(255,165,0,0.18);padding:0.1rem 0.45rem;border-radius:5px;">21% BTW<br><span style="font-size:0.68rem;color:var(--text-muted);">over die twee</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(56,239,125,0.18);padding:0.1rem 0.45rem;border-radius:5px;">energiebelasting<br><span style="font-size:0.68rem;color:var(--text-muted);">vast per kWh</span></span>
+                <span style="font-size:1.1rem;">=</span>
+                <span style="background:var(--accent-cyan);color:#000;font-weight:700;padding:0.1rem 0.45rem;border-radius:5px;">all-in prijs</span>
+              </div>
+            </div>
+            <p style="margin:0 0 0.5rem;"><strong>Rekenvoorbeeld</strong> (één uur, met de huidige instellingen):</p>
+            <div id="dynprice-example" style="font-family:var(--font-display);font-size:0.82rem;background:rgba(255,255,255,0.03);border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;line-height:1.9;">
+              <em style="color:var(--text-muted);font-family:var(--font-body);">Voorbeeld verschijnt zodra een simulatie is gedraaid…</em>
+            </div>
+            <ul style="margin:0 0 0.4rem 1.1rem;padding:0;">
+              <li><strong>Teruglevering</strong> wordt vergoed tegen de <em>kale</em> EPEX-prijs van dat uur (zonder
+                opslag/EB). Bij een negatieve prijs betaal je juist bíj om terug te leveren.</li>
+              <li><strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle
+                afgenomen kWh — je teruglevering wordt er niet meer van afgetrokken.</li>
+            </ul>
+            <p style="margin:0;font-size:0.78rem;">📋 De volledige uur-voor-uur-uitwerking staat in de tabel
+              <strong>Dynamisch Contract Specificatie</strong> hieronder — klik daar op <em>“Afname (EPEX + opslag +
+                BTW)”</em> voor de tabel per uur of per dag.</p>
+          </div>
+        </details>
+
         <!-- Detailed side-by-side comparison tables -->
         <div class="comparison-grid">
 
@@ -1165,6 +1203,22 @@
 
         </div>
 
+        <!-- Download: eigen data met gematchte EPEX-prijzen -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0.4rem;margin-top:0.5rem;">
+          <button class="btn-secondary" onclick="downloadDataWithPrices()" style="display:inline-flex;align-items:center;gap:0.5rem;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download je data met EPEX-prijzen (CSV)
+          </button>
+          <span style="font-size:0.72rem;color:var(--text-muted);text-align:center;max-width:440px;line-height:1.5;">
+            Eén regel per uur met je afname/teruglevering, de gematchte beursprijs (echt of geschat) en de
+            berekende kosten voor beide contracten. Opent in Excel of Google Sheets.
+          </span>
+        </div>
+
       </main>
 
     </div>
@@ -1172,7 +1226,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=27"></script>
+  <script src="/energie/app.js?v=28"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

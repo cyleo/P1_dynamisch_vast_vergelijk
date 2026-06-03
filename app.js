@@ -1598,10 +1598,12 @@ function _simulateCore(cfg, full = false) {
       weekly[dow].dynCosts.push(dynHrCost);
       weekly[dow].fixedCosts.push(fxHrCost);
 
-      if (!dayTot[dayKey]) dayTot[dayKey] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0 };
+      if (!dayTot[dayKey]) dayTot[dayKey] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0 };
       const pd = dayTot[dayKey];
       pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
       pd.impKwh += dynImp; pd.expKwh += dynExp;
+      pd.impCost += dynImp * allIn;   // all-in afname-kosten incl. EB (voor de "per dag"-detailtabel)
+      pd.expRev += dynExp * spot;     // teruglever-opbrengst tegen spotprijs
       if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
 
       if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
@@ -1680,6 +1682,61 @@ function readSimConfig() {
     batArbitrage: document.getElementById("bat-arbitrage").checked,
     batGridExport: document.getElementById("bat-grid-export")?.checked || false,
   };
+}
+
+// ── Download: eigen meetdata met gematchte (historische) EPEX-prijzen ─────────
+// Exporteert per uur de afname/teruglevering + de bijbehorende beursprijs en de
+// daaruit volgende kosten voor zowel het dynamische als het vaste contract.
+// CSV met ;-scheiding + BOM zodat Nederlandse Excel het netjes opent.
+function downloadDataWithPrices() {
+  if (!energyData || energyData.length === 0) {
+    alert("Er is nog geen data geladen om te downloaden. Upload eerst je P1-data of koppel Home Assistant.");
+    return;
+  }
+  const cfg = readSimConfig();
+  const eb = liveEnergyTax;
+  const markupBtw = cfg.dynamicMarkup * 1.21;
+
+  const header = [
+    "tijdstip", "afname_kWh", "teruglevering_kWh", "opwek_kWh",
+    "epex_spot_eur_per_kWh_incl_btw", "prijs_bron",
+    "dynamisch_allin_eur_per_kWh", "dynamisch_netto_kosten_eur",
+    "vast_tarief_eur_per_kWh", "vast_netto_kosten_eur",
+  ];
+  const lines = [header.join(";")];
+
+  energyData.forEach(r => {
+    const { hour, month, dow, epexKey: key } = rowMeta(r);
+    const imp = (r.import_t1 || 0) + (r.import_t2 || 0);
+    const exp = (r.export_t1 || 0) + (r.export_t2 || 0);
+    const sol = r.solar_yield != null ? Number(r.solar_yield) : null;
+    const real = epexHistory.has(key);
+    const spot = real ? epexHistory.get(key) : getFallbackSpot(month, hour);
+    const allIn = spot + markupBtw + eb;                       // all-in consumentenprijs dynamisch
+    const dynCost = imp * allIn - exp * spot;                  // netto kosten dat uur (dynamisch)
+    const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
+    const tariff = isPeak ? cfg.fixedPeakRate : cfg.fixedDalRate;
+    const vastCost = imp * tariff - exp * cfg.fixedFeedInRate + exp * cfg.fixedFeedInFee;
+    lines.push([
+      r.timestamp, imp.toFixed(4), exp.toFixed(4), sol == null ? "" : sol.toFixed(4),
+      spot.toFixed(5), real ? "echt" : "geschat",
+      allIn.toFixed(5), dynCost.toFixed(5),
+      tariff.toFixed(4), vastCost.toFixed(5),
+    ].join(";"));
+  });
+
+  const csv = "﻿" + lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const from = energyData[0].timestamp.slice(0, 10);
+  const till = energyData[energyData.length - 1].timestamp.slice(0, 10);
+  a.href = url;
+  a.download = `energie-data-met-epex-prijzen_${from}_tot_${till}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // =============================================================================
@@ -1834,6 +1891,36 @@ function runSimulation() {
   renderMonthlyChart();
   renderSimChart();
   renderHwChart();
+  renderDynPriceExample();
+}
+
+// Vult het rekenvoorbeeld in de "Hoe wordt de dynamische prijs berekend?"-uitleg
+// met een representatief avonduur (18:00), op basis van de huidige instellingen.
+function renderDynPriceExample() {
+  const box = document.getElementById("dynprice-example");
+  if (!box) return;
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.018;
+  const eb = liveEnergyTax;
+
+  let spot = null;
+  const hp = activeSimulation?.hourlyProfile;
+  if (hp && hp[18]?.spots?.length) {
+    const s = [...hp[18].spots].sort((a, b) => a - b);
+    spot = s[Math.floor(s.length / 2)];   // mediaan spotprijs om 18:00
+  }
+  if (spot == null) spot = getFallbackSpot(1, 18);
+
+  const kaleEpex = spot / 1.21;            // spot is incl. BTW → toon de kale beursprijs
+  const btw = (kaleEpex + markup) * 0.21;
+  const allIn = spot + markup * 1.21 + eb;
+  const pct = activeSimulation?.epexPct ?? 0;
+  const bron = pct === 100 ? "echte EPEX" : pct > 0 ? `${pct}% echte EPEX` : "geschatte prijs";
+
+  const part = (val, lbl) => `<span>€${val.toFixed(3)}</span> <span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);">${lbl}</span>`;
+  box.innerHTML =
+    `${part(kaleEpex, "EPEX")} + ${part(markup, "opslag")} + ${part(btw, "BTW")} + ${part(eb, "EB")} = ` +
+    `<span style="color:var(--accent-cyan);font-weight:700;">€${allIn.toFixed(3)}/kWh</span>` +
+    `<span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);"> &nbsp;(voorbeeld 18:00 · ${bron})</span>`;
 }
 
 
