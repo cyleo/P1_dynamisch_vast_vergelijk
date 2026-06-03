@@ -183,6 +183,33 @@
       margin-left: 0.4rem;
       vertical-align: middle;
     }
+
+    /* Wegklik-knop (×) voor uitleg/waarschuwingsboxen */
+    .dismiss-x {
+      position: absolute;
+      top: 0.45rem;
+      right: 0.55rem;
+      width: 20px;
+      height: 20px;
+      line-height: 1;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+      z-index: 2;
+    }
+
+    .dismiss-x:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--text-main);
+    }
   </style>
 </head>
 
@@ -431,9 +458,9 @@
             <div class="form-group" style="margin-bottom:1rem;">
               <label style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.3rem; display:block;">
                 Periode ophalen
-                <span class="val-badge" id="ha-days-val">10 dagen</span>
+                <span class="val-badge" id="ha-days-val">365 dagen</span>
               </label>
-              <input type="range" id="ha-days" min="3" max="365" step="1" value="10" data-suffix=" dagen"
+              <input type="range" id="ha-days" min="3" max="365" step="1" value="365" data-suffix=" dagen"
                 oninput="document.getElementById('ha-days-val').textContent=this.value+' dagen'">
             </div>
 
@@ -764,9 +791,10 @@
       <main class="main-dashboard">
 
         <!-- Uitleg voor nieuwe gebruikers — inklapbaar, standaard open -->
-        <details class="glass-panel" id="intro-explainer" style="margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
+        <details class="glass-panel" id="intro-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
           <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
             💡 Hoe werkt dit?
+            <button type="button" class="dismiss-x" data-dismiss="intro-explainer" data-persist title="Verberg deze uitleg">×</button>
           </summary>
           <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
             <p style="margin:0 0 0.6rem;">Deze tool vergelijkt voor <strong>jouw eigen stroomverbruik</strong> twee
@@ -826,19 +854,21 @@
         </div>
 
         <!-- Scope-toelichting bij de kerncijfers -->
-        <div style="font-size:0.76rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem;display:flex;gap:0.45rem;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:0.6rem 0.8rem;">
+        <div id="scope-note" style="position:relative;font-size:0.76rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem;display:flex;gap:0.45rem;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.8rem;">
           <span style="flex-shrink:0;">ℹ️</span>
           <span>Deze bedragen zijn <strong>alleen de stroom-leveringskosten</strong> (energie + opslag/belasting + vast
             leveringstarief). <strong>Niet</strong> inbegrepen: netbeheerkosten (~€400–600/jaar) en de vaste
             belastingvermindering (~€525/jaar korting) — die zijn voor beide contracten gelijk en vallen weg in de
             vergelijking. Vergelijk daarom het <strong>verschil</strong>, niet het absolute bedrag met je echte
             jaarafrekening.</span>
+          <button type="button" class="dismiss-x" data-dismiss="scope-note" data-persist title="Verberg deze toelichting">×</button>
         </div>
 
         <!-- Prognose-badge: getoond wanneer minder dan een jaar eigen data is aangevuld -->
         <div id="prognosis-badge"
-          style="display:none;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:1rem;font-size:0.8rem;color:var(--accent-cyan);line-height:1.5;">
+          style="display:none;position:relative;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.9rem;margin-bottom:1rem;font-size:0.8rem;color:var(--accent-cyan);line-height:1.5;">
           <strong>📊 Prognose geactiveerd:</strong> <span id="prognosis-text"></span>
+          <button type="button" class="dismiss-x" data-dismiss="prognosis-badge" title="Verberg deze melding">×</button>
         </div>
 
         <!-- Custom SVG Energy Chart -->
@@ -1142,7 +1172,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=26"></script>
+  <script src="/energie/app.js?v=27"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

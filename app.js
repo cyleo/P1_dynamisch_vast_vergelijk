@@ -16,6 +16,36 @@ let fullYearStamp = "";     // cache-stempel: vermijdt herbouw als energyData/to
 let yearScale = 1.0;    // normaliseert de som van de loop naar exact één jaar (8760u / #uren)
 let dataMeta = { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 };
 
+// ── Wegklikbare uitleg/waarschuwingen ───────────────────────────────────────
+// Statische boxen (intro, scope-note) onthouden hun weggeklikt-status in localStorage;
+// dynamisch gerenderde banners (EPEX-waarschuwing, prognose-badge) per sessie via vlag.
+let epexWarnDismissed = false;
+let prognosisDismissed = false;
+
+function isDismissed(id) {
+  try { return localStorage.getItem("dismiss_" + id) === "1"; } catch (e) { return false; }
+}
+function applyPersistedDismissals() {
+  ["intro-explainer", "scope-note"].forEach(id => {
+    if (isDismissed(id)) { const el = document.getElementById(id); if (el) el.style.display = "none"; }
+  });
+}
+function initDismissHandlers() {
+  applyPersistedDismissals();
+  // Capture-fase: vóór de details-toggle / globale tooltip-click, zodat de × alleen wegklikt.
+  document.addEventListener("click", (e) => {
+    const x = e.target.closest(".dismiss-x");
+    if (!x) return;
+    e.preventDefault(); e.stopPropagation();
+    const id = x.getAttribute("data-dismiss");
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+    if (x.hasAttribute("data-persist")) { try { localStorage.setItem("dismiss_" + id, "1"); } catch (_) {} }
+    if (id === "epex-warn-box") epexWarnDismissed = true;
+    if (id === "prognosis-badge") prognosisDismissed = true;
+  }, true);
+}
+
 // ── Simulatie-constanten (voorheen verspreide magic numbers) ─────────────────
 const EV_MAX_CHARGE_KW = 11.0;   // max laadvermogen EV per uur (kWh)
 const BATTERY_C_RATE = 0.5;    // laad/ontlaadvermogen = capaciteit × C-rate
@@ -288,7 +318,14 @@ function setupEventListeners() {
   // Setup Modal
   document.getElementById("show-setup-btn").addEventListener("click", showSetupModal);
   document.getElementById("modal-close").addEventListener("click", closeSetupModal);
-  document.getElementById("modal-backdrop").addEventListener("click", closeSetupModal);
+  // Alleen sluiten bij klik op de achtergrond zelf — niet op klikken bínnen de modal
+  // (anders sloten de "Optie A/B"-tabknoppen de gids via event-bubbling).
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeSetupModal();
+  });
+
+  // Wegklik-knoppen voor uitleg/waarschuwingen activeren
+  initDismissHandlers();
 }
 
 // Restore saved HA credentials from localStorage
@@ -1808,7 +1845,9 @@ function updateUIElements() {
   // ── Prognose-badge: toelichting op de jaarbasis afhankelijk van de modus ──
   const badge = document.getElementById("prognosis-badge");
   const extrapolated = dataMeta.mode === "seasonal" || dataMeta.mode === "linear";
-  if (badge) {
+  if (badge && prognosisDismissed) {
+    badge.style.display = "none";
+  } else if (badge) {
     if (dataMeta.mode === "seasonal") {
       badge.style.display = "";
       document.getElementById("prognosis-text").innerHTML =
@@ -2676,9 +2715,10 @@ function renderHwChart() {
 
   // EPEX warning — onderscheidt 3 lagen: volledig live · gekalibreerd · generiek
   const epexPct = activeSimulation.epexPct ?? 0;
-  if (epexPct < 100) {
+  if (epexPct < 100 && !epexWarnDismissed) {
     const warn = document.createElement("div");
-    warn.style.cssText = "background:rgba(255,165,0,0.12);border:1px solid rgba(255,165,0,0.3);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--accent-orange);";
+    warn.id = "epex-warn-box";
+    warn.style.cssText = "position:relative;background:rgba(255,165,0,0.12);border:1px solid rgba(255,165,0,0.3);border-radius:6px;padding:0.5rem 1.9rem 0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--accent-orange);";
     const calibrated = calibratedProfile && calibrationMeta.buckets > 0;
     if (epexPct === 0 && !calibrated) {
       // Niets live, geen kalibratie → generiek noodprofiel (grote waarschuwing).
@@ -2697,6 +2737,10 @@ function renderHwChart() {
             ? `gevuld met je <strong>eigen gekalibreerde prijsprofiel</strong> (${calibrationMeta.samples} echte uurprijzen).`
             : `geschat via het generieke seizoensprofiel.`);
     }
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "dismiss-x"; x.textContent = "×";
+    x.title = "Verberg deze melding"; x.setAttribute("data-dismiss", "epex-warn-box");
+    warn.appendChild(x);
     container.appendChild(warn);
   }
 
