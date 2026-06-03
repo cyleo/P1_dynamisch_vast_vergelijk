@@ -621,6 +621,14 @@
             <span class="collapse-chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
           </h2>
 
+          <!-- Uitleg: vinkjes simuleren het TOEVOEGEN van apparatuur -->
+          <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.18);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.8rem;font-size:0.74rem;color:var(--text-muted);line-height:1.55;">
+            💡 Deze schakelaars simuleren het <strong>tóévoegen</strong> van apparatuur. Heb je een EV, accu of
+            warmtepomp <strong>al</strong> — en zit dat verbruik al in je geïmporteerde data — laat het vinkje dan
+            <strong>uit</strong>, anders telt het dubbel. Zet een schakelaar alleen aan om te zien wat <em>aanschaf</em>
+            zou opleveren.
+          </div>
+
           <!-- Solar Dimming / Curtailment -->
           <div style="padding:0.6rem 0; border-bottom:1px solid rgba(255,255,255,0.06); margin-bottom:0.5rem;">
             <div style="font-size:0.82rem;font-weight:600;color:var(--text-main);margin-bottom:0.35rem;">
@@ -1230,7 +1238,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=30"></script>
+  <script src="/energie/app.js?v=31"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
