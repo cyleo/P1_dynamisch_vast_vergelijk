@@ -43,6 +43,7 @@ function initDismissHandlers() {
     if (x.hasAttribute("data-persist")) { try { localStorage.setItem("dismiss_" + id, "1"); } catch (_) {} }
     if (id === "epex-warn-box") epexWarnDismissed = true;
     if (id === "prognosis-badge") prognosisDismissed = true;
+    if (id === "data-quality-banner") dataQualityDismissed = true;
   }, true);
 }
 
@@ -1245,6 +1246,127 @@ function _daylightShape(hour) {
 }
 
 const DAY_MS = 24 * 3600 * 1000;
+const HOUR_MS = 3600 * 1000;
+
+// ════════════════════════════════════════════════════════════════════════════
+// DATA-KWALITEIT: importcheck, opschonen & gaten vullen
+// ────────────────────────────────────────────────────────────────────────────
+// Na elke import wordt energyData tot een GATENLOZE uurreeks gemaakt over de eigen
+// meetperiode [eerste, laatste uur]. Anomalieën (negatief/absurd) eruit; kleine
+// gaten (≤ GAP_SMALL_MAX_HOURS) lineair geïnterpoleerd; langere ontbrekende
+// periodes ingevuld met een "standaardprofiel" = mediaan dagverloop (seizoen×uur)
+// uit de eigen data. dataQuality houdt de samenvatting bij voor de gebruiker.
+// ════════════════════════════════════════════════════════════════════════════
+const GAP_SMALL_MAX_HOURS = 6;   // ≤6u = interpoleren, >6u = standaardprofiel
+let dataQuality = null;          // { expectedHours, realHours, interpHours, profileHours, completenessPct, largePeriods[], spanFrom, spanTo }
+let dataQualityDismissed = false;
+let _cleanedRef = null;          // referentie naar de laatst-opgeschoonde energyData-array (idempotentie)
+
+function _rowTotals(r) {
+  return {
+    imp: (r.import_t1 || 0) + (r.import_t2 || 0),
+    exp: (r.export_t1 || 0) + (r.export_t2 || 0),
+    sol: r.solar_yield != null ? Number(r.solar_yield) : null,
+  };
+}
+
+// Roept cleanAndFillEnergyData() aan zodra een nieuwe (nog niet opgeschoonde) array is geladen.
+function ensureCleanData() {
+  if (!energyData || energyData.length < 2) { dataQuality = null; return; }
+  if (energyData === _cleanedRef) return;   // al opgeschoond
+  cleanAndFillEnergyData();
+  _cleanedRef = energyData;
+}
+
+function cleanAndFillEnergyData() {
+  // 1. Dedup op uur (laatste meting wint) + sorteer
+  const byHour = new Map();
+  energyData.forEach(r => {
+    const t = new Date(r.timestamp).getTime();
+    if (isNaN(t)) return;
+    byHour.set(Math.floor(t / HOUR_MS) * HOUR_MS, r);
+  });
+  const keys0 = [...byHour.keys()].sort((a, b) => a - b);
+  if (keys0.length < 2) { dataQuality = null; return; }
+
+  const first = keys0[0], last = keys0[keys0.length - 1];
+  const expectedHours = Math.round((last - first) / HOUR_MS) + 1;
+
+  // 2. Anomalie-schoonmaak + bouw mediaan-profiel (seizoen×uur, met uur-fallback)
+  const shVals = {};   // "seizoen-uur" → {imp[],exp[],sol[]}
+  const hVals = {};    // uur → idem (fallback als een seizoen ontbreekt)
+  byHour.forEach((r, ms) => {
+    const { imp, exp, sol } = _rowTotals(r);
+    if (imp < 0 || exp < 0 || imp > 100 || exp > 100 || !isFinite(imp) || !isFinite(exp)) {
+      byHour.delete(ms); return;            // absurde/kapotte meting → behandel als gat
+    }
+    const d = new Date(ms), h = d.getHours(), sh = `${seasonOf(d.getMonth() + 1)}-${h}`;
+    (shVals[sh] ||= { imp: [], exp: [], sol: [] });
+    (hVals[h] ||= { imp: [], exp: [], sol: [] });
+    shVals[sh].imp.push(imp); shVals[sh].exp.push(exp);
+    hVals[h].imp.push(imp); hVals[h].exp.push(exp);
+    if (sol != null) { shVals[sh].sol.push(sol); hVals[h].sol.push(sol); }
+  });
+  const hasSolar = Object.values(hVals).some(v => v.sol.length > 0);
+  const med = arr => (arr && arr.length ? _median(arr) : null);
+  const profileFor = ms => {
+    const d = new Date(ms), h = d.getHours(), sh = `${seasonOf(d.getMonth() + 1)}-${h}`;
+    const pick = f => { let m = med(shVals[sh]?.[f]); if (m == null) m = med(hVals[h]?.[f]); return m == null ? 0 : m; };
+    return { imp: pick("imp"), exp: pick("exp"), sol: hasSolar ? pick("sol") : null };
+  };
+
+  // 3. Detecteer gaten over het volledige uurrooster
+  const realSet = new Set(byHour.keys());
+  const realHours = realSet.size;
+  const gaps = [];
+  let run = null;
+  for (let ms = first; ms <= last; ms += HOUR_MS) {
+    if (realSet.has(ms)) { if (run) { gaps.push(run); run = null; } }
+    else { if (!run) run = { startMs: ms, endMs: ms, hours: 0 }; run.endMs = ms; run.hours++; }
+  }
+  if (run) gaps.push(run);
+
+  // 4. Vul gaten
+  const mkRow = (ms, imp, exp, sol, fill) => ({
+    timestamp: new Date(ms).toISOString(),
+    import_t1: Math.max(0, imp), import_t2: 0,
+    export_t1: Math.max(0, exp), export_t2: 0,
+    solar_yield: sol, _fill: fill,
+  });
+  let interpHours = 0, profileHours = 0;
+  const largePeriods = [];
+  gaps.forEach(g => {
+    const isLarge = g.hours > GAP_SMALL_MAX_HOURS;
+    const beforeMs = g.startMs - HOUR_MS, afterMs = g.endMs + HOUR_MS;
+    const before = byHour.get(beforeMs), after = byHour.get(afterMs);
+    for (let ms = g.startMs; ms <= g.endMs; ms += HOUR_MS) {
+      if (isLarge || !before || !after) {
+        const p = profileFor(ms);
+        byHour.set(ms, mkRow(ms, p.imp, p.exp, p.sol, isLarge ? "profile" : "interp"));
+        isLarge ? profileHours++ : interpHours++;
+      } else {
+        const frac = (ms - beforeMs) / (afterMs - beforeMs);
+        const b = _rowTotals(before), a = _rowTotals(after);
+        const lerp = (x, y) => x + (y - x) * frac;
+        const sol = (b.sol != null && a.sol != null) ? lerp(b.sol, a.sol) : (hasSolar ? profileFor(ms).sol : null);
+        byHour.set(ms, mkRow(ms, lerp(b.imp, a.imp), lerp(b.exp, a.exp), sol, "interp"));
+        interpHours++;
+      }
+    }
+    if (isLarge) largePeriods.push({ from: new Date(g.startMs).toISOString(), to: new Date(g.endMs).toISOString(), hours: g.hours });
+  });
+
+  // 5. Terugschrijven als gatenloze, gesorteerde reeks
+  energyData = [...byHour.keys()].sort((a, b) => a - b).map(ms => byHour.get(ms));
+
+  dataQuality = {
+    expectedHours, realHours, interpHours, profileHours,
+    completenessPct: expectedHours > 0 ? Math.round(realHours / expectedHours * 100) : 100,
+    largePeriods,
+    spanFrom: new Date(first).toISOString(), spanTo: new Date(last).toISOString(),
+  };
+  dataQualityDismissed = false;   // nieuwe import → samenvatting weer tonen
+}
 
 /**
  * Bepaalt hoe de loop een vol jaar krijgt. Drie modi (jaarbasis blijft altijd):
@@ -1842,6 +1964,9 @@ function runSimulation() {
   const ebEl = document.getElementById("energy-tax");
   if (ebEl) liveEnergyTax = parseFloat(ebEl.value);
 
+  // ── Importcheck: opschonen + gaten vullen (idempotent per geladen dataset) ──
+  ensureCleanData();
+
   // ── Jaarprojectie (8760u) opbouwen/cachen vóór de simulatie ──────────────
   ensureFullYearData();
 
@@ -1892,6 +2017,38 @@ function runSimulation() {
   renderSimChart();
   renderHwChart();
   renderDynPriceExample();
+  renderDataQualityBanner();
+}
+
+// Toont een (wegklikbare) samenvatting van de importcheck: hoeveel uren echt waren
+// en welke gaten/periodes zijn bijgevuld. Verschijnt alleen als er iets is ingevuld.
+function renderDataQualityBanner() {
+  const el = document.getElementById("data-quality-banner");
+  if (!el) return;
+  const q = dataQuality;
+  // Alleen tonen bij een echt ontbrekende periode of meer dan een handvol losse gat-uren
+  // (1–2 uur kan een DST-/afrondingsartefact zijn — geen alarm waard).
+  const worthShowing = q && (q.profileHours > 0 || q.interpHours > 2);
+  if (!worthShowing || dataQualityDismissed) { el.style.display = "none"; return; }
+
+  const fmtDays = h => {
+    const d = h / 24;
+    return d >= 1 ? `${d.toFixed(d % 1 === 0 ? 0 : 1)} dag${d >= 2 ? "en" : ""}` : `${h} uur`;
+  };
+  let parts = [];
+  if (q.profileHours > 0) {
+    const n = q.largePeriods.length;
+    parts.push(`<strong>${n} langere periode${n > 1 ? "s" : ""}</strong> (samen ${fmtDays(q.profileHours)}) ${n > 1 ? "ontbraken" : "ontbrak"} — ingevuld met je eigen standaardprofiel (mediaan dagverloop per seizoen)`);
+  }
+  if (q.interpHours > 0) {
+    parts.push(`${q.interpHours} kort${q.interpHours > 1 ? "e gaten" : " gat"} bijgeschat`);
+  }
+  el.style.display = "";
+  el.innerHTML =
+    `📋 <strong>Data gecontroleerd:</strong> ${q.realHours.toLocaleString("nl-NL")} van ${q.expectedHours.toLocaleString("nl-NL")} uren waren echte metingen (${q.completenessPct}%). `
+    + parts.join("; ") + "."
+    + ` <span style="opacity:0.85;">De ingevulde periodes tellen mee als gemiddeld gebruik, niet als gemeten data.</span>`
+    + `<button type="button" class="dismiss-x" data-dismiss="data-quality-banner" title="Verberg deze melding">×</button>`;
 }
 
 // Vult het rekenvoorbeeld in de "Hoe wordt de dynamische prijs berekend?"-uitleg

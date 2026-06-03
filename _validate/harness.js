@@ -49,6 +49,11 @@ const driver = `
     return { meta: calibrationMeta, profile: calibratedProfile };
   };
   globalThis.spotFor = (m,h) => getFallbackSpot(m,h);
+  globalThis.cleanData = function(rows){
+    energyData = rows; _cleanedRef = null;
+    ensureCleanData();
+    return { data: energyData, quality: dataQuality };
+  };
 })();
 `;
 
