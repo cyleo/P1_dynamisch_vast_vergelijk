@@ -267,8 +267,9 @@ function setupEventListeners() {
   // Selector toggles
   document.getElementById("ev-solar-match").addEventListener("change", runSimulation);
   document.getElementById("ev-profile")?.addEventListener("change", runSimulation);
-  document.getElementById("bat-arbitrage").addEventListener("change", runSimulation);
-  document.getElementById("bat-grid-export")?.addEventListener("change", runSimulation);
+  document.getElementById("bat-mode")?.addEventListener("change", runSimulation);
+  document.getElementById("bat-mode")?.addEventListener("change", updateBatModeHint);
+  updateBatModeHint();
   // solar-dimming-mode: onchange al in HTML, hier alleen uitleg-tekst tonen
   const solarModeEl = document.getElementById("solar-dimming-mode");
   if (solarModeEl) {
@@ -332,6 +333,12 @@ function setupEventListeners() {
   // (anders sloten de "Optie A/B"-tabknoppen de gids via event-bubbling).
   document.getElementById("modal-backdrop").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeSetupModal();
+  });
+
+  // Uitleg-modal (accu/warmtepomp/EV rekenmodel)
+  document.getElementById("explain-close")?.addEventListener("click", closeHardwareExplainer);
+  document.getElementById("explain-backdrop")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeHardwareExplainer();
   });
 
   // Wegklik-knoppen voor uitleg/waarschuwingen activeren
@@ -409,6 +416,198 @@ function showSetupModal(tab) {
 
 function closeSetupModal() {
   document.getElementById("modal-backdrop").style.display = "none";
+}
+
+// ── "Hoe werkt het rekenmodel?"-uitleg per apparaat ──────────────────────────
+// Beschrijft exact wat _simulateCore() per uur doet, in mensentaal. Voor de accu
+// worden alle drie de modi uitgelegd; de actieve modus wordt gemarkeerd.
+function hardwareExplainerContent(kind) {
+  if (kind === "battery") {
+    const activeMode = document.getElementById("bat-mode")?.value || "zelf";
+    const tag = (m) => activeMode === m ? ` <span style="color:var(--accent-green);font-size:0.75rem;">(nu actief)</span>` : "";
+    return {
+      title: "🔋 Hoe werkt het thuisbatterij-model?",
+      body: `
+        <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
+          De accu wordt <strong>per uur</strong> doorgerekend, en apart voor het dynamische en het vaste
+          contract (twee gescheiden laadtoestanden). Belangrijk: <strong>de accu hoeft nooit vol</strong> —
+          hij laadt alléén zoveel als economisch zin heeft. Op een rustige dag blijft hij deels leeg.
+          Bij opslaan en ontladen gaat een deel verloren (round-trip-rendement, bv. 90% → 10% verlies).
+        </p>
+        <div class="explain-block">
+          <h4>🔋 Maximaal zelfverbruik (standaard)${tag("zelf")}</h4>
+          <ul>
+            <li><strong>Opslaan:</strong> zonne-overschot dat je anders zou exporteren gaat in de accu —
+              maar niet méér dan je die dag zelf nog kunt verbruiken. De rest wordt gewoon geëxporteerd
+              (geen onnodig opslaan dat toch niet ontladen wordt).</li>
+            <li><strong>Ontladen:</strong> zodra je stroom van het net zou halen. Dat bespaart altijd de
+              volle all-in prijs (inclusief energiebelasting), dus zelfverbruik is altijd lonend.</li>
+            <li>Geen handel met het net.</li>
+          </ul>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">laden:   alleen zon, tot SoC = min(cap, dag-import)
+ontladen: dekt eigen import (bespaart all-in)</code>
+        </div>
+        <div class="explain-block">
+          <h4>💡 Kostenbewust${tag("kosten")}</h4>
+          <ul>
+            <li>Als zelfverbruik, plus: in de <strong>goedkoopste uren van de dag</strong> laadt de accu
+              bij van het net — maar <strong>alléén het stukje dat de zon niet dekt</strong> en dat je
+              later zelf verbruikt.</li>
+            <li>Zo voorkom je dat je stroom inkoopt die de zon toch levert: over élke ingekochte kWh
+              betaal je namelijk energiebelasting, die je alleen terugverdient als die kWh later
+              net-import verdringt.</li>
+            <li>Laden gebeurt alleen als de dure uren (× rendement) duurder zijn dan de goedkope laaduren.</li>
+          </ul>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ net-laden als: all-in(duur) × η > all-in(goedkoop)
+  budget = max(0, selfNeed − zon × η) / η  (drawn kWh)</code>
+        </div>
+        <div class="explain-block">
+          <h4>📈 Maximale winst${tag("winst")}</h4>
+          <ul>
+            <li>Als kostenbewust, plus: in de duurste uren <strong>verkoopt de accu het overschot terug aan het net</strong>.</li>
+            <li>Dit gebeurt alleen als de opbrengst — de <strong>kale spotprijs</strong> (zónder BTW en
+              zónder energiebelasting) — na rendementsverlies hoger is dan wat het laden kostte, én alléén
+              voor energie bóven je eigen-verbruik-voorraad.</li>
+            <li>Onder het 2027-model betaal je energiebelasting over élke ingekochte kWh, maar krijg je die
+              níét terug bij verkoop. <strong>Daardoor komt deze modus op normale prijzen vrijwel altijd
+              gelijk uit met "Kostenbewust"</strong> — zelfverbruik (bespaart all-in incl. EB) is bijna
+              altijd waardevoller dan teruglevering (kale spot). Echt voordeel ontstaat pas bij flinke
+              prijspieken én vrije accu-capaciteit.</li>
+          </ul>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: spot/1,21 > (all-in(goedkoop)/η) × 1,21
+  export = max(0, SoC − selfNeed)</code>
+        </div>
+        <p class="explain-note">
+          ⓘ De knop "Bereken Ideale Accu Formaat" veegt verschillende groottes door met de gekozen modus en
+          toont de terugverdientijd (bij €450/kWh) — zo zie je dat een grotere accu niet automatisch beter is.
+        </p>
+        <details class="explain-formula">
+          <summary>De formules (voor de liefhebber)</summary>
+          <div class="formula-body">
+            <p><strong>Round-trip-rendement</strong> (η, bv. 0,90):</p>
+            <code>SoC += ingeladen × η        (opladen)
+geleverd = ontladen           (ontladen, 1-op-1)</code>
+            <p><strong>Dag-opslaglimiet</strong> — borgt dat de accu niet "hoardt" en dat grotere capaciteit nooit duurder is:</p>
+            <code>selfNeed = min(capaciteit, dag-import)
+SoC-cap  = selfNeed            (+ export-ruimte in winst)</code>
+            <p><strong>All-in importprijs</strong> per kWh (wat zelfconsumptie bespaart):</p>
+            <code>all-in = spot + opslag × 1,21 + energiebelasting</code>
+            <p><strong>Van het net laden loont</strong> als de duurste verdrongen import × η de laadprijs overtreft:</p>
+            <code>all-in(duur) × η  >  all-in(goedkoop)</code>
+            <p><strong>Net-laad-budget</strong> (alleen het deel dat de zon niet dekt → vermijdt onnodige EB):</p>
+            <code>budget = max(0, selfNeed − zon × η) / η</code>
+            <p><strong>Terugleveren loont</strong> (winst-modus) alleen als de kale-spot-opbrengst de laadkosten overtreft, én alléén het overschot bóven de zelf-voorraad:</p>
+            <code>spot / 1,21  >  (all-in(goedkoop) / η) × 1,21
+export = max(0, SoC − selfNeed)</code>
+          </div>
+        </details>`,
+    };
+  }
+  if (kind === "heatpump") {
+    return {
+      title: "♨️ Hoe werkt het warmtepomp-model?",
+      body: `
+        <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
+          De warmtepomp voegt een <strong>elektrische stooklast</strong> toe (de schuif = gemiddeld
+          wintervermogen in kW). Die last wordt per uur opgeteld bij je import (of trekt eerst van je
+          zon-overschot af) en telt mee in <strong>beide</strong> contracten.
+        </p>
+        <div class="explain-block">
+          <h4>Seizoensvorm via graaddagen</h4>
+          <ul>
+            <li>De jaarverdeling volgt het Nederlandse klimaat (graaddagen, basis 18&deg;C, De Bilt-normaal):
+              piek in dec/jan, geleidelijk aflopend naar het voorjaar, met een kleine zomer-vloer voor
+              warmtapwater.</li>
+            <li>Per uur: <em>last = winter-stooklast × maandfactor × dag/nacht-factor</em>.</li>
+            <li>Dag/nacht: 's nachts ~1,2× (kouder + setback-herstel), overdag ~0,9×.</li>
+          </ul>
+        </div>
+        <p class="explain-note">
+          ⓘ Beperking: de maandfactor is vlak per maand — hij lijnt nog niet per dag uit met echte
+          koudegolven/EPEX-prijspieken. In een strenge koudegolf is warmtepomp-op-dynamisch dus iets
+          optimistisch ingeschat.
+        </p>
+        <details class="explain-formula">
+          <summary>De formule (voor de liefhebber)</summary>
+          <div class="formula-body">
+            <p><strong>Stooklast per uur</strong>:</p>
+            <code>last = winterstooklast × HDD-maandfactor × dagnachtfactor</code>
+            <p><strong>Dag/nacht-factor</strong>:</p>
+            <code>nacht (22–07u) = 1,2
+overdag        = 0,9</code>
+            <p><strong>HDD-maandfactoren</strong> (graaddagen, genormaliseerd op winter ≈ 1,3; zomervloer 0,15):</p>
+            <code>jan 1,38 · feb 1,21 · mrt 1,10 · apr 0,77
+mei 0,44 · jun 0,17 · jul 0,15 · aug 0,15
+sep 0,29 · okt 0,66 · nov 1,02 · dec 1,31</code>
+            <p>Deze last wordt bij de import opgeteld (of trekt eerst van het zon-overschot af).</p>
+          </div>
+        </details>`,
+    };
+  }
+  // EV
+  return {
+    title: "🚗 Hoe werkt het EV-model?",
+    body: `
+      <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
+        Uit <strong>wekelijkse afstand × verbruik per 100 km</strong> volgt de jaarlijkse laadvraag.
+        Die wordt slim over de uren verdeeld — apart gepland voor het dynamische en het vaste contract.
+      </p>
+      <div class="explain-block">
+        <h4>Slim laden (look-ahead per dag)</h4>
+        <ul>
+          <li>Eerst <strong>gratis zonne-overschot</strong> (overdag, ~10–16u), als zonne-laden aanstaat.</li>
+          <li>Daarna het restant in de <strong>goedkoopste resterende uren</strong> (dynamisch) resp. de
+            <strong>daluren</strong> (vast contract).</li>
+        </ul>
+      </div>
+      <div class="explain-block">
+        <h4>Wanneer staat de auto ingeplugd?</h4>
+        <ul>
+          <li><strong>Altijd thuis:</strong> laden mag overdag én 's nachts.</li>
+          <li><strong>Kantoortijden:</strong> ma–vr 08:00–17:00 is de auto weg — dan vervalt zonne-laden op
+            werkdagen en wordt vooral 's avonds/nachts geladen.</li>
+          <li>Zonne-laden uit = de hele laadvraag komt volgens het schema van het net.</li>
+        </ul>
+      </div>
+      <details class="explain-formula">
+        <summary>De formules (voor de liefhebber)</summary>
+        <div class="formula-body">
+          <p><strong>Laadvraag</strong>:</p>
+          <code>jaarvraag = afstand/week × verbruik/100km / 100 × 52
+dagvraag  = afstand/week × verbruik/100km / 100 / 7</code>
+          <p><strong>Allocatie per dag</strong> (look-ahead), per uur begrensd op ${EV_MAX_CHARGE_KW} kW:</p>
+          <code>1. vul met zonne-overschot (≈10–16u)
+2. rest in goedkoopste uren (dynamisch)
+   resp. daluren (vast contract)</code>
+          <p>Bij "kantoortijden" vervallen ma–vr 08:00–17:00 als laadmoment (auto weg).</p>
+        </div>
+      </details>`,
+  };
+}
+
+function showHardwareExplainer(kind) {
+  const { title, body } = hardwareExplainerContent(kind);
+  document.getElementById("explain-title").innerHTML = title;
+  document.getElementById("explain-body").innerHTML = body;
+  document.getElementById("explain-backdrop").style.display = "flex";
+}
+
+function closeHardwareExplainer() {
+  document.getElementById("explain-backdrop").style.display = "none";
+}
+
+// Korte inline-hint onder de accu-modus-dropdown (zonder de uitleg-modal te openen).
+function updateBatModeHint() {
+  const el = document.getElementById("bat-mode-hint");
+  if (!el) return;
+  const mode = document.getElementById("bat-mode")?.value || "zelf";
+  const hints = {
+    zelf: `Alléén zon opslaan en ontladen voor eigen verbruik — robuust en voorspelbaar.`,
+    kosten: `Laadt óók goedkoop van het net, maar alleen voor eigen verbruik (geen teruglevering).`,
+    winst: `⚠️ Onder bruto-EB (2027) levert teruglevering minder op dan zelfverbruik, dus op normale prijzen komt dit vrijwel gelijk uit met "Kostenbewust". Echt voordeel pas bij flinke prijspieken.`,
+  };
+  el.innerHTML = hints[mode] || "";
+  el.style.display = el.innerHTML ? "block" : "none";
 }
 
 function copySetupSnippet() {
@@ -1541,7 +1740,18 @@ function _simulateCore(cfg, full = false) {
     hasHeatPump, hpWinterBaseload,
     hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile = "home",
     hasBattery, batCapacity, batPower, batEfficiency, batArbitrage, batGridExport = false,
+    batMode,
   } = cfg;
+
+  // ── Accu-modus (v=38) ──
+  //   "zelf"   = maximaal zelfverbruik: alléén zon opslaan ↔ eigen import dekken.
+  //   "kosten" = kostenbewust: óók 's nachts van het net laden, maar uitsluitend om
+  //              eigen verbruik te dekken (geen net-teruglevering).
+  //   "winst"  = maximale winst: bovenstaande + bij hoge prijs aan het net verkopen.
+  //   Back-compat: oude cfg's met batArbitrage/batGridExport mappen op deze modi.
+  const mode = batMode || (batGridExport ? "winst" : (batArbitrage ? "kosten" : "zelf"));
+  const gridCharge = mode === "kosten" || mode === "winst";   // van het net mogen laden
+  const gridExport = mode === "winst";                        // aan het net mogen verkopen
 
   const markupBtw = dynamicMarkup * 1.21;
   const eb = liveEnergyTax;
@@ -1632,31 +1842,79 @@ function _simulateCore(cfg, full = false) {
   //     herfst/winter/lente bijna nooit triggeren. Vangt nu de échte dagspread
   //     (bv. goedkope nacht → dure avondpiek), gated op het round-trip-rendement.
   //     Day-ahead prijzen zijn de dag ervoor bekend → vooruitblik is realistisch. ──
-  const batChargeHrs = {};     // dayKey → Set<uur> om van het net te laden (goedkoop)
-  const batDischargeHrs = {};  // dayKey → Set<uur> om te ontladen (duur)
-  const batDayMinAllin = {};   // dayKey → loAllin voor grid-arbitrage controle
+  const batChargeHrs = {};       // dayKey → Set<uur> om van het net te laden (goedkoop)
+  const batDischargeHrs = {};    // dayKey → Set<uur> om náár het net te ontladen (winst-modus)
+  const batDayMinAllin = {};     // dayKey → loAllin voor de net-export rentabiliteitstoets
+  const batGridBudget = {};      // dayKey → max. van-het-net in te kopen energie (drawn kWh)
+  const batStoreCap = {};        // dayKey → max. totaal op te slaan energie (geleverd, in SoC-eenheden)
+  const batSelfReserve = {};     // dayKey → SoC die we voor eigen verbruik bewaren (nooit exporteren)
   function precomputeBatterySchedule() {
-    if (!hasBattery || !batArbitrage || batCapacity <= 0 || batPower <= 0) return;
+    if (!hasBattery || batCapacity <= 0 || batPower <= 0) return;
     const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));   // ~uren om vol/leeg te zijn
     Object.keys(dayRows).forEach(dk => {
-      const priced = dayRows[dk].map(r => {
+      const dayRowsArr = dayRows[dk];
+      const loadDay = dayRowsArr.reduce((s, r) => s + r.import_t1 + r.import_t2, 0);
+      const solarDay = dayRowsArr.reduce((s, r) => s + r.export_t1 + r.export_t2, 0);
+
+      // ── Gedeelde dag-opslaglimiet (`batStoreCap`) — borgt monotonie ──
+      //   Zon én net mogen samen nooit méér in de accu stoppen dan dit. Voor
+      //   zelfverbruik is de bovengrens de verdringbare eigen import van die dag
+      //   (min met de capaciteit): boven dat punt zou opgeslagen energie nooit
+      //   ontladen worden (strandt → verliest export-omzet). Omdat de grens =
+      //   min(capaciteit, dag-import), verandert er bóven capaciteit=dag-import
+      //   niets meer → een grotere accu kan nooit duurder uitvallen.
+      const selfNeed = Math.min(batCapacity, loadDay);
+      batStoreCap[dk] = selfNeed;
+      batSelfReserve[dk] = selfNeed;   // bij export: nooit onder de eigen-verbruik-voorraad zakken
+      if (!gridCharge) return;     // zelf-modus: geen van-het-net-laadschema nodig
+
+      const priced = dayRowsArr.map(r => {
         const { hour, month, epexKey: k } = rowMeta(r);
         let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
         if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
-        return { hour, allin: sp + markupBtw + eb };
+        return { hour, spot: sp, allin: sp + markupBtw + eb };
       });
       if (priced.length < 3) return;
       const asc = [...priced].sort((a, b) => a.allin - b.allin);
       const cheap = asc.slice(0, K), expensive = asc.slice(-K);
       const hiAllin = expensive[expensive.length - 1].allin;
-      // Zelfconsumptie-arbitrage: ontladen bespaart de all-in importprijs; 1 kWh leveren
-      // kost (1/rendement)×laad-all-in. Rendabel als ontlaad-all-in × rendement > laad-all-in.
+      // Zelfconsumptie-arbitrage: van het net laden loont als de duurste import die je
+      // ermee verdringt (all-in, incl. EB) × rendement > de laad-all-in. EB valt weg
+      // (je betaalt 'm bij laden, bespaart 'm bij de verdrongen import) op het rendement na.
       const chargeHrs = cheap.filter(c => hiAllin * batEfficiency > c.allin);
       if (chargeHrs.length === 0) return;     // geen rendabele spread vandaag
       const loAllin = chargeHrs[0].allin;
       batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
-      batDischargeHrs[dk] = new Set(expensive.filter(e => e.allin * batEfficiency > loAllin).map(e => e.hour));
       batDayMinAllin[dk] = loAllin;
+
+      // ── Net-laad-budget: vermijd de bruto-EB-val ──
+      //   De zon vult de verdringbare behoefte (selfNeed) als eerste; alléén het restant
+      //   is het van-het-net laden waard. Zonder deze rem koopt de accu stroom in die de
+      //   zon toch al levert → bruto-import (en EB) blazen op zonder iets te verdringen.
+      const fromSolar = Math.min(solarDay * batEfficiency, selfNeed);    // de zon dekt dit deel
+      let drawnBudget = Math.max(0, selfNeed - fromSolar) / batEfficiency; // in te kopen kWh voor zelfverbruik
+
+      if (gridExport) {
+        // Maximale winst: óók aan het net verkopen. Een verkochte kWh levert kale spot
+        // (spot/1.21, géén EB) op, geen all-in — dus toets de export-uren tegen díe waarde.
+        const expHrs = expensive.filter(e => (e.spot / 1.21) * batEfficiency > loAllin);
+        // Ruimte om voor de winstgevende export-uren te laden — exact wat die uren kunnen
+        // ontladen (vermogen × #uren), begrensd door de capaciteit bóven de zelf-voorraad.
+        // Alléén als er zúlke vrije ruimte is verkopen we: anders is de capaciteit volledig
+        // voor eigen verbruik nodig (dat levert all-in incl. EB op > kale-spot export) →
+        // winst gedraagt zich dan exact als kosten, en kan dus nooit slechter uitvallen.
+        const exportRoom = Math.min(expHrs.length * batPower, Math.max(0, batCapacity - selfNeed));
+        if (exportRoom > 0) {
+          batDischargeHrs[dk] = new Set(expHrs.map(e => e.hour));
+          batStoreCap[dk] = selfNeed + exportRoom;     // extra ruimte bovenop de zelf-voorraad
+          drawnBudget += exportRoom / batEfficiency;
+        } else {
+          batDischargeHrs[dk] = new Set();             // geen vrije ruimte → geen net-export
+        }
+      } else {
+        batDischargeHrs[dk] = new Set();               // zelf/kosten: nooit aan het net verkopen
+      }
+      batGridBudget[dk] = drawnBudget;
     });
   }
   precomputeBatterySchedule();
@@ -1666,6 +1924,7 @@ function _simulateCore(cfg, full = false) {
   let dynImpCost = 0, dynExpRev = 0, dynImpKwh = 0, dynExpKwh = 0;
   let batSoC = 0, batSoCFx = 0;
   let epexReal = 0, epexFall = 0;
+  const batGridDrawn = {};    // dayKey → reeds van het net ingekochte kWh (drawn, budgetbewaking)
 
   // Profiel-arrays (wanneer full=true)
   const hourly = full ? Array.from({ length: 24 }, () => ({ imports: [], exports: [], spots: [], dynCosts: [], fixedCosts: [] })) : null;
@@ -1717,40 +1976,56 @@ function _simulateCore(cfg, full = false) {
     // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
     if (hasBattery) {
       // Dynamisch circuit
-      const isChargeHour = batArbitrage && batChargeHrs[dayKey]?.has(hour);
+      const isChargeHour = gridCharge && batChargeHrs[dayKey]?.has(hour);
       let currentPowerLimit = batPower;
-      
-      // 1. Zonoverschot opslaan
-      if (expDyn > 0 && batSoC < batCapacity) {
-        const c = Math.min(expDyn, currentPowerLimit, (batCapacity - batSoC) / batEfficiency);
+
+      // Dag-opslaglimiet op de SoC zelf: laad nooit verder dan de dag-behoefte (`batStoreCap`
+      // = min(capaciteit, dag-import), of + export-ruimte in winst). Hierdoor "hoardt" de accu
+      // niet over dagen heen tot vol: de SoC blijft ≤ dag-behoefte, dus voor elke capaciteit
+      // boven die behoefte is het gedrag identiek → meer capaciteit kan nooit duurder uitvallen.
+      const socCap = Math.min(batCapacity, batStoreCap[dayKey] ?? batCapacity);
+      const socRoom = Math.max(0, socCap - batSoC) / batEfficiency;   // nog te laden (drawn kWh)
+
+      // 1. Zonoverschot opslaan (tot de dag-behoefte).
+      if (expDyn > 0 && socRoom > 0) {
+        const c = Math.min(expDyn, currentPowerLimit, socRoom);
         batSoC += c * batEfficiency;
         expDyn = Math.max(0, expDyn - c);
         currentPowerLimit -= c;
       }
-      // 2. Arbitrage: van het net laden in de geplande goedkope uren
-      if (isChargeHour && batSoC < batCapacity && expDyn === 0 && currentPowerLimit > 0) {
-        const c = Math.min(currentPowerLimit, (batCapacity - batSoC) / batEfficiency);
-        batSoC += c * batEfficiency;
-        impDyn += c;
-        currentPowerLimit -= c;
+      // 2. Van het net laden in de geplande goedkope uren — begrensd door zowel het
+      //    inkoop-budget (bruto-EB-val) als de dag-behoefte op de SoC.
+      if (isChargeHour && expDyn === 0 && currentPowerLimit > 0) {
+        const drawnRoom = Math.max(0, (batGridBudget[dayKey] || 0) - (batGridDrawn[dayKey] || 0));
+        const room = Math.max(0, socCap - batSoC) / batEfficiency;
+        const c = Math.min(currentPowerLimit, room, drawnRoom);
+        if (c > 0) {
+          batSoC += c * batEfficiency;
+          impDyn += c;
+          currentPowerLimit -= c;
+          batGridDrawn[dayKey] = (batGridDrawn[dayKey] || 0) + c;
+        }
       }
       // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
       //    (je bespaart de hele all-in prijs incl. EB, ongeacht de spotprijs), plus de
-      //    geplande dure arbitrage-uren voor net-export. NIET tijdens een laad-uur,
+      //    geplande dure uren voor net-export (winst-modus). NIET tijdens een laad-uur,
       //    anders zou de accu in hetzelfde uur laden én ontladen (rondloop-verlies).
       const wantDischarge = !isChargeHour
-        && (impDyn > 0 || (batArbitrage && batDischargeHrs[dayKey]?.has(hour)));
+        && (impDyn > 0 || (gridExport && batDischargeHrs[dayKey]?.has(hour)));
       if (wantDischarge && batSoC > 0 && expDyn === 0) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
-        
-        // Terugleveren aan net mag alleen als het rendement oplevert (winstgevend is).
-        // Opbrengst (spot / 1.21) moet groter zijn dan de laadkosten (loAllin / batEfficiency).
+
+        // Terugleveren aan net mag alleen als (a) het rendement oplevert (opbrengst spot/1.21
+        // > laadkosten loAllin/rendement) én (b) het écht overschot is: we houden de
+        // resterende eigen import van vandaag in de accu, want zelfconsumptie is waardevoller.
         const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
         const minExportSpot = (loAllin / batEfficiency) * 1.21;
-        if (batGridExport && d > 0 && spot > minExportSpot) {
-          expDyn += d; batSoC -= d;
+        const reserve = batSelfReserve[dayKey] ?? 0;                 // bewaar de eigen-verbruik-voorraad
+        const exportable = Math.min(d, Math.max(0, batSoC - reserve));
+        if (gridExport && exportable > 0 && spot > minExportSpot) {
+          expDyn += exportable; batSoC -= exportable;
         }
       }
 
@@ -1802,7 +2077,7 @@ function _simulateCore(cfg, full = false) {
 
     if (full) {
       const allIn = basePrice + eb;
-      const dynHrCost = dynImp * allIn - dynExp * spot;
+      const dynHrCost = dynImp * allIn - dynExp * (spot / 1.21);   // teruglevering = kale spot (excl. BTW, 2027)
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
 
@@ -1816,7 +2091,7 @@ function _simulateCore(cfg, full = false) {
       pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
       pd.impKwh += dynImp; pd.expKwh += dynExp;
       pd.impCost += dynImp * allIn;   // all-in afname-kosten incl. EB (voor de "per dag"-detailtabel)
-      pd.expRev += dynExp * spot;     // teruglever-opbrengst tegen spotprijs
+      pd.expRev += dynExp * (spot / 1.21);   // teruglever-opbrengst = kale spotprijs (excl. BTW, 2027)
       if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
 
       if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
@@ -1891,8 +2166,7 @@ function readSimConfig() {
     batCapacity: parseFloat(document.getElementById("bat-cap").value),
     batPower: parseFloat(document.getElementById("bat-power").value),
     batEfficiency: parseFloat(document.getElementById("bat-eff").value) / 100.0,
-    batArbitrage: document.getElementById("bat-arbitrage").checked,
-    batGridExport: document.getElementById("bat-grid-export")?.checked || false,
+    batMode: document.getElementById("bat-mode")?.value || "zelf",
   };
 }
 
@@ -1988,7 +2262,7 @@ function optimizeBatterySize() {
       batCapacity: cap,
       batPower: cap * 0.5,              // gulden-ratio: 0,5C laad/ontlaadvermogen
       batEfficiency: baseCfg.batEfficiency, // UI-instelling
-      batArbitrage: baseCfg.batArbitrage,  // UI-instelling
+      batMode: baseCfg.batMode,            // UI-instelling
     });
     const savingsVsFixed = baselineFix - r.dynBill;   // dynamisch+accu t.o.v. vast contract
     const extra = baselineDyn - r.dynBill;   // meerwaarde van de accu zelf (€/jaar)
@@ -2073,12 +2347,12 @@ function runSimulation() {
     ...cfg,
     hasHeatPump: false, hpWinterBaseload: 0,
     hasEv: false, evWeeklyDist: 0, evConsumption: 0, evSolarMatch: false,
-    hasBattery: false, batCapacity: 0, batPower: 0, batEfficiency: 1, batArbitrage: false,
+    hasBattery: false, batCapacity: 0, batPower: 0, batEfficiency: 1, batMode: "zelf",
   };
   const base = _simulateCore(base0, false);
   const withHp = _simulateCore({ ...base0, hasHeatPump: true, hpWinterBaseload: cfg.hpWinterBaseload }, false);
   const withEv = _simulateCore({ ...base0, hasEv: true, evWeeklyDist: cfg.evWeeklyDist, evConsumption: cfg.evConsumption, evSolarMatch: cfg.evSolarMatch }, false);
-  const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batArbitrage: cfg.batArbitrage }, false);
+  const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batMode: cfg.batMode }, false);
 
   // ── activeSimulation bijwerken ────────────────────────────────────────────
   activeSimulation = {
@@ -2087,7 +2361,7 @@ function runSimulation() {
       base,
       hp: { fixed: withHp.fixedBill - base.fixedBill, dyn: withHp.dynBill - base.dynBill, enabled: cfg.hasHeatPump, cfg: { hpWinterBaseload: cfg.hpWinterBaseload } },
       ev: { fixed: withEv.fixedBill - base.fixedBill, dyn: withEv.dynBill - base.dynBill, enabled: cfg.hasEv, cfg: { evDist: cfg.evWeeklyDist, evCons: cfg.evConsumption, evSolar: cfg.evSolarMatch } },
-      bat: { fixed: withBat.fixedBill - base.fixedBill, dyn: withBat.dynBill - base.dynBill, enabled: cfg.hasBattery, cfg: { batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency * 100, batArbitrage: cfg.batArbitrage } },
+      bat: { fixed: withBat.fixedBill - base.fixedBill, dyn: withBat.dynBill - base.dynBill, enabled: cfg.hasBattery, cfg: { batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency * 100, batMode: cfg.batMode } },
     },
   };
 
@@ -3040,16 +3314,20 @@ function renderHwChart() {
     {
       key: "bat", icon: "🔋", label: "Thuisaccu", data: fx.bat,
       explanation: (d) => {
-        const { batCapacity, batPower, batEfficiency, batArbitrage } = d.cfg ?? {};
+        const { batCapacity, batPower, batEfficiency, batMode } = d.cfg ?? {};
+        const modeText = {
+          zelf:   `<strong>Maximaal zelfverbruik:</strong> de accu slaat alléén zonne-overschot op en ontlaadt om je eigen import te dekken. Geen handel met het net.`,
+          kosten: `<strong>Kostenbewust:</strong> naast zon laadt de accu óók in de goedkoopste uren van het net bij — maar alleen zoveel als nodig om je eigen verbruik te dekken (geen teruglevering).`,
+          winst:  `<strong>Maximale winst:</strong> de accu koopt goedkoop in én verkoopt bij hoge prijzen terug aan het net (echte arbitrage). Let op: onder bruto-EB (2027) betaal je belasting over elke ingekochte kWh, dus dit loont alleen bij flinke prijsspreads.`,
+        }[batMode || "zelf"];
         return `<strong>Aanname:</strong> ${batCapacity ?? '?'} kWh accu, ${batPower ?? '?'} kW vermogen,
           ${batEfficiency ?? '?'}% laad-/ontlaadefficiëntie.
           <br><br>
-          <strong>Slimme Laadstrategie:</strong> Eerst zonne-overschot opslaan (overdag).
-          ${batArbitrage ? `Daarnaast doet de batterij aan net-arbitrage: stroom inkopen als de beursprijs bizar laag is (&lt; €0,01).` : `(Net-arbitrage is uitgeschakeld).`}
+          ${modeText}
           <br><br>
-          <strong>Slim Ontladen:</strong> De accu ontlaadt niet zomaar, maar <strong>alleen als de all-in stroomprijs boven de € 0,25 per kWh schiet</strong>. Hierdoor bewaar je je opgeslagen stroom echt voor de dure piekmomenten.
+          <strong>Slim ontladen:</strong> zelfconsumptie verdringt de hele all-in prijs (incl. energiebelasting), dus dat is altijd lonend. Van-het-net laden wordt begrensd op wat je die dag werkelijk zelf kunt gebruiken, zodat de accu geen onnodige stroom (en EB) inkoopt.
           <br><br>
-          <em>De accu bespaart bij beide contractvormen, maar de hoge efficiëntieverliezen (${100 - (batEfficiency ?? 85)}%) vallen zwaarder op een dynamisch contract waar de prijsmarges kleiner zijn.</em>`;
+          <em>De accu bespaart bij beide contractvormen, maar de efficiëntieverliezen (${100 - (batEfficiency ?? 85)}%) vallen zwaarder op een dynamisch contract waar de prijsmarges kleiner zijn.</em>`;
       }
     },
   ];

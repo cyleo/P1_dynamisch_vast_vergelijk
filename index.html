@@ -7,10 +7,11 @@
   <title>P1 Energie Contract Analysator | Dynamisch vs Vast</title>
   <meta name="description"
     content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2026 het goedkoopste is voor jouw situatie.">
-  <link rel="stylesheet" href="/energie/style.css?v=36">
+  <link rel="stylesheet" href="/energie/style.css?v=41">
   <style>
-    /* CORS Setup Modal */
-    #modal-backdrop {
+    /* CORS Setup Modal + generieke uitleg-modal */
+    #modal-backdrop,
+    #explain-backdrop {
       display: none;
       position: fixed;
       inset: 0;
@@ -20,6 +21,110 @@
       align-items: center;
       justify-content: center;
       padding: 1rem;
+    }
+
+    /* Uitleg-modal: scrollbaar + per-modus blokken */
+    #explain-backdrop .modal-box {
+      max-width: 640px;
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+
+    .explain-block {
+      background: rgba(0, 0, 0, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-left: 3px solid var(--accent-cyan);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      margin: 0.7rem 0;
+    }
+
+    .explain-block h4 {
+      font-size: 0.92rem;
+      margin: 0 0 0.35rem;
+      color: var(--text-main);
+    }
+
+    .explain-block p,
+    .explain-block ul {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+      margin: 0.3rem 0;
+    }
+
+    .explain-block ul {
+      padding-left: 1.1rem;
+    }
+
+    .explain-note {
+      font-size: 0.8rem;
+      color: var(--accent-orange);
+      line-height: 1.6;
+      margin-top: 1rem;
+    }
+
+    .btn-explain {
+      width: 100%;
+      margin-top: 0.6rem;
+      background: rgba(0, 242, 254, 0.07);
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 0.5rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+
+    .btn-explain:hover {
+      background: rgba(0, 242, 254, 0.15);
+    }
+
+    /* Uitklapbare formules voor de "groene nerds" */
+    .explain-formula {
+      margin-top: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .explain-formula > summary {
+      cursor: pointer;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      background: rgba(0, 242, 254, 0.06);
+      list-style: none;
+      user-select: none;
+    }
+
+    .explain-formula > summary::-webkit-details-marker { display: none; }
+    .explain-formula > summary::before { content: "▸ "; }
+    .explain-formula[open] > summary::before { content: "▾ "; }
+
+    .explain-formula .formula-body {
+      padding: 0.6rem 0.9rem;
+    }
+
+    .explain-formula code {
+      display: block;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--accent-green);
+      background: #000;
+      border-radius: 6px;
+      padding: 0.45rem 0.6rem;
+      margin: 0.45rem 0;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    .explain-formula .formula-body p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin: 0.3rem 0;
     }
 
     .modal-box {
@@ -72,7 +177,8 @@
       margin: 0.8rem 0 1rem;
     }
 
-    #modal-close {
+    #modal-close,
+    #explain-close {
       position: absolute;
       top: 1rem;
       right: 1rem;
@@ -84,7 +190,8 @@
       line-height: 1;
     }
 
-    #modal-close:hover {
+    #modal-close:hover,
+    #explain-close:hover {
       color: white;
     }
 
@@ -287,6 +394,15 @@
     </div>
   </div>
 
+  <!-- Generieke "Hoe werkt het rekenmodel?"-modal (accu/warmtepomp/EV) -->
+  <div id="explain-backdrop">
+    <div class="modal-box">
+      <button id="explain-close" title="Sluiten">&times;</button>
+      <h2 id="explain-title">Hoe werkt het?</h2>
+      <div id="explain-body"></div>
+    </div>
+  </div>
+
   <div class="app-container">
 
     <!-- Top Header -->
@@ -436,6 +552,30 @@
               <select id="sel-solar" class="ha-select">
                 <option value="">— Niet koppelen (export-gebaseerde schatting) —</option>
               </select>
+            </div>
+
+            <div class="form-group"
+              style="margin-bottom:1rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.8rem;">
+              <label style="font-size:0.78rem; color:var(--accent-cyan); margin-bottom:0.5rem; display:block;">
+                ⚙️ Bestaande hardware koppelen (optioneel — Digital Twin)
+                <span class="info-icon" tabindex="0">i<span class="info-tooltip">Heb je nu al een EV-lader, warmtepomp
+                    of thuisbatterij? Koppel hun cumulatieve kWh-sensoren. We <em>strippen</em> dat verbruik uit je P1-historie
+                    zodat de schuiven hieronder <strong>vervangende</strong> hardware modelleren i.p.v. extra apparaten.
+                    <br><br><strong>Belangrijk voor de batterij:</strong> kies sensoren die <em>beide</em> aan de
+                    net-/AC-zijde meten (laden én ontladen op hetzelfde meetpunt), anders klopt het rendementsverlies niet.</span></span>
+              </label>
+
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.4rem 0 0.2rem; display:block;">🚗 EV-lader (kWh)</label>
+              <select id="sel-ev" class="ha-select"><option value="">— Niet koppelen —</option></select>
+
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">♨️ Warmtepomp (kWh)</label>
+              <select id="sel-hp" class="ha-select"><option value="">— Niet koppelen —</option></select>
+
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — laden / in (kWh)</label>
+              <select id="sel-bat-in" class="ha-select"><option value="">— Niet koppelen —</option></select>
+
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — ontladen / uit (kWh)</label>
+              <select id="sel-bat-out" class="ha-select"><option value="">— Niet koppelen —</option></select>
             </div>
 
             <div class="form-group" style="margin-bottom:1rem;">
@@ -694,6 +834,7 @@
                 <span class="slider-round"></span>
               </label>
             </div>
+            <button type="button" class="btn-explain" onclick="showHardwareExplainer('ev')">❓ Hoe werkt het EV-model?</button>
           </div>
 
           <!-- Home Battery Toggle -->
@@ -730,32 +871,24 @@
                   class="val-badge" id="bat-eff-val">90%</span></label>
               <input type="range" id="bat-eff" min="70" max="98" step="1" value="90" data-suffix="%">
             </div>
-            <div class="switch-control" style="padding: 0.5rem; margin-bottom: 0;">
-              <div class="switch-label-desc">
-                <strong>Net Arbitrage (inkoop) <span class="info-icon" tabindex="0">i<span class="info-tooltip">Laat
-                      de accu goedkope/negatieve stroom van het net <strong>inkopen</strong> om later eigen verbruik
-                      te dekken. Dit verkoopt nog niets terug — om ook bij hoge prijzen aan het net te <em>verkopen</em>,
-                      zet je hieronder "Terugleveren aan net" aan.</span></span></strong>
-                <span>Laden bij goedkope/negatieve stroom (alleen inkoop)</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="bat-arbitrage" checked>
-                <span class="slider-round"></span>
-              </label>
+            <div class="form-group">
+              <label for="bat-mode">Accu-strategie <span class="info-icon" tabindex="0">i<span class="info-tooltip">Bepaalt
+                    hoe de accu beslist wanneer te laden/ontladen.<br><br>
+                    <strong>Maximaal zelfverbruik</strong> (standaard): alléén zon opslaan en ontladen om je eigen
+                    import te dekken. Geen handel met het net — robuust en voorspelbaar.<br><br>
+                    <strong>Kostenbewust</strong>: laadt óók 's nachts goedkoop van het net bij, maar alleen zoveel
+                    als je die dag zelf kunt verbruiken (geen teruglevering).<br><br>
+                    <strong>Maximale winst</strong>: koopt goedkoop in én verkoopt bij hoge prijzen terug aan het net
+                    (echte arbitrage). Onder bruto-EB (2027) betaal je belasting over elke ingekochte kWh, dus dit
+                    loont alleen bij grote prijsspreads.</span></span></label>
+              <select id="bat-mode" class="ha-select" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;">
+                <option value="zelf" selected>🔋 Maximaal zelfverbruik (standaard)</option>
+                <option value="kosten">💡 Kostenbewust — ook goedkoop van net laden</option>
+                <option value="winst">📈 Maximale winst — handel met het net</option>
+              </select>
+              <p id="bat-mode-hint" style="display:none;font-size:0.72rem;color:var(--text-muted);line-height:1.5;margin-top:0.4rem;"></p>
             </div>
-            <div class="switch-control" style="padding: 0.5rem; margin-bottom: 0;">
-              <div class="switch-label-desc">
-                <strong>Terugleveren aan net <span class="info-icon" tabindex="0">i<span class="info-tooltip">Uit =
-                      nul-op-de-meter: de accu ontlaadt alleen om eigen verbruik te dekken. Aan = de accu mag bij
-                      hoge prijzen óók aan het net verkopen (echte arbitrage) — dit verbetert de terugverdientijd van
-                      grotere accu's, maar of het mag/loont hangt af van je leverancier en teruglevertarief.</span></span></strong>
-                <span>Accu verkoopt bij hoge prijs (arbitrage)</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="bat-grid-export">
-                <span class="slider-round"></span>
-              </label>
-            </div>
+            <button type="button" class="btn-explain" onclick="showHardwareExplainer('battery')">❓ Hoe werkt het thuisbatterij-model?</button>
           </div>
 
           <!-- Sweet Spot Finder: automatische accu-grootte optimalisatie (ROI) -->
@@ -772,7 +905,7 @@
           <!-- Heat Pump Toggle -->
           <div class="switch-control">
             <div class="switch-label-desc">
-              <strong>Warmtepomp (Heat Pump)</strong>
+              <strong>Warmtepomp</strong>
               <span>Winter baseload invloed</span>
             </div>
             <label class="toggle-switch">
@@ -790,6 +923,7 @@
                     voor warmtapwater.</span></span> <span class="val-badge" id="hp-baseload-val">0.0 kW</span></label>
               <input type="range" id="hp-baseload" min="0.0" max="4.0" step="0.1" value="0.0" data-suffix=" kW">
             </div>
+            <button type="button" class="btn-explain" onclick="showHardwareExplainer('heatpump')">❓ Hoe werkt het warmtepomp-model?</button>
           </div>
 
         </section>
@@ -798,6 +932,19 @@
 
       <!-- RIGHT DASHBOARD: Charts & Metrics -->
       <main class="main-dashboard">
+
+        <div id="digital-twin-banner" class="glass-panel"
+          style="display:none; margin-bottom:1rem; padding:0.85rem 1.1rem;
+                 border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.08);">
+          <div style="font-family:var(--font-display); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);">
+            ⚙️ Digital Twin Mode actief
+          </div>
+          <div style="font-size:0.82rem; color:var(--text-muted); line-height:1.6; margin-top:0.4rem;">
+            Je bestaande <span id="digital-twin-devices">hardware</span> is uit de historische baseline
+            <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware,
+            geen toevoegingen. Zet een schuif op <strong>nul</strong> om je huis volledig zónder dat apparaat te zien.
+          </div>
+        </div>
 
         <!-- Uitleg voor nieuwe gebruikers — inklapbaar, standaard open -->
         <details class="glass-panel" id="intro-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
@@ -1051,6 +1198,11 @@
                 Marginale kosten per apparaat t.o.v. situatie zonder apparaten · per jaar
               </p>
             </div>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:flex-start;">
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('battery')">❓ Accu</button>
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('heatpump')">❓ Warmtepomp</button>
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('ev')">❓ EV</button>
+            </div>
           </div>
           <div id="hw-chart-body" style="padding:0 0.25rem;"></div>
         </section>
@@ -1239,7 +1391,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=36"></script>
+  <script src="/energie/app.js?v=41"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
