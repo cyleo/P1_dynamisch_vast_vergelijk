@@ -6,6 +6,25 @@ let overviewMode = "day"; // "day" | "week"
 let simMode = "day";  // "day" | "week"
 let simDrillDay = null;   // YYYY-MM-DD — drill-down naar uurweergave voor die dag
 let activeSimulation = {};
+let profileVisibleLines = {
+  imp: true,
+  exp: true,
+  spot: true,
+  solar: true,
+  ev: true,
+  hp: true,
+  bat: true
+};
+function toggleProfileLine(key) {
+  profileVisibleLines[key] = !profileVisibleLines[key];
+  const legendEl = document.getElementById(`legend-${key}`);
+  if (legendEl) {
+    legendEl.style.opacity = profileVisibleLines[key] ? "1" : "0.35";
+    legendEl.style.textDecoration = profileVisibleLines[key] ? "none" : "line-through";
+  }
+  renderChart();
+}
+window.toggleProfileLine = toggleProfileLine;
 let epexHistory = new Map(); // isoHour (floored) → price incl. BTW (€/kWh)
 let liveEnergyTax = 0.11084;   // updated by fetchTarieven()
 
@@ -2260,7 +2279,10 @@ function _simulateCore(cfg, full = false) {
   const batGridDrawn = {};    // dayKey → reeds van het net ingekochte kWh (drawn, budgetbewaking)
 
   // Profiel-arrays (wanneer full=true)
-  const hourly = full ? Array.from({ length: 24 }, () => ({ imports: [], exports: [], spots: [], dynCosts: [], fixedCosts: [] })) : null;
+  const hourly = full ? Array.from({ length: 24 }, () => ({
+    imports: [], exports: [], spots: [], dynCosts: [], fixedCosts: [],
+    solar: [], ev: [], hp: [], batCharge: [], batDischarge: []
+  })) : null;
   const weekly = full ? Array.from({ length: 7 }, () => ({ dynCosts: [], fixedCosts: [] })) : null;
   const dayTot = full ? {} : null;
   const dayHour = full ? {} : null;
@@ -2276,6 +2298,9 @@ function _simulateCore(cfg, full = false) {
     let spot = epexHistory.has(tsKey) ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
     if (epexHistory.has(tsKey)) epexReal++; else epexFall++;
     if (spot > 0 && stressMultiplier !== 1.0) spot *= stressMultiplier;
+
+    let batChargeVal = 0;
+    let batDischargeVal = 0;
 
     if (full) {
       hourly[hour].spots.push(spot);
@@ -2328,6 +2353,7 @@ function _simulateCore(cfg, full = false) {
         batSoC += c * batEfficiency;
         expDyn = Math.max(0, expDyn - c);
         currentPowerLimit -= c;
+        batChargeVal += c;
       }
       // 2. Van het net laden in de geplande goedkope uren — begrensd door zowel het
       //    inkoop-budget (bruto-EB-val) als de dag-behoefte op de SoC.
@@ -2340,6 +2366,7 @@ function _simulateCore(cfg, full = false) {
           impDyn += c;
           currentPowerLimit -= c;
           batGridDrawn[dayKey] = (batGridDrawn[dayKey] || 0) + c;
+          batChargeVal += c;
         }
       }
       // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
@@ -2352,6 +2379,7 @@ function _simulateCore(cfg, full = false) {
         let d = Math.min(batPower, batSoC);
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
+        batDischargeVal += toHouse;
 
         // Terugleveren aan net mag alleen als (a) het rendement oplevert (opbrengst spot/1.21
         // > laadkosten loAllin/rendement) én (b) het écht overschot is: we houden de
@@ -2362,6 +2390,7 @@ function _simulateCore(cfg, full = false) {
         const exportable = Math.min(d, Math.max(0, batSoC - reserve));
         if (gridExport && exportable > 0 && spot > minExportSpot) {
           expDyn += exportable; batSoC -= exportable;
+          batDischargeVal += exportable;
         }
       }
 
@@ -2423,6 +2452,18 @@ function _simulateCore(cfg, full = false) {
       hourly[hour].fixedCosts.push(fxHrCost);
       weekly[dow].dynCosts.push(dynHrCost);
       weekly[dow].fixedCosts.push(fxHrCost);
+
+      // Collect simulated hardware values for 24h profile
+      hourly[hour].solar.push(row.solar_yield || 0);
+      let evVal = 0;
+      if (hasEv) {
+        const evD = evScheduleCacheDyn[dayKey]?.[hour];
+        if (evD) evVal = evD.grid + evD.solar;
+      }
+      hourly[hour].ev.push(evVal);
+      hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
+      hourly[hour].batCharge.push(batChargeVal);
+      hourly[hour].batDischarge.push(batDischargeVal);
 
       if (!dayTot[dayKey]) dayTot[dayKey] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0 };
       const pd = dayTot[dayKey];
@@ -2964,18 +3005,40 @@ function renderChart() {
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   };
 
-  // Pre-compute per-hour medians for import, export and spot price
+  // Helper: mean of an array
+  const mean = arr => arr.length ? arr.reduce((sum, val) => sum + val, 0) / arr.length : 0;
+
+  // Pre-compute per-hour stats: mean for import/export, median for spot price, mean for hardware components
   const hourMedians = profile.map(h => ({
-    imp: median(h.imports),
-    exp: median(h.exports),
-    spot: median(h.spots)
+    imp: mean(h.imports),
+    exp: mean(h.exports),
+    spot: median(h.spots),
+    solar: mean(h.solar || []),
+    ev: mean(h.ev || []),
+    hp: mean(h.hp || []),
+    batCharge: mean(h.batCharge || []),
+    batDischarge: mean(h.batDischarge || [])
   }));
+
+  const isDtActive = activeSimulation?.records?.untangle?.active || (window.digitalTwinMode && window.digitalTwinMode.active);
+  
+  // Show or hide digital twin legends
+  document.querySelectorAll(".dt-legend").forEach(el => {
+    el.style.display = isDtActive ? "inline-flex" : "none";
+  });
 
   // Max values to scale chart axis
   let maxEnergy = 0.1; // lower floor so small values are visible
   hourMedians.forEach(h => {
-    if (h.imp > maxEnergy) maxEnergy = h.imp;
-    if (h.exp > maxEnergy) maxEnergy = h.exp;
+    if (profileVisibleLines.imp && h.imp > maxEnergy) maxEnergy = h.imp;
+    if (profileVisibleLines.exp && h.exp > maxEnergy) maxEnergy = h.exp;
+    if (isDtActive) {
+      if (profileVisibleLines.solar && h.solar > maxEnergy) maxEnergy = h.solar;
+      if (profileVisibleLines.ev && h.ev > maxEnergy) maxEnergy = h.ev;
+      if (profileVisibleLines.hp && h.hp > maxEnergy) maxEnergy = h.hp;
+      if (profileVisibleLines.bat && h.batCharge > maxEnergy) maxEnergy = h.batCharge;
+      if (profileVisibleLines.bat && h.batDischarge > maxEnergy) maxEnergy = h.batDischarge;
+    }
   });
   maxEnergy *= 1.15; // Give headroom
 
@@ -3042,50 +3105,71 @@ function renderChart() {
   let importPathPoints = [];
   let exportPathPoints = [];
   let pricePathPoints = [];
+  let solarPathPoints = [];
+  let evPathPoints = [];
+  let hpPathPoints = [];
+  let batChgPathPoints = [];
+  let batDisPathPoints = [];
 
   for (let h = 0; h < 24; h++) {
     const hm = hourMedians[h];
     importPathPoints.push(`${getX(h)},${getYEnergy(hm.imp)}`);
     exportPathPoints.push(`${getX(h)},${getYEnergy(hm.exp)}`);
     pricePathPoints.push(`${getX(h)},${getYPrice(toConsumerPrice(hm.spot))}`);
+    
+    solarPathPoints.push(`${getX(h)},${getYEnergy(hm.solar)}`);
+    evPathPoints.push(`${getX(h)},${getYEnergy(hm.ev)}`);
+    hpPathPoints.push(`${getX(h)},${getYEnergy(hm.hp)}`);
+    batChgPathPoints.push(`${getX(h)},${getYEnergy(hm.batCharge)}`);
+    batDisPathPoints.push(`${getX(h)},${getYEnergy(hm.batDischarge)}`);
   }
 
-  // Draw Area for Import
-  const importArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  importArea.setAttribute("d", `M ${getX(0)},${getYEnergy(0)} L ${importPathPoints.join(" L ")} L ${getX(23)},${getYEnergy(0)} Z`);
-  importArea.setAttribute("fill", "url(#import-grad)");
-  svg.appendChild(importArea);
+  // Helper function to draw a line path
+  const drawLine = (points, color, width = "2", dash = null, isArea = false, gradId = null) => {
+    if (isArea && gradId) {
+      const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      area.setAttribute("d", `M ${getX(0)},${getYEnergy(0)} L ${points.join(" L ")} L ${getX(23)},${getYEnergy(0)} Z`);
+      area.setAttribute("fill", `url(#${gradId})`);
+      svg.appendChild(area);
+    }
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M ${points.join(" L ")}`);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", width);
+    if (dash) path.setAttribute("stroke-dasharray", dash);
+    svg.appendChild(path);
+  };
 
-  // Draw Area for Export
-  const exportArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  exportArea.setAttribute("d", `M ${getX(0)},${getYEnergy(0)} L ${exportPathPoints.join(" L ")} L ${getX(23)},${getYEnergy(0)} Z`);
-  exportArea.setAttribute("fill", "url(#export-grad)");
-  svg.appendChild(exportArea);
+  // Draw Areas and Lines for Main Import/Export
+  if (profileVisibleLines.imp) {
+    drawLine(importPathPoints, "var(--accent-cyan)", "2", null, true, "import-grad");
+  }
+  if (profileVisibleLines.exp) {
+    drawLine(exportPathPoints, "var(--accent-green)", "2", null, true, "export-grad");
+  }
 
-  // Draw Line for Import
-  const importLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  importLine.setAttribute("d", `M ${importPathPoints.join(" L ")}`);
-  importLine.setAttribute("fill", "none");
-  importLine.setAttribute("stroke", "var(--accent-cyan)");
-  importLine.setAttribute("stroke-width", "2");
-  svg.appendChild(importLine);
-
-  // Draw Line for Export
-  const exportLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  exportLine.setAttribute("d", `M ${exportPathPoints.join(" L ")}`);
-  exportLine.setAttribute("fill", "none");
-  exportLine.setAttribute("stroke", "var(--accent-green)");
-  exportLine.setAttribute("stroke-width", "2");
-  svg.appendChild(exportLine);
+  // Draw simulated hardware lines in Digital Twin mode
+  if (isDtActive) {
+    if (profileVisibleLines.solar) {
+      drawLine(solarPathPoints, "#eab308", "1.5");
+    }
+    if (profileVisibleLines.ev) {
+      drawLine(evPathPoints, "#667eea", "1.5");
+    }
+    if (profileVisibleLines.hp) {
+      drawLine(hpPathPoints, "#ff758c", "1.5");
+    }
+    if (profileVisibleLines.bat) {
+      drawLine(batChgPathPoints, "#4facfe", "1.5", "3,3"); // charging: dashed
+      drawLine(batDisPathPoints, "#00f2fe", "1.5"); // discharging: solid
+    }
+  }
 
   // Draw Line for Price (Yellow)
-  const priceLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  priceLine.setAttribute("d", `M ${pricePathPoints.join(" L ")}`);
-  priceLine.setAttribute("fill", "none");
-  priceLine.setAttribute("stroke", "var(--accent-yellow)");
-  priceLine.setAttribute("stroke-width", "2");
-  priceLine.setAttribute("stroke-dasharray", "4,4");
-  svg.appendChild(priceLine);
+  if (profileVisibleLines.spot) {
+    drawLine(pricePathPoints, "var(--accent-yellow)", "2", "4,4");
+  }
 
   // 4. Inject SVG Gradients definitions into SVG
   const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
@@ -3146,39 +3230,77 @@ function renderChart() {
     if (hour > 23) hour = 23;
 
     const x = getX(hour);
-    const hr = profile[hour];
-    const impVal = hourMedians[hour].imp;
-    const expVal = hourMedians[hour].exp;
+    const hm = hourMedians[hour];
+    const impVal = hm.imp;
+    const expVal = hm.exp;
 
     // Show hover lines and dots
     hoverLine.setAttribute("x1", x);
     hoverLine.setAttribute("x2", x);
     hoverLine.style.display = "block";
 
-    dotImp.setAttribute("cx", x);
-    dotImp.setAttribute("cy", getYEnergy(impVal));
-    dotImp.style.display = "block";
+    if (profileVisibleLines.imp) {
+      dotImp.setAttribute("cx", x);
+      dotImp.setAttribute("cy", getYEnergy(impVal));
+      dotImp.style.display = "block";
+    } else {
+      dotImp.style.display = "none";
+    }
 
-    dotExp.setAttribute("cx", x);
-    dotExp.setAttribute("cy", getYEnergy(expVal));
-    dotExp.style.display = "block";
+    if (profileVisibleLines.exp) {
+      dotExp.setAttribute("cx", x);
+      dotExp.setAttribute("cy", getYEnergy(expVal));
+      dotExp.style.display = "block";
+    } else {
+      dotExp.style.display = "none";
+    }
 
     // Update Tooltip details
     tooltip.style.display = "block";
-    // Center tooltip on hover point
     tooltip.style.left = `${x + 15}px`;
     tooltip.style.top = `${getYEnergy(impVal) - 40}px`;
 
-    document.getElementById("tt-hour").textContent = `${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00 uur`;
-    document.getElementById("tt-import").textContent = `${impVal.toFixed(2)} kW`;
-    document.getElementById("tt-export").textContent = `${expVal.toFixed(2)} kW`;
-    const pureSpot = hourMedians[hour].spot;
+    let extraHtml = "";
+    if (isDtActive) {
+      if (profileVisibleLines.solar) {
+        extraHtml += `<div class="tooltip-row"><span>Zonnepanelen:</span><span class="val" style="color:#eab308;">${hm.solar.toFixed(2)} kW</span></div>`;
+      }
+      if (profileVisibleLines.ev) {
+        extraHtml += `<div class="tooltip-row"><span>Auto:</span><span class="val" style="color:#667eea;">${hm.ev.toFixed(2)} kW</span></div>`;
+      }
+      if (profileVisibleLines.hp) {
+        extraHtml += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:#ff758c;">${hm.hp.toFixed(2)} kW</span></div>`;
+      }
+      if (profileVisibleLines.bat) {
+        extraHtml += `<div class="tooltip-row"><span>Accu Laden:</span><span class="val" style="color:#4facfe;">${hm.batCharge.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Accu Ontladen:</span><span class="val" style="color:#00f2fe;">${hm.batDischarge.toFixed(2)} kW</span></div>`;
+      }
+    }
+
+    const pureSpot = hm.spot;
     const consPrice = toConsumerPrice(pureSpot);
-    document.getElementById("tt-spot").textContent = `€ ${consPrice.toFixed(3)} / kWh`;
     const rawEpex = (pureSpot / 1.21).toFixed(3);
     const markup = (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.02).toFixed(3);
-    document.getElementById("tt-spot-breakdown").textContent =
-      `EPEX markt €${rawEpex} × 1.21 + opslag €${markup} × 1.21 + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}`;
+
+    tooltip.innerHTML = `
+      <h4>${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00 uur</h4>
+      <div class="tooltip-row">
+        <span>Gem. Afname:</span>
+        <span class="val" style="color: var(--accent-cyan);">${impVal.toFixed(2)} kW</span>
+      </div>
+      <div class="tooltip-row">
+        <span>Gem. Teruglevering:</span>
+        <span class="val" style="color: var(--accent-green);">${expVal.toFixed(2)} kW</span>
+      </div>
+      ${extraHtml}
+      <div class="tooltip-row">
+        <span>Consumentenprijs (all-in):</span>
+        <span class="val" style="color: var(--accent-yellow);">€ ${consPrice.toFixed(3)} / kWh</span>
+      </div>
+      <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.2rem;">
+        EPEX markt €${rawEpex} × 1.21 + opslag €${markup} × 1.21 + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
+      </div>
+    `;
   });
 
   overlay.addEventListener("mouseleave", () => {
