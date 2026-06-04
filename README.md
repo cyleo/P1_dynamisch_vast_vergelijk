@@ -42,8 +42,8 @@ Puur HTML/CSS/JavaScript — geen build-stap, geen database, geen tracking.
 ### Optie 1 — npm (aanbevolen)
 
 ```bash
-git clone https://github.com/JOUW_GEBRUIKERSNAAM/JOUW_REPO.git
-cd JOUW_REPO
+git clone https://github.com/peterjan/DynOfVast.git
+cd DynOfVast
 npm start          # start op http://localhost:3000/energie/
 ```
 
