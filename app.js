@@ -9,6 +9,11 @@ let activeSimulation = {};
 let epexHistory = new Map(); // isoHour (floored) → price incl. BTW (€/kWh)
 let liveEnergyTax = 0.11084;   // updated by fetchTarieven()
 
+// ── Digital Twin ─────────────────────────────────────────────────────────────
+let _lastHAStats = null;    // ruwe HA-statistieken; bewaard voor DT-toggle hertransformatie
+let _lastRoleMap = null;    // bijbehorende roleMap
+let digitalTwinEnabled = true;  // false = gebruik ruwe meterstanden ook als apparaten gekoppeld zijn
+
 // ── Data-ingest & jaarprojectie ─────────────────────────────────────────────
 let isDemoData = true;   // demo/voorbeeld actief? eerste upload vervangt i.p.v. mergt
 let fullYearData = null;   // 8760-uurs jaarprojectie (echte + gesynthetiseerde uren); null = geen synthese
@@ -1280,7 +1285,9 @@ async function handleHAImport() {
 
     const stats = await fetchHAStatisticsWS(wsUrl, tokenInput, uniqueEntities, startTime, endTime, statusEl);
 
-    energyData = processHAStatistics(stats, roleMap);
+    _lastHAStats = stats;
+    _lastRoleMap = roleMap;
+    energyData = processHAStatistics(stats, roleMap, digitalTwinEnabled);
     isDemoData = false;   // echte HA-data: verdere uploads mergen erbij
 
     const untangle = energyData.untangle || { active: false };
@@ -1369,7 +1376,18 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 }
 
 // ── Convert HA statistics (cumulative sum per hour) to hourly P1 records ───
-function processHAStatistics(stats, roleMap) {
+function toggleDigitalTwin(enabled) {
+  digitalTwinEnabled = enabled;
+  if (!_lastHAStats || !_lastRoleMap) return;
+  energyData = processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled);
+  isDemoData = false;
+  const untangle = energyData.untangle || { active: false };
+  updateDigitalTwinBanner(untangle);
+  fullYearStamp = "";   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
+  runSimulation();
+}
+
+function processHAStatistics(stats, roleMap, dtEnabled = true) {
   // stats: { entity_id: [ { start: epochMs, sum: float, mean: float }, ... ] }
   const hourlySum = {};
   const hourlyMean = {};
@@ -1395,9 +1413,9 @@ function processHAStatistics(stats, roleMap) {
   const timestamps = Array.from(allTs).sort((a, b) => a - b);
 
   let totBatIn = 0, totBatOut = 0;
-  // Eénmalig: zijn er überhaupt apparaten gekoppeld? Alléén dán ontwarren we in
-  // net-space (Digital Twin). Zonder apparaten bewaren we de ruwe meterstanden 1-op-1.
-  const anyDevice = !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
+  // Eénmalig: zijn er apparaten gekoppeld én is Digital Twin ingeschakeld?
+  // dtEnabled=false → bewaar ruwe meterstanden 1-op-1 (gebruiker koos voor uitschakelen).
+  const anyDevice = dtEnabled && !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
 
   const records = [];
   for (let i = 1; i < timestamps.length; i++) {
@@ -1494,17 +1512,44 @@ function processHAStatistics(stats, roleMap) {
 function updateDigitalTwinBanner(meta) {
   const banner = document.getElementById("digital-twin-banner");
   if (!banner) return;
+  // Toon de banner zodra apparaten gekoppeld zijn (ook als DT uitgeschakeld is).
+  const hasDevices = meta && (meta.active || (meta.devices &&
+    (meta.devices.ev || meta.devices.hp || meta.devices.battery)));
   window.digitalTwinMode = meta && meta.active ? meta : null;
-  if (!meta || !meta.active) { banner.style.display = "none"; return; }
+  if (!hasDevices) { banner.style.display = "none"; return; }
 
   const names = [];
-  if (meta.devices.ev) names.push("elektrische auto");
-  if (meta.devices.hp) names.push("warmtepomp");
-  if (meta.devices.battery) names.push("thuisbatterij");
+  if (meta.devices?.ev) names.push("elektrische auto");
+  if (meta.devices?.hp) names.push("warmtepomp");
+  if (meta.devices?.battery) names.push("thuisbatterij");
   const human = names.length === 1 ? names[0]
     : names.slice(0, -1).join(", ") + " en " + names.slice(-1);
-  const el = document.getElementById("digital-twin-devices");
-  if (el) el.textContent = human || "hardware";
+  const devEl = document.getElementById("digital-twin-devices");
+  if (devEl) devEl.textContent = human || "hardware";
+
+  const on = digitalTwinEnabled;
+  banner.style.border = `1px solid ${on ? "var(--accent-cyan)" : "var(--accent-orange)"}`;
+  banner.style.background = on ? "rgba(56,189,248,0.08)" : "rgba(251,146,60,0.08)";
+
+  const statusEl = document.getElementById("dt-status-label");
+  if (statusEl) statusEl.textContent = on ? "actief" : "uitgeschakeld";
+  statusEl && (statusEl.style.color = on ? "var(--accent-cyan)" : "var(--accent-orange)");
+
+  const btn = document.getElementById("dt-toggle-btn");
+  if (btn) {
+    btn.textContent = on ? "Uitschakelen" : "Inschakelen";
+    btn.style.borderColor = on ? "var(--accent-cyan)" : "var(--accent-orange)";
+    btn.style.background = on ? "rgba(56,189,248,0.15)" : "rgba(251,146,60,0.15)";
+    btn.style.color = on ? "var(--accent-cyan)" : "var(--accent-orange)";
+  }
+
+  const bodyEl = document.getElementById("dt-banner-body");
+  if (bodyEl) {
+    bodyEl.innerHTML = on
+      ? `Je bestaande <span id="digital-twin-devices">${human || "hardware"}</span> is uit de historische baseline <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware, geen toevoegingen.`
+      : `Digital Twin is uitgeschakeld — ruwe meterstanden worden 1-op-1 gebruikt. De hardware-schuiven modelleren <strong>toevoegingen</strong> bovenop je bestaande situatie.`;
+  }
+
   banner.style.display = "block";
 }
 
@@ -2887,6 +2932,8 @@ function updateUIElements() {
 
 // Custom responsive SVG Chart Renderer
 function renderChart() {
+  if (!activeSimulation?.hourlyProfile) return;
+
   const container = document.getElementById("chart-svg-container");
   const svg = document.getElementById("chart-svg");
   const tooltip = document.getElementById("chart-tooltip");
@@ -3823,17 +3870,31 @@ function renderOverviewChart() {
   if (!energyData || energyData.length === 0) { card.style.display = "none"; return; }
   card.style.display = "";
 
-  // Aggregate to day or week totals
+  // Use simulated perDayTotals if available (reflects slider/switch changes),
+  // otherwise fall back to raw energyData for the base view.
+  const pdt = activeSimulation?.perDayTotals;
   const bucketMap = new Map();
-  energyData.forEach(row => {
-    const key = overviewMode === "week"
-      ? isoWeek(row.timestamp.slice(0, 10))
-      : row.timestamp.slice(0, 10);
-    if (!bucketMap.has(key)) bucketMap.set(key, { imp: 0, exp: 0 });
-    const e = bucketMap.get(key);
-    e.imp += (row.import_t1 || 0) + (row.import_t2 || 0);
-    e.exp += (row.export_t1 || 0) + (row.export_t2 || 0);
-  });
+
+  if (pdt && Object.keys(pdt).length > 0) {
+    // perDayTotals is { "2025-06-01": { impKwh, expKwh, ... }, ... }
+    for (const [dayKey, v] of Object.entries(pdt)) {
+      const key = overviewMode === "week" ? isoWeek(dayKey) : dayKey;
+      if (!bucketMap.has(key)) bucketMap.set(key, { imp: 0, exp: 0 });
+      const e = bucketMap.get(key);
+      e.imp += v.impKwh || 0;
+      e.exp += v.expKwh || 0;
+    }
+  } else {
+    energyData.forEach(row => {
+      const key = overviewMode === "week"
+        ? isoWeek(row.timestamp.slice(0, 10))
+        : row.timestamp.slice(0, 10);
+      if (!bucketMap.has(key)) bucketMap.set(key, { imp: 0, exp: 0 });
+      const e = bucketMap.get(key);
+      e.imp += (row.import_t1 || 0) + (row.import_t2 || 0);
+      e.exp += (row.export_t1 || 0) + (row.export_t2 || 0);
+    });
+  }
 
   const days = Array.from(bucketMap.keys()).sort();
   const values = days.map(d => bucketMap.get(d));

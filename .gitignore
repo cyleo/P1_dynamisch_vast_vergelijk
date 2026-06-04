@@ -8,6 +8,10 @@ p1_sample.json
 
 # Claude project bestanden
 .claude/
+cline_mcp_settings.json
+
+# Cline/AI assistant bestanden
+assistant/
 
 # macOS
 .DS_Store

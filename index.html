@@ -6,8 +6,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P1 Energie Contract Analysator | Dynamisch vs Vast</title>
   <meta name="description"
-    content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2026 het goedkoopste is voor jouw situatie.">
-  <link rel="stylesheet" href="/energie/style.css?v=44">
+    content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2027 het goedkoopste is voor jouw situatie.">
+
+  <!-- Open Graph / LinkedIn preview -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="nl_NL">
+  <meta property="og:title" content="P1 Energie Contract Analysator — Dynamisch vs Vast">
+  <meta property="og:description" content="Laad je eigen P1 smart meter data en bereken direct hoeveel je bespaart met een dynamisch energiecontract versus een vast tarief in 2027. Inclusief simulaties voor zonnepanelen, thuisbatterij, warmtepomp en elektrische auto.">
+  <!-- TODO: vervang door echte GitHub Pages URL na publicatie -->
+  <meta property="og:image" content="https://raw.githubusercontent.com/JOUW_GEBRUIKERSNAAM/JOUW_REPO/main/assets/geavanceerd_view.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:url" content="https://JOUW_GEBRUIKERSNAAM.github.io/JOUW_REPO/">
+
+  <link rel="stylesheet" href="/energie/style.css?v=45">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal */
     #modal-backdrop,
@@ -426,10 +438,20 @@
         </h1>
         <p>Dynamisch versus Vast &mdash; rekenmodel op basis van jouw echte P1 verbruiksprofiel</p>
       </div>
-      <div class="header-status">
-        <span class="pulse-light"></span>
-        <span id="data-status" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.4rem;">Demo data
-          geladen</span>
+      <div style="display:flex; align-items:center; gap:1.5rem;">
+        <nav style="display:flex; gap:1rem; font-size:0.8rem;">
+          <!-- TODO: vervang # door echte blog-URL na publicatie -->
+          <a href="#" style="color:var(--text-muted); text-decoration:none; opacity:0.7;"
+             onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">Blog</a>
+          <!-- TODO: vervang # door echte GitHub-URL na publicatie -->
+          <a href="#" style="color:var(--text-muted); text-decoration:none; opacity:0.7;"
+             onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">GitHub</a>
+        </nav>
+        <div class="header-status">
+          <span class="pulse-light"></span>
+          <span id="data-status" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.4rem;">Demo data
+            geladen</span>
+        </div>
       </div>
     </header>
 
@@ -534,28 +556,35 @@
             <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.8rem;">
               Kies de juiste P1 sensoren. Automatisch herkende waarden zijn al ingevuld.
             </p>
+            <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.8rem; line-height:1.5; background:rgba(255,255,255,0.03); padding:0.5rem 0.6rem; border-radius:6px; border-left:2px solid var(--accent-blue);">
+              💡 <strong>Welke sensor kiezen?</strong> Selecteer de <em>cumulatieve meterstand</em>-sensoren van je P1 slimme meter (eenheid: <strong>kWh</strong>). In Home Assistant herken je ze aan namen als <code>sensor.p1_meter_*</code>, <code>sensor.electricity_meter_*</code> of <code>sensor.dsmr_*</code>. Ze tonen een stijgend totaal — <em>niet</em> het actuele vermogen (W/kW).
+            </p>
 
             <div class="form-group" style="margin-bottom:0.7rem;">
               <label style="font-size:0.78rem; color:var(--accent-blue); margin-bottom:0.3rem; display:block;">Afname
                 Tarief 1 (piek)</label>
               <select id="sel-imp1" class="ha-select"></select>
+              <span style="font-size:0.66rem; color:var(--text-muted); display:block; margin-top:0.15rem;">Bijv. <code>sensor.electricity_meter_energy_consumption_tarif_1</code></span>
             </div>
             <div class="form-group" style="margin-bottom:0.7rem;">
               <label style="font-size:0.78rem; color:var(--accent-blue); margin-bottom:0.3rem; display:block;">Afname
                 Tarief 2 (dal)</label>
               <select id="sel-imp2" class="ha-select"></select>
+              <span style="font-size:0.66rem; color:var(--text-muted); display:block; margin-top:0.15rem;">Bijv. <code>sensor.electricity_meter_energy_consumption_tarif_2</code></span>
             </div>
             <div class="form-group" style="margin-bottom:0.7rem;">
               <label
                 style="font-size:0.78rem; color:var(--accent-green); margin-bottom:0.3rem; display:block;">Teruglevering
                 Tarief 1</label>
               <select id="sel-exp1" class="ha-select"></select>
+              <span style="font-size:0.66rem; color:var(--text-muted); display:block; margin-top:0.15rem;">Bijv. <code>sensor.electricity_meter_energy_production_tarif_1</code></span>
             </div>
             <div class="form-group" style="margin-bottom:1rem;">
               <label
                 style="font-size:0.78rem; color:var(--accent-green); margin-bottom:0.3rem; display:block;">Teruglevering
                 Tarief 2</label>
               <select id="sel-exp2" class="ha-select"></select>
+              <span style="font-size:0.66rem; color:var(--text-muted); display:block; margin-top:0.15rem;">Bijv. <code>sensor.electricity_meter_energy_production_tarif_2</code></span>
             </div>
 
             <div class="form-group"
@@ -570,6 +599,7 @@
               <select id="sel-solar" class="ha-select">
                 <option value="">— Niet koppelen (export-gebaseerde schatting) —</option>
               </select>
+              <span style="font-size:0.66rem; color:var(--text-muted); display:block; margin-top:0.15rem;">Kies de <strong>cumulatieve totale productie</strong> van je omvormer (kWh). Bijv. <code>sensor.solaredge_lifetime_energy</code> of <code>sensor.inverter_total_yield</code>.</span>
             </div>
 
             <div class="form-group"
@@ -583,17 +613,21 @@
                     net-/AC-zijde meten (laden én ontladen op hetzelfde meetpunt), anders klopt het rendementsverlies niet.</span></span>
               </label>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.4rem 0 0.2rem; display:block;">🚗 EV-lader (kWh)</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.4rem 0 0.2rem; display:block;">🚗 EV-lader</label>
               <select id="sel-ev" class="ha-select"><option value="">— Niet koppelen —</option></select>
+              <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">Kies de <strong>totaal-verbruik</strong> sensor van je laadpaal (cumulatief, kWh). Bijv. <code>sensor.wallbox_total_energy</code>. Heb je geen cumulatieve sensor? Een <strong>live vermogenssensor</strong> (W/kW) werkt ook — het gemiddelde per uur wordt dan automatisch omgezet naar kWh.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">♨️ Warmtepomp (kWh)</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">♨️ Warmtepomp</label>
               <select id="sel-hp" class="ha-select"><option value="">— Niet koppelen —</option></select>
+              <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">Kies de <strong>cumulatieve elektriciteitsverbruik</strong> sensor (kWh). Bijv. <code>sensor.heatpump_total_energy</code> of <code>sensor.nibe_compressor_energy</code>. Live vermogen (W/kW) wordt ook ondersteund.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — laden / in (kWh)</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — laden / in</label>
               <select id="sel-bat-in" class="ha-select"><option value="">— Niet koppelen —</option></select>
+              <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">De <strong>cumulatieve energie naar de batterij</strong> (kWh). Meet aan de <em>AC/net-zijde</em> (incl. omzettingsverlies). Bijv. <code>sensor.battery_grid_to_battery</code> of <code>sensor.powerwall_charge_energy</code>.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — ontladen / uit (kWh)</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — ontladen / uit</label>
               <select id="sel-bat-out" class="ha-select"><option value="">— Niet koppelen —</option></select>
+              <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">De <strong>cumulatieve energie vanuit de batterij</strong> (kWh). Dezelfde meetbron als laden, maar de ontlaadrichting. Bijv. <code>sensor.battery_battery_to_grid</code> of <code>sensor.powerwall_discharge_energy</code>.</span>
             </div>
 
             <div class="form-group" style="margin-bottom:1rem;">
@@ -957,10 +991,18 @@
         <div id="digital-twin-banner" class="glass-panel"
           style="display:none; margin-bottom:1rem; padding:0.85rem 1.1rem;
                  border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.08);">
-          <div style="font-family:var(--font-display); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);">
-            ⚙️ Digital Twin Mode actief
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+            <div style="font-family:var(--font-display); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);">
+              ⚙️ Digital Twin Mode <span id="dt-status-label">actief</span>
+            </div>
+            <button type="button" id="dt-toggle-btn" onclick="toggleDigitalTwin(!digitalTwinEnabled)"
+              style="font-size:0.78rem; padding:0.25rem 0.75rem; border-radius:6px; cursor:pointer;
+                     border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.15);
+                     color:var(--accent-cyan); white-space:nowrap;">
+              Uitschakelen
+            </button>
           </div>
-          <div style="font-size:0.82rem; color:var(--text-muted); line-height:1.6; margin-top:0.4rem;">
+          <div id="dt-banner-body" style="font-size:0.82rem; color:var(--text-muted); line-height:1.6; margin-top:0.4rem;">
             Je bestaande <span id="digital-twin-devices">hardware</span> is uit de historische baseline
             <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware,
             geen toevoegingen. Zet een schuif op <strong>nul</strong> om je huis volledig zónder dat apparaat te zien.
@@ -1107,7 +1149,7 @@
                 Verbruiksprofiel
               </h2>
               <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
-                Controleer of de geladen data er logisch uitziet
+                Dagelijks verbruik inclusief gesimuleerde hardware-effecten (schuiven in Stap 3)
               </p>
             </div>
             <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
@@ -1429,7 +1471,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=44"></script>
+  <script src="/energie/app.js?v=45"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
