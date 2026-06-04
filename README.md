@@ -17,6 +17,10 @@ Upload je P1-data (of koppel Home Assistant) en zie direct:
 - **Sweet Spot Finder** — optimaal accuformaat met terugverdientijd
 - **Jaarprognose** — minder dan een jaar data? Een seizoensprofiel vult de rest aan
 
+### Werking van de app (animatie)
+
+![Werking van de app](assets/verify_changes.webp)
+
 ### Schermafbeeldingen
 
 | Eenvoudige weergave | Geavanceerde weergave |
