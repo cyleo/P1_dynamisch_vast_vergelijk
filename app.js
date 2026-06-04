@@ -3374,7 +3374,10 @@ function renderSimChart() {
   const N = keys.length;
   if (!N) return;
 
-  const maxVal = Math.max(...dyns, ...fixeds, 0.01) * 1.15;
+  const minVal = Math.min(0, ...dyns, ...fixeds);
+  const maxVal = Math.max(1, ...dyns, ...fixeds);
+  const range = maxVal - minVal;
+
   const container = document.getElementById("sim-svg-container");
   const svg = document.getElementById("sim-svg");
   const tooltip = document.getElementById("sim-tooltip");
@@ -3387,22 +3390,40 @@ function renderSimChart() {
   const barSlot = cW / N, barW = Math.max(2, barSlot * 0.35);
 
   const mk = (tag, a) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); Object.entries(a).forEach(([k, v]) => el.setAttribute(k, v)); return el; };
-  const yOf = v => PAD_T + cH - Math.max(0, v) / maxVal * cH;
-  const htOf = v => Math.max(0, v) / maxVal * cH;
+  const yOf = v => PAD_T + cH - cH * ((v - minVal) / range);
+  const yZero = PAD_T + cH - cH * ((0 - minVal) / range);
   const xOf = i => PAD_L + i * barSlot + barSlot / 2;
 
-  svg.appendChild(mk("line", { x1: PAD_L, y1: PAD_T + cH, x2: W - PAD_R, y2: PAD_T + cH, stroke: "rgba(255,255,255,0.15)", "stroke-width": "1" }));
-  [0.25, 0.5, 0.75, 1].forEach(r => svg.appendChild(mk("line", { x1: PAD_L, y1: PAD_T + cH * (1 - r), x2: W - PAD_R, y2: PAD_T + cH * (1 - r), stroke: "rgba(255,255,255,0.04)" })));
-  [0, 0.5, 1].forEach(r => {
-    const lbl = mk("text", { x: PAD_L - 5, y: PAD_T + cH * (1 - r) + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
-    lbl.textContent = `€${(r * maxVal).toFixed(2)}`; svg.appendChild(lbl);
+  // Gridlijnen over de volledige range
+  [0, 0.25, 0.5, 0.75, 1].forEach(r => {
+    const val = minVal + r * range;
+    const y = PAD_T + cH * (1 - r);
+    svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(255,255,255,0.04)" }));
+    if (r === 0 || r === 0.5 || r === 1) {
+      const lbl = mk("text", { x: PAD_L - 5, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
+      lbl.textContent = `€${val.toFixed(2)}`; svg.appendChild(lbl);
+    }
   });
+
+  // Nullijn extra accentueren
+  svg.appendChild(mk("line", {
+    x1: PAD_L,
+    y1: yZero,
+    x2: W - PAD_R,
+    y2: yZero,
+    stroke: minVal < 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.15)",
+    "stroke-width": "1",
+    "stroke-dasharray": minVal < 0 ? "2,2" : ""
+  }));
 
   for (let i = 0; i < N; i++) {
     svg.appendChild(mk("rect", { x: PAD_L + i * barSlot, y: PAD_T, width: barSlot, height: cH, fill: dyns[i] < fixeds[i] ? "rgba(56,239,125,0.05)" : "rgba(255,100,100,0.05)" }));
     [[dyns[i], "rgba(0,242,254,0.75)", -barW * 0.55], [fixeds[i], "rgba(102,126,234,0.75)", barW * 0.05]].forEach(([val, col, off]) => {
-      const ht = htOf(val); if (ht < 0.5) return;
-      svg.appendChild(mk("rect", { x: xOf(i) + off, y: yOf(val), width: barW, height: ht, fill: col, rx: "1" }));
+      const yVal = yOf(val);
+      const barY = Math.min(yVal, yZero);
+      const barH = Math.abs(yVal - yZero);
+      if (barH < 0.5) return;
+      svg.appendChild(mk("rect", { x: xOf(i) + off, y: barY, width: barW, height: barH, fill: col, rx: "1" }));
     });
   }
 
