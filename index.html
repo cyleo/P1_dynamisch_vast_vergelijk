@@ -1110,15 +1110,28 @@
             <h2 style="font-size: 1.1rem; font-family: var(--font-display); font-weight: 700;">
               24-uurs Gemiddeld Energieprofiel & Spotprijs
             </h2>
-            <div class="chart-legends">
-              <div class="legend-item">
+            <div class="chart-legends" id="profile-chart-legends">
+              <div class="legend-item" onclick="toggleProfileLine('imp')" style="cursor:pointer;" id="legend-imp">
                 <span class="legend-color import"></span> Import
               </div>
-              <div class="legend-item">
+              <div class="legend-item" onclick="toggleProfileLine('exp')" style="cursor:pointer;" id="legend-exp">
                 <span class="legend-color export"></span> Export
               </div>
-              <div class="legend-item">
+              <div class="legend-item" onclick="toggleProfileLine('spot')" style="cursor:pointer;" id="legend-spot">
                 <span class="legend-color price"></span> Consumentenprijs (incl. EB+BTW)
+              </div>
+              <!-- Digital Twin lines -->
+              <div class="legend-item dt-legend" onclick="toggleProfileLine('solar')" style="cursor:pointer; display:none;" id="legend-solar">
+                <span class="legend-color" style="background:#eab308; box-shadow:0 0 5px rgba(234,179,8,0.5);"></span> Zonnepanelen
+              </div>
+              <div class="legend-item dt-legend" onclick="toggleProfileLine('ev')" style="cursor:pointer; display:none;" id="legend-ev">
+                <span class="legend-color" style="background:#667eea; box-shadow:0 0 5px rgba(102,126,234,0.5);"></span> Auto
+              </div>
+              <div class="legend-item dt-legend" onclick="toggleProfileLine('hp')" style="cursor:pointer; display:none;" id="legend-hp">
+                <span class="legend-color" style="background:#ff758c; box-shadow:0 0 5px rgba(255,117,140,0.5);"></span> Warmtepomp
+              </div>
+              <div class="legend-item dt-legend" onclick="toggleProfileLine('bat')" style="cursor:pointer; display:none;" id="legend-bat">
+                <span class="legend-color" style="background:#4facfe; box-shadow:0 0 5px rgba(79,172,254,0.5);"></span> Accu
               </div>
             </div>
           </div>
