@@ -3755,24 +3755,44 @@ function renderMonthlyChart() {
   const padL = 46, padR = 12, padT = 14, padB = 24;
   const cw = W - padL - padR, ch = H - padT - padB;
   const labels = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
-  const maxV = Math.max(1, ...months.map(m => Math.max(m.fixed, m.dyn)));
+  
+  // Zoek de minimale en maximale waarden om een dynamische schaal te bepalen
+  const minVal = Math.min(0, ...months.map(m => m.has ? Math.min(m.fixed, m.dyn) : 0));
+  const maxVal = Math.max(1, ...months.map(m => m.has ? Math.max(m.fixed, m.dyn) : 0));
+  const range = maxVal - minVal;
 
   // y-as gridlijnen + labels
   for (let i = 0; i <= 4; i++) {
+    const val = minVal + (range * i / 4);
     const y = padT + ch - (ch * i / 4);
     svg.appendChild(mk("line", { x1: padL, y1: y, x2: W - padR, y2: y, stroke: "rgba(255,255,255,0.06)", "stroke-width": 1 }));
     const lbl = mk("text", { x: padL - 6, y: y + 3, "text-anchor": "end", "font-size": 9, fill: "var(--text-muted)" });
-    lbl.textContent = `€${Math.round(maxV * i / 4)}`;
+    lbl.textContent = `€${Math.round(val)}`;
     svg.appendChild(lbl);
   }
+
+  // Duidelijke nullijn als er negatieve waarden zijn
+  const yZero = padT + ch - ch * ((0 - minVal) / range);
+  svg.appendChild(mk("line", {
+    x1: padL,
+    y1: yZero,
+    x2: W - padR,
+    y2: yZero,
+    stroke: minVal < 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.06)",
+    "stroke-width": 1,
+    "stroke-dasharray": minVal < 0 ? "3,3" : ""
+  }));
 
   const groupW = cw / 12;
   const barW = Math.min(13, groupW / 2 - 2);
   months.forEach((m, i) => {
     const gx = padL + groupW * i + groupW / 2;
     const bar = (val, offset, color) => {
-      const h = ch * (val / maxV);
-      const r = mk("rect", { x: gx + offset, y: padT + ch - h, width: barW, height: Math.max(0, h), fill: color, rx: 2, opacity: 0.85 });
+      const yVal = padT + ch - ch * ((val - minVal) / range);
+      const barY = Math.min(yVal, yZero);
+      const barH = Math.abs(yVal - yZero);
+
+      const r = mk("rect", { x: gx + offset, y: barY, width: barW, height: barH, fill: color, rx: 2, opacity: 0.85 });
       const t = document.createElementNS(NS, "title");
       t.textContent = `${labels[i]} — €${val.toFixed(0)}`;
       r.appendChild(t);
