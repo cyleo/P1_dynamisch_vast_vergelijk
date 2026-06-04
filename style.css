@@ -542,6 +542,11 @@ input:checked + .slider-round:before {
   z-index: 2;
 }
 
+.chart-card:hover,
+.chart-card:focus-within {
+  z-index: 10;
+}
+
 /* Tooltip */
 .chart-tooltip {
   position: absolute;
