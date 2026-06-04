@@ -1,6 +1,14 @@
-// TEST 10 — Diepgaande validatie van rekenfouten en aannames in app.js
+// TEST 10 — Geherijkte kern-asserties (v=44)
+// Voorheen een puur diagnostisch script; nu echte pass/fail-checks.
+//   Deel 1: accu-laadvermogen (batPower) wordt gerespecteerd bij zon-opslag.
+//   Deel 2: terugleveropbrengst wordt excl. BTW berekend (spot/1.21).
+//   Deel 3: het vaste contract is invariant voor de energiebelasting-schuif.
 const { RUN } = require("./harness");
-const { buildYear, sum } = require("./profile");
+const { buildYear } = require("./profile");
+
+let pass = 0, fail = 0;
+const ok = (c, m) => { console.log((c ? "PASS  " : "FAIL  ") + m); c ? pass++ : fail++; };
+const near = (a, b, tol = 0.01) => Math.abs(a - b) < tol;
 
 const cfgBase = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07,
@@ -9,131 +17,64 @@ const cfgBase = {
   stressMultiplier: 1.0, solarDimmingMode: "off",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
+const EB = 0.11084;
 
-console.log("=== TEST 10: VALIDATIE VAN APP.JS BUGS EN AANNAMES ===");
+console.log("=== TEST 10: GEHERIJKTE KERN-ASSERTIES ===\n");
 
-// ---------------------------------------------------------
-// VALIDATIE 1: De Thuisbatterij Laadvermogen Limiet Bug
-// ---------------------------------------------------------
-console.log("\n--- Deel 1: Thuisbatterij Laadvermogen Limiet Bug ---");
-// We creëren een scenario met 1 uur waarin er 4 kWh zonne-export is én de accu mag laden van het net.
-// De accu heeft een capaciteit van 10 kWh, en een max vermogen van 5 kW.
-// We plannen dit uur als een 'charge' uur voor de accu.
-const rowsBattery = [];
-const epexBattery = new Map();
-for (let h = 0; h < 24; h++) {
-  const dt = new Date(2026, 5, 1, h, 0, 0);
+// ─────────────────────────────────────────────────────────────
+// Deel 1 — Accu-laadvermogen (batPower) gerespecteerd bij zon-opslag
+// ─────────────────────────────────────────────────────────────
+// Eén uur met 10 kWh zon-export; accu 20 kWh / 5 kW. Met genoeg dag-import (avond)
+// zodat de dag-opslaglimiet (socCap = min(capaciteit, dag-import)) ruim genoeg is.
+// De zon-opslag mag dat uur HOOGUIT batPower (5 kWh) absorberen → export blijft 5 kWh.
+{
+  const rows = [], epex = new Map();
   const p2 = n => (n < 10 ? "0" + n : "" + n);
-  const key = `2026-06-01T${p2(h)}`;
-  
-  // Om 12 uur hebben we zonne-export en een negatieve prijs
-  const isTarget = (h === 12);
-  rowsBattery.push({
-    timestamp: dt.toISOString(),
-    import_t1: 0, import_t2: 0,
-    export_t1: isTarget ? 4.0 : 0, export_t2: 0,
-    solar_yield: isTarget ? 5.0 : 0
+  for (let h = 0; h < 24; h++) {
+    const dt = new Date(2026, 5, 1, h, 0, 0);
+    const isSun = (h === 12);
+    const isEve = (h >= 18 && h <= 22);   // 5×4 = 20 kWh dag-import → socCap ruim
+    rows.push({
+      timestamp: dt.toISOString(),
+      import_t1: isEve ? 4.0 : 0, import_t2: 0,
+      export_t1: isSun ? 10.0 : 0, export_t2: 0,
+      solar_yield: isSun ? 12.0 : 0,
+    });
+    epex.set(`2026-06-01T${p2(h)}`, isSun ? -0.05 : 0.20);
+  }
+  const res = RUN({
+    rows, epex, eb: EB, yearScale: 1.0,
+    cfg: { ...cfgBase, hasBattery: true, batCapacity: 20, batPower: 5, batEfficiency: 1.0, batMode: "zelf" },
   });
-  
-  // We maken dit uur heel goedkoop (negatief) en de rest duurder, zodat dit uur gekozen wordt om te laden
-  epexBattery.set(key, isTarget ? -0.10 : 0.20);
+  const dk = Object.keys(res.perDayHourly)[0];
+  const exp12 = res.perDayHourly[dk][12].expKwh;
+  ok(near(exp12, 5.0, 0.05),
+     `Deel 1: zon-opslag gecapt op batPower → export-uur 12 = ${exp12.toFixed(2)} kWh (verwacht 5.0, niet 0)`);
 }
 
-// We stubben de daggroepering zodat dit uur als charge hour wordt herkend
-const cfgBattery = {
-  ...cfgBase,
-  hasBattery: true,
-  batCapacity: 10,
-  batPower: 5,
-  batEfficiency: 0.90,
-  batArbitrage: true,
-  batGridExport: false
-};
-
-// We draaien de simulatie voor dit specifieke uur.
-// Omdat harness.js de globals vult, moeten we zorgen dat we de charge hours correct stubben.
-// In app.js wordt precomputeBatterySchedule() aangeroepen die de charge uren bepaalt op basis van de dag-tabel.
-// Als we de beursprijs erg laag maken (-0.05) en dit is het enige uur, dan wordt het sowieso een charge uur.
-// Laten we de simulatie runnen en kijken naar de eindrekening en het gedrag van de accu.
-// In harness.js kunnen we de volledige simulation output terugkrijgen als we full=true sturen.
-const resBat = RUN({
-  rows: rowsBattery,
-  epex: epexBattery,
-  cfg: cfgBattery,
-  eb: 0.11084,
-  yearScale: 1.0
-});
-
-console.log("Huis oorspronkelijke import: 0.0 kWh | export: 4.0 kWh");
-console.log(`Dynamische resultaten:`);
-console.log(`  Bruto import kWh (inclusief acculaden): ${resBat.totalImportKwh.toFixed(2)} kWh`);
-console.log(`  Bruto export kWh (na acculaden):       ${resBat.totalExportKwh.toFixed(2)} kWh`);
-
-// Laten we analyseren wat er is gebeurd met de accu:
-// 1. Zonoverschot opslaan:
-//    c_solar = Math.min(expDyn, batPower, batCapacity - batSoC)
-//    c_solar = Math.min(4.0, 5.0, 10 - 0) = 4.0 kW.
-//    batSoC = 4.0 * 0.90 = 3.6 kWh.
-//    expDyn = 4.0 - 4.0 = 0.0 kWh.
-// 2. Arbitrage (van het net laden):
-//    Omdat het een charge hour is, expDyn = 0 en batSoC (3.6) < batCapacity (10):
-//    c_grid = Math.min(batPower, batCapacity - batSoC)
-//    c_grid = Math.min(5.0, 10 - 3.6) = 5.0 kW.
-//    batSoC = 3.6 + 5.0 * 0.90 = 8.1 kWh.
-//    impDyn += 5.0 kWh.
-// TOTAAL GELADEN IN DIT UUR: c_solar + c_grid = 4.0 + 5.0 = 9.0 kW!
-// Dit overschrijdt het max vermogen (batPower = 5 kW) met 4.0 kW (80% overschrijding)!
-
-if (resBat.totalImportKwh > 4.5) {
-  console.log("BUG BEVESTIGD: De accu heeft in één uur 9.0 kW aan vermogen opgenomen (4.0 kW zon + 5.0 kW net),");
-  console.log("terwijl het maximale laadvermogen (batPower) was gecapped op 5.0 kW.");
-} else {
-  console.log("Geen bug gedetecteerd.");
+// ─────────────────────────────────────────────────────────────
+// Deel 2 — Terugleveropbrengst excl. BTW (spot/1.21)
+// ─────────────────────────────────────────────────────────────
+{
+  const rowsPV = buildYear(3500, 3500);
+  const res = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: EB, yearScale: 1.0 });
+  const exclBtw = 77.58;   // referentie excl. BTW (= 93.87 / 1.21)
+  ok(near(res.dynamicRawExportRevenue, exclBtw, 0.10),
+     `Deel 2: exportopbrengst excl. BTW → €${res.dynamicRawExportRevenue.toFixed(2)} (verwacht €${exclBtw})`);
 }
 
-
-// ---------------------------------------------------------
-// VALIDATIE 2: Btw-fout over teruggeleverde stroom
-// ---------------------------------------------------------
-console.log("\n--- Deel 2: Btw-fout over teruggeleverde stroom ---");
-// In app.js is spot incl. BTW. De opbrengst van teruglevering is nu gecorrigeerd naar:
-// dynExpRev = dynExp * (spot / 1.21)
-// We controleren of de opbrengst nu inderdaad exclusief btw wordt berekend.
-const rowsPV = buildYear(3500, 3500); // 3500 kWh verbruik, 3500 opwek
-const resPVDyn = RUN({
-  rows: rowsPV,
-  epex: new Map(), // gebruikt fallback profiel (incl. btw)
-  cfg: cfgBase,
-  eb: 0.11084,
-  yearScale: 1.0
-});
-
-const calculatedExportRevenue = resPVDyn.dynamicRawExportRevenue;
-const expectedRevenueExclBtw = 77.58; // vooraf berekende referentiewaarde excl. BTW (93.87 / 1.21)
-const expectedRevenueInclBtw = 93.87; // vooraf berekende referentiewaarde incl. BTW
-
-console.log(`Voor een standaard huishouden (3500 kWh PV, 3500 kWh verbruik):`);
-console.log(`  Berekende exportopbrengst in engine: €${calculatedExportRevenue.toFixed(2)}`);
-if (Math.abs(calculatedExportRevenue - expectedRevenueExclBtw) < 0.10) {
-  console.log(`  PASS: De engine berekent de opbrengst nu correct exclusief btw (€${calculatedExportRevenue.toFixed(2)}).`);
-} else if (Math.abs(calculatedExportRevenue - expectedRevenueInclBtw) < 0.10) {
-  console.log(`  FAIL: De engine berekent de opbrengst nog steeds inclusief btw (€${calculatedExportRevenue.toFixed(2)}).`);
-} else {
-  console.log(`  Resultaat: €${calculatedExportRevenue.toFixed(2)}`);
+// ─────────────────────────────────────────────────────────────
+// Deel 3 — Vast contract invariant voor de EB-schuif
+// ─────────────────────────────────────────────────────────────
+{
+  const rowsPV = buildYear(3500, 3500);
+  const a = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: 0.11084, yearScale: 1.0 });
+  const b = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: 0.15000, yearScale: 1.0 });
+  ok(near(a.fixedTotalBill, b.fixedTotalBill, 0.001),
+     `Deel 3: vast invariant voor EB (€${a.fixedTotalBill.toFixed(2)} = €${b.fixedTotalBill.toFixed(2)})`);
+  ok(b.dynamicTotalBill > a.dynamicTotalBill,
+     `Deel 3: hogere EB → hogere dyn rekening (€${a.dynamicTotalBill.toFixed(2)} → €${b.dynamicTotalBill.toFixed(2)})`);
 }
 
-
-// ---------------------------------------------------------
-// VALIDATIE 3: Energiebelasting slider en het vaste contract
-// ---------------------------------------------------------
-console.log("\n--- Deel 3: Energiebelasting slider en vaste contract ---");
-// De energiebelasting-slider in de app beïnvloedt alleen het dynamische contract.
-// Het vaste contract is invariant voor deze slider.
-// Maar als de belasting stijgt in 2027, stijgt het vaste contract all-in tarief in werkelijkheid ook.
-const resEB1 = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: 0.11084, yearScale: 1.0 });
-const resEB2 = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: 0.15000, yearScale: 1.0 });
-
-console.log("Vaste rekening bij EB = 0.11084: €" + resEB1.fixedTotalBill.toFixed(2));
-console.log("Vaste rekening bij EB = 0.15000: €" + resEB2.fixedTotalBill.toFixed(2));
-console.log("Discrepantie: Het vaste contract past zich niet aan aan de stijging van de energiebelasting,");
-console.log("waardoor de vergelijking scheefgetrokken wordt als de gebruiker met toekomstige tarieven simuleert.");
+console.log(`\n${fail === 0 ? "✅ ALLE" : "❌ " + fail + "/" + (pass + fail)} checks` + (fail === 0 ? " geslaagd" : " GEFAALD") + ` (${pass} pass)`);
+if (fail > 0) process.exitCode = 1;

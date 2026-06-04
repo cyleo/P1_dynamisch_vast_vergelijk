@@ -35,17 +35,18 @@ const r = RUN({ rows, epex, cfg, eb: 0.11084, yearScale: 1.0 });
 
 // --- Handberekening ---
 const eb = 0.11084, markup = 0.018, spot = 0.10;
+const REBATE = 628.96;   // heffingskorting (EB-vermindering) — van beide totalen af
 const totImp = 8760;
 const dynImpCost_hand = totImp * (spot + markup * 1.21);
 const dynEB_hand = totImp * eb;
 const dynSub_hand = 6.00 * 12;
-const dynBill_hand = dynImpCost_hand + dynEB_hand + dynSub_hand;
+const dynBill_hand = dynImpCost_hand + dynEB_hand + dynSub_hand - REBATE;
 
 // Peak/dal split — bepaald door engine; we lezen volumes terug en checken kosten consistent.
 const peakImp = r.fixedPeakImport, dalImp = r.fixedDalImport;
 const fixedImp_hand = peakImp * 0.27 + dalImp * 0.24;
 const fixedSub_hand = 7.50 * 12;
-const fixedBill_hand = fixedImp_hand + fixedSub_hand;
+const fixedBill_hand = fixedImp_hand + fixedSub_hand - REBATE;
 
 function chk(name, a, b, tol = 0.01) {
   const ok = Math.abs(a - b) < tol;

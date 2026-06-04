@@ -2,18 +2,34 @@
 
 Bereken of een **dynamisch** of **vast** energiecontract goedkoper is voor jouw situatie — op basis van je eigen P1 smart meter data uit Home Assistant, gerekend met de **fiscale regels van 2027** (einde saldering, energiebelasting over bruto afname).
 
-![screenshot placeholder](https://placehold.co/800x400?text=P1+Energie+Contract+Analysator)
+## Screenshots & Demonstratie
+
+### Werking van de app (animatie)
+![Werking animatie](assets/verify_changes.webp)
+
+### Weergaven (Eenvoudig vs. Geavanceerd)
+| Eenvoudige weergave (Standaard) | Geavanceerde weergave |
+|---|---|
+| ![Eenvoudige weergave](assets/eenvoudig_view.png) | ![Geavanceerde weergave](assets/geavanceerd_view.png) |
+
+### Slimme functionaliteiten
+| Thuisbatterij model (uitleg en wiskunde) | Sweet Spot Finder (ROI) |
+|---|---|
+| ![Thuisbatterij model](assets/battery_modal.png) | ![Sweet Spot Finder](assets/roi_calculation.png) |
 
 ## Wat doet het?
 
+- **Progressieve Onthulling (Progressive Disclosure)** — de app start standaard in een eenvoudige weergave (alleen P1-upload en basistarieven). Geavanceerde hardware-simulaties (EV, batterij, warmtepomp, dimmen) en de stresstest zijn met één klik op de toggle 'Geavanceerd' te activeren.
 - **Koppelt met Home Assistant** via de WebSocket-API om tot ~2 jaar historische P1-data op te halen (of upload een CSV/JSON-export — meerdere bestanden worden samengevoegd en ontdubbeld).
 - **Vergelijkt vast vs. dynamisch** met het 2027-model:
   - **Vast** — piek/dal-tarieven, teruglevertarief, Vaste Terugleverkosten (VTK), vastrecht.
   - **Dynamisch** — EPEX-uurprijzen (Frank Energie / EnergyZero) + opslag + energiebelasting over **bruto** afname.
+- **De Zonne-waterval** — verduidelijkt hoe de opgewekte zonnestroom verdeeld wordt (eerst Huisverbruik, dan EV, dan Thuisaccu, en ten slotte het Net).
 - **Jaarprognose** — heb je minder dan een jaar data? Een slim seizoensprofiel vult de ontbrekende maanden aan tot een volledig, realistisch jaarverbruik (winter zwaarder, zomer lichter, avondpiek voor koken/verlichting).
 - **Hardware-simulaties** — warmtepomp, elektrische auto (thuis/forens), thuisbatterij (zelfconsumptie óf netarbitrage), zonnepanelen dimmen bij negatieve prijzen.
-- **Sweet Spot Finder** — berekent automatisch het ideale accuformaat met terugverdientijd.
+- **Sweet Spot Finder** — berekent automatisch het ideale accuformaat met terugverdientijd (met duidelijke disclaimers over optimalisatie binnen het dynamische contract).
 - **Stresstest** — vermenigvuldig de marktprijzen om te zien of dynamisch ook in een energiecrisis nog loont.
+- **Formules in mensentaal** — de wiskundige modellen en formules (rendementen, laadbudgetten, etc.) worden in duidelijke, begrijpelijke termen uitgelegd in de hardware explainer modals.
 - **Grafieken** — 24-uurs dagprofiel, dag/week-overzicht, maandelijkse kostenvergelijking en hardware-effect per apparaat.
 
 ## Het 2027-model (einde saldering)
@@ -75,6 +91,7 @@ if ($request_method = OPTIONS) { return 204; }
    - **Zonnepanelen** (optioneel) — kWh- of Wh-sensor van je omvormer
      - Enphase: `sensor.inverter_XXXX_lifetime_energy_production` (Wh → automatisch ÷1000)
      - SolarEdge / Fronius: meestal kWh
+   - **Apparaten (Digital Twin, optioneel)** — Koppel je specifieke apparaten (laadpaal, warmtepomp, batterij-lading, batterij-ontlading). De app ontwart (strikt in net-space) dit gedrag uit je ruwe P1-data om een schone baseline te berekenen. De sliders in Stap 3 blijven volledig functioneel en modelleren vervangende hardware (bijv. het vergroten of verwijderen van de accu). Een automatische sanity check waarschuwt als je batterijsensoren (cumulatief) meer ontladen dan laden.
 4. Kies het aantal dagen historische data (max ~730).
 
 De app gebruikt `recorder/statistics_during_period` (`period:"hour"`) — die levert jarenlange data, in tegenstelling tot de REST history-API (max ~10 dagen).

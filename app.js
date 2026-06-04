@@ -78,6 +78,11 @@ function rowMeta(row) {
 
 // Constant market prices & taxes (fallback if live fetch fails)
 const ENERGY_TAX_2026 = 0.11084; // €/kWh (including VAT)
+// Vermindering energiebelasting (heffingskorting) — vaste jaarlijkse korting per
+// elektriciteitsaansluiting. 2026: €628,96 incl. BTW (bron: Milieu Centraal / Belastingdienst).
+// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar zonder
+// deze post liggen de absolute jaartotalen ~€629 te hoog t.o.v. de echte jaarrekening.
+const EB_REBATE_2026 = 628.96; // €/jaar incl. BTW
 
 // Lokale datum+uur sleutel voor epexHistory (vermijdt UTC/lokaal-tijdzone verwarring)
 function epexKey(dt) {
@@ -225,10 +230,49 @@ function toggleCard(titleEl) {
   if (card) card.classList.toggle("collapsed");
 }
 
+// Progressive Disclosure: view mode toggle
+function setViewMode(mode) {
+  const body = document.body;
+  const btnSimple = document.getElementById("btn-view-simple");
+  const btnAdvanced = document.getElementById("btn-view-advanced");
+  
+  if (mode === "simple") {
+    if (body && body.classList) {
+      body.classList.add("mode-simple");
+      body.classList.remove("mode-advanced");
+    }
+    if (btnSimple) btnSimple.classList.add("active");
+    if (btnAdvanced) btnAdvanced.classList.remove("active");
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("view_mode", "simple");
+    }
+  } else {
+    if (body && body.classList) {
+      body.classList.add("mode-advanced");
+      body.classList.remove("mode-simple");
+    }
+    if (btnSimple) btnSimple.classList.remove("active");
+    if (btnAdvanced) btnAdvanced.classList.add("active");
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("view_mode", "advanced");
+    }
+  }
+  
+  // Alleen simulatie herberekenen als er al data geladen is
+  if (typeof energyData !== "undefined" && energyData.length > 0) {
+    runSimulation();
+  }
+}
+
 // Initialize Application
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
   restoreHACredentials();
+  
+  // View mode initialiseren
+  const savedMode = (typeof localStorage !== "undefined" && localStorage.getItem("view_mode")) || "simple";
+  setViewMode(savedMode);
+  
   loadDemoData();
 });
 
@@ -422,6 +466,19 @@ function closeSetupModal() {
 // Beschrijft exact wat _simulateCore() per uur doet, in mensentaal. Voor de accu
 // worden alle drie de modi uitgelegd; de actieve modus wordt gemarkeerd.
 function hardwareExplainerContent(kind) {
+  const watervalBlock = `
+    <div class="explain-block" style="border-left-color: var(--accent-yellow);">
+      <h4>🌊 De Zonne-waterval (Volgorde van stroomverdeling)</h4>
+      <p>Opgewekte zonnestroom stroomt in deze vaste prioriteitsvolgorde door je woning:</p>
+      <ol style="margin-left: 1.2rem; padding: 0; line-height: 1.6;">
+        <li><strong>Huisverbruik:</strong> Eerst worden je actieve apparaten in huis gevoed.</li>
+        <li><strong>Elektrische auto (EV):</strong> Wat over is gaat naar de EV (indien zonne-laden actief is en de auto is gekoppeld).</li>
+        <li><strong>Thuisaccu:</strong> Wat daarna nog overblijft laadt de thuisaccu op.</li>
+        <li><strong>Elektriciteitsnet:</strong> Pas als alles verzadigd is, gaat het restant naar het net (en wordt op dat moment eventueel gedimd bij negatieve prijzen).</li>
+      </ol>
+    </div>
+  `;
+
   if (kind === "battery") {
     const activeMode = document.getElementById("bat-mode")?.value || "zelf";
     const tag = (m) => activeMode === m ? ` <span style="color:var(--accent-green);font-size:0.75rem;">(nu actief)</span>` : "";
@@ -434,6 +491,7 @@ function hardwareExplainerContent(kind) {
           hij laadt alléén zoveel als economisch zin heeft. Op een rustige dag blijft hij deels leeg.
           Bij opslaan en ontladen gaat een deel verloren (round-trip-rendement, bv. 90% → 10% verlies).
         </p>
+        ${watervalBlock}
         <div class="explain-block">
           <h4>🔋 Maximaal zelfverbruik (standaard)${tag("zelf")}</h4>
           <ul>
@@ -444,7 +502,7 @@ function hardwareExplainerContent(kind) {
               volle all-in prijs (inclusief energiebelasting), dus zelfverbruik is altijd lonend.</li>
             <li>Geen handel met het net.</li>
           </ul>
-          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">laden:   alleen zon, tot SoC = min(cap, dag-import)
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">laden:   alleen zon, tot opslag = min(accu_capaciteit, dag-import)
 ontladen: dekt eigen import (bespaart all-in)</code>
         </div>
         <div class="explain-block">
@@ -458,8 +516,8 @@ ontladen: dekt eigen import (bespaart all-in)</code>
               net-import verdringt.</li>
             <li>Laden gebeurt alleen als de dure uren (× rendement) duurder zijn dan de goedkope laaduren.</li>
           </ul>
-          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ net-laden als: all-in(duur) × η > all-in(goedkoop)
-  budget = max(0, selfNeed − zon × η) / η  (drawn kWh)</code>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ net-laden als: dure_all_in_prijs × rendements_factor > goedkope_all_in_prijs
+  laad_budget = max(0, maximale_eigen_behoefte − zonne_overschot × rendements_factor) / rendements_factor</code>
         </div>
         <div class="explain-block">
           <h4>📈 Maximale winst${tag("winst")}</h4>
@@ -474,31 +532,54 @@ ontladen: dekt eigen import (bespaart all-in)</code>
               altijd waardevoller dan teruglevering (kale spot). Echt voordeel ontstaat pas bij flinke
               prijspieken én vrije accu-capaciteit.</li>
           </ul>
-          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: spot/1,21 > (all-in(goedkoop)/η) × 1,21
-  export = max(0, SoC − selfNeed)</code>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: kale_beursprijs / 1.21 > (goedkope_all_in_prijs / rendements_factor) × 1.21
+  export = max(0, opgeslagen_stroom − maximale_eigen_behoefte)</code>
         </div>
         <p class="explain-note">
           ⓘ De knop "Bereken Ideale Accu Formaat" veegt verschillende groottes door met de gekozen modus en
           toont de terugverdientijd (bij €450/kWh) — zo zie je dat een grotere accu niet automatisch beter is.
         </p>
         <details class="explain-formula">
-          <summary>De formules (voor de liefhebber)</summary>
-          <div class="formula-body">
-            <p><strong>Round-trip-rendement</strong> (η, bv. 0,90):</p>
-            <code>SoC += ingeladen × η        (opladen)
-geleverd = ontladen           (ontladen, 1-op-1)</code>
-            <p><strong>Dag-opslaglimiet</strong> — borgt dat de accu niet "hoardt" en dat grotere capaciteit nooit duurder is:</p>
-            <code>selfNeed = min(capaciteit, dag-import)
-SoC-cap  = selfNeed            (+ export-ruimte in winst)</code>
-            <p><strong>All-in importprijs</strong> per kWh (wat zelfconsumptie bespaart):</p>
-            <code>all-in = spot + opslag × 1,21 + energiebelasting</code>
-            <p><strong>Van het net laden loont</strong> als de duurste verdrongen import × η de laadprijs overtreft:</p>
-            <code>all-in(duur) × η  >  all-in(goedkoop)</code>
-            <p><strong>Net-laad-budget</strong> (alleen het deel dat de zon niet dekt → vermijdt onnodige EB):</p>
-            <code>budget = max(0, selfNeed − zon × η) / η</code>
-            <p><strong>Terugleveren loont</strong> (winst-modus) alleen als de kale-spot-opbrengst de laadkosten overtreft, én alléén het overschot bóven de zelf-voorraad:</p>
-            <code>spot / 1,21  >  (all-in(goedkoop) / η) × 1,21
-export = max(0, SoC − selfNeed)</code>
+          <summary>De wiskunde uitgelegd (voor de liefhebber)</summary>
+          <div class="formula-body" style="font-size:0.8rem;line-height:1.6;">
+            <p><strong>1. Rendement bij laden en ontladen:</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              Bij het opslaan van stroom treedt energieverlies op. Bij een rendement van bijvoorbeeld 90% (rendementsfactor 0.90) wordt 10% omgezet in warmte:
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">nieuwe_opgeslagen_stroom = oude_opgeslagen_stroom + (ingeladen_stroom × rendements_factor)
+geleverde_stroom = ontladen_stroom  (ontladen gaat zonder extra verlies)</code>
+
+            <p><strong>2. Slimme opslaglimiet (voorkomt onnodig hamsteren):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              De accu laadt per dag nooit meer op dan je die dag daadwerkelijk zelf nodig hebt. Dit voorkomt dat een hele grote accu onnodig stroom vasthoudt die je toch niet verbruikt:
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">maximale_eigen_behoefte = de kleinste waarde van (accu_capaciteit OF totale_dag_import)
+opslag_limiet = maximale_eigen_behoefte  (plus eventueel verkoopruimte in de winst-modus)</code>
+
+            <p><strong>3. Consumentenprijs (All-in importprijs):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              De all-in prijs die je betaalt per kWh stroom van het net. Dit is wat je bespaart als je stroom uit de accu gebruikt:
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">all_in_prijs = kale_beursprijs + (inkoop_opslag × 1.21) + energie_belasting</code>
+
+            <p><strong>4. Laden vanaf het net (wanneer loont dit?):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              Laden vanaf het net in goedkope uren is alleen rendabel als de all-in prijs tijdens de dure uren (vermenigvuldigd met het rendement) hoger is dan de all-in prijs tijdens de goedkope uren:
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">dure_all_in_prijs × rendements_factor  >  goedkope_all_in_prijs</code>
+
+            <p><strong>5. Hoeveel laden vanaf het net (Net-laad-budget):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              We berekenen precies hoeveel stroom er van het net geladen moet worden, rekening houdend met de verwachte zonne-energie van die dag (om te voorkomen dat we belasting betalen over stroom die we ook gratis van de zon hadden kunnen krijgen):
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">net_laad_budget = maximale_waarde van (0 OF maximale_eigen_behoefte − zonne_overschot × rendements_factor) / rendements_factor</code>
+
+            <p><strong>6. Teruglevering loont (alleen in de winst-modus):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              Terugleveren loont alleen als de ontvangen vergoeding (de kale spotprijs zonder BTW) hoger is dan de all-in inkoopprijs gedeeld door het rendement (rekening houdend met de BTW die je niet terugkrijgt):
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">kale_beursprijs / 1.21  >  (goedkope_all_in_prijs / rendements_factor) × 1.21
+export_stroom = maximale_waarde van (0 OF opgeslagen_stroom − maximale_eigen_behoefte)</code>
           </div>
         </details>`,
     };
@@ -528,18 +609,25 @@ export = max(0, SoC − selfNeed)</code>
           optimistisch ingeschat.
         </p>
         <details class="explain-formula">
-          <summary>De formule (voor de liefhebber)</summary>
-          <div class="formula-body">
-            <p><strong>Stooklast per uur</strong>:</p>
-            <code>last = winterstooklast × HDD-maandfactor × dagnachtfactor</code>
-            <p><strong>Dag/nacht-factor</strong>:</p>
-            <code>nacht (22–07u) = 1,2
-overdag        = 0,9</code>
-            <p><strong>HDD-maandfactoren</strong> (graaddagen, genormaliseerd op winter ≈ 1,3; zomervloer 0,15):</p>
-            <code>jan 1,38 · feb 1,21 · mrt 1,10 · apr 0,77
-mei 0,44 · jun 0,17 · jul 0,15 · aug 0,15
-sep 0,29 · okt 0,66 · nov 1,02 · dec 1,31</code>
-            <p>Deze last wordt bij de import opgeteld (of trekt eerst van het zon-overschot af).</p>
+          <summary>De wiskunde uitgelegd (voor de liefhebber)</summary>
+          <div class="formula-body" style="font-size:0.8rem;line-height:1.6;">
+            <p><strong>Stooklast per uur:</strong></p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">stooklast = winter_stooklast × maandfactor_verwarmingsbehoefte × dag_nacht_factor</code>
+            
+            <p><strong>Dag/nacht factor:</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              In de nacht staat de warmtepomp vaak iets harder te werken (door lagere buitentemperatuur of opstarten in de vroege ochtend):
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">nacht (tussen 22:00 en 07:00 uur) = 1.2
+overdag (tussen 07:00 en 22:00 uur) = 0.9</code>
+            
+            <p><strong>Maandfactoren voor de verwarmingsbehoefte (op basis van graaddagen):</strong></p>
+            <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
+              Deze factoren bepalen hoe de warmtevraag over het jaar is verdeeld (hoog in de winter, laag in de zomer):
+            </p>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">jan: 1.38  ·  feb: 1.21  ·  mrt: 1.10  ·  apr: 0.77
+mei: 0.44  ·  jun: 0.17  ·  jul: 0.15  ·  aug: 0.15
+sep: 0.29  ·  okt: 0.66  ·  nov: 1.02  ·  dec: 1.31</code>
           </div>
         </details>`,
     };
@@ -552,6 +640,7 @@ sep 0,29 · okt 0,66 · nov 1,02 · dec 1,31</code>
         Uit <strong>wekelijkse afstand × verbruik per 100 km</strong> volgt de jaarlijkse laadvraag.
         Die wordt slim over de uren verdeeld — apart gepland voor het dynamische en het vaste contract.
       </p>
+      ${watervalBlock}
       <div class="explain-block">
         <h4>Slim laden (look-ahead per dag)</h4>
         <ul>
@@ -570,16 +659,20 @@ sep 0,29 · okt 0,66 · nov 1,02 · dec 1,31</code>
         </ul>
       </div>
       <details class="explain-formula">
-        <summary>De formules (voor de liefhebber)</summary>
-        <div class="formula-body">
-          <p><strong>Laadvraag</strong>:</p>
-          <code>jaarvraag = afstand/week × verbruik/100km / 100 × 52
-dagvraag  = afstand/week × verbruik/100km / 100 / 7</code>
-          <p><strong>Allocatie per dag</strong> (look-ahead), per uur begrensd op ${EV_MAX_CHARGE_KW} kW:</p>
-          <code>1. vul met zonne-overschot (≈10–16u)
-2. rest in goedkoopste uren (dynamisch)
-   resp. daluren (vast contract)</code>
-          <p>Bij "kantoortijden" vervallen ma–vr 08:00–17:00 als laadmoment (auto weg).</p>
+        <summary>De wiskunde uitgelegd (voor de liefhebber)</summary>
+        <div class="formula-body" style="font-size:0.8rem;line-height:1.6;">
+          <p><strong>Benodigde laadstroom:</strong></p>
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">jaarlijkse_laadvraag = (wekelijkse_afstand × verbruik_per_100km / 100) × 52 weken
+gemiddelde_dagvraag  = (wekelijkse_afstand × verbruik_per_100km / 100) / 7 dagen</code>
+          
+          <p><strong>Verdeling van de laadstroom per dag (begrensd op ${EV_MAX_CHARGE_KW} kW per uur):</strong></p>
+          <ol style="margin-left: 1.2rem; padding: 0; color: var(--text-muted); line-height: 1.6;">
+            <li>Eerst vullen met het gratis <strong>zonne-overschot</strong> (meestal tussen 10:00 en 16:00 uur).</li>
+            <li>Als er nog meer stroom nodig is: de rest inplannen tijdens de <strong>goedkoopste uren van de dag</strong> (dynamisch contract) of tijdens de <strong>daluren</strong> (vast contract).</li>
+          </ol>
+          <p style="margin-top: 0.5rem; color: var(--text-muted);">
+            Bij de instelling "Kantoortijden" kan de auto op werkdagen (maandag t/m vrijdag) tussen 08:00 en 17:00 uur niet laden omdat de auto dan weg is.
+          </p>
         </div>
       </details>`,
   };
@@ -939,12 +1032,29 @@ async function handleHAConnect() {
       .sort((a, b) => a.id.localeCompare(b.id));
 
     // Wh-sensoren: omvormers (Enphase, SolarEdge, Fronius…) rapporteren vaak in Wh.
-    // Deze zijn alleen beschikbaar voor de solar-sensor — bij verwerking ÷ 1000.
     const whSensors = allStates
       .filter(s => s.attributes?.unit_of_measurement === "Wh")
       .map(s => {
         const unavailable = s.state === "unavailable" || s.state === "unknown";
         return { id: s.entity_id, unit: "Wh", unavailable };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    // kW-sensoren: live vermogen (warmtepomp, laadpaal, batterij)
+    const kwSensors = allStates
+      .filter(s => s.attributes?.unit_of_measurement === "kW")
+      .map(s => {
+        const unavailable = s.state === "unavailable" || s.state === "unknown";
+        return { id: s.entity_id, unit: "kW", unavailable };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    // W-sensoren: live vermogen (warmtepomp, laadpaal, batterij)
+    const wSensors = allStates
+      .filter(s => s.attributes?.unit_of_measurement === "W")
+      .map(s => {
+        const unavailable = s.state === "unavailable" || s.state === "unknown";
+        return { id: s.entity_id, unit: "W", unavailable };
       })
       .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -954,7 +1064,7 @@ async function handleHAConnect() {
       return;
     }
 
-    // Auto-detect best candidates per role
+    // Auto-detect best candidates per P1 role
     const guess = (patterns) =>
       (kwhSensors.find(s => patterns.some(p => s.id.toLowerCase().includes(p))) || {}).id || "";
 
@@ -969,29 +1079,77 @@ async function handleHAConnect() {
     populateSensorSelect("sel-exp2", kwhSensors,
       savedSensors.exp2 || guess(["export_tariff_2", "export_t2", "return_tariff_2", "energy_export_tariff_2"]));
 
-    // Solar yield sensor (optioneel — omvormer productiesensor)
-    // Inclusief Wh-sensoren (Enphase/SolarEdge/Fronius rapporteren in Wh — worden ÷ 1000 omgezet).
-    const allSolarSensors = [...kwhSensors, ...whSensors]; // kWh eerst, dan Wh
-    const solarGuessId = savedSensors.solar ||
-      (allSolarSensors.find(s => ["solar", "yield", "opwek", "pv_energy", "inverter", "omvormer", "production", "lifetime_energy"].some(p => s.id.toLowerCase().includes(p))) || {}).id || "";
-
-    // Sla eenheid op zodat processHAStatistics de juiste conversie kan doen
+    // Sla alle eenheden op
+    const allAvailableSensors = [...kwhSensors, ...whSensors, ...kwSensors, ...wSensors];
     const sensorUnitMap = {};
-    allSolarSensors.forEach(s => { sensorUnitMap[s.id] = s.unit; });
+    allAvailableSensors.forEach(s => { sensorUnitMap[s.id] = s.unit; });
     window._solarSensorUnitMap = sensorUnitMap;  // globale lookup
+    window._haSensorUnitMap = sensorUnitMap;
 
-    const selSolar = document.getElementById("sel-solar");
-    const makeOpt = (s) => {
-      const label = s.unit === "Wh"
-        ? `${s.id} [Wh → wordt omgezet naar kWh]${s.unavailable ? " ⚠ offline" : ""}`
-        : `${s.id}${s.unavailable ? " ⚠ offline" : ""}`;
-      return `<option value="${s.id}" data-unit="${s.unit}"${s.id === solarGuessId ? " selected" : ""}>${label}</option>`;
+    // Helper voor slim gecategoriseerd dropdowns invullen
+    const fillCategorizedSelect = (id, savedVal, patterns, defaultLabel) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+
+      const selectedId = savedVal || (allAvailableSensors.find(s => patterns.some(p => s.id.toLowerCase().includes(p))) || {}).id || "";
+
+      // Verdeel in aanbevolen (matches pattern) en overige
+      const rec = [];
+      const other = [];
+      allAvailableSensors.forEach(s => {
+        const isRec = patterns.some(p => s.id.toLowerCase().includes(p));
+        if (isRec) rec.push(s);
+        else other.push(s);
+      });
+
+      const opt = (s) => {
+        const isLive = s.unit === "kW" || s.unit === "W";
+        const label = isLive 
+          ? `${s.id} [${s.unit} - live vermogen fallback]` 
+          : (s.unit === "Wh" ? `${s.id} [Wh → kWh]` : s.id);
+        return `<option value="${s.id}" data-unit="${s.unit}"${s.id === selectedId ? " selected" : ""}>${label}${s.unavailable ? " ⚠ offline" : ""}</option>`;
+      };
+
+      const groupOpts = (arr) => {
+        const kwh = arr.filter(s => s.unit === "kWh");
+        const wh = arr.filter(s => s.unit === "Wh");
+        const kw = arr.filter(s => s.unit === "kW");
+        const w = arr.filter(s => s.unit === "W");
+
+        let html = "";
+        if (kwh.length) html += `<optgroup label="kWh sensoren">` + kwh.map(opt).join("") + `</optgroup>`;
+        if (wh.length) html += `<optgroup label="Wh sensoren (omvormers/laders)">` + wh.map(opt).join("") + `</optgroup>`;
+        if (kw.length) html += `<optgroup label="kW sensoren (live vermogen fallback)">` + kw.map(opt).join("") + `</optgroup>`;
+        if (w.length) html += `<optgroup label="W sensoren (live vermogen fallback)">` + w.map(opt).join("") + `</optgroup>`;
+        return html;
+      };
+
+      sel.innerHTML =
+        `<option value="">${defaultLabel}</option>` +
+        (rec.length ? `<optgroup label="⭐ Aanbevolen (op basis van naam)">` + rec.map(opt).join("") + `</optgroup>` : "") +
+        (other.length ? groupOpts(other) : "");
     };
-    selSolar.innerHTML =
-      `<option value="">— Niet koppelen (export-gebaseerde schatting) —</option>` +
-      (kwhSensors.length ? `<optgroup label="kWh sensoren">` + kwhSensors.map(makeOpt).join("") + `</optgroup>` : "") +
-      (whSensors.length ? `<optgroup label="Wh sensoren (omvormers — Enphase, SolarEdge, Fronius…)">` + whSensors.map(makeOpt).join("") + `</optgroup>` : "");
 
+    // Invullen van select boxes
+    fillCategorizedSelect("sel-solar", savedSensors.solar, 
+      ["solar", "yield", "opwek", "pv_energy", "inverter", "omvormer", "production", "lifetime_energy", "zonnepaneel"],
+      "— Niet koppelen (export-gebaseerde schatting) —");
+
+    fillCategorizedSelect("sel-ev", savedSensors.ev, 
+      ["ev", "wallbox", "charger", "laadpaal", "car_charg", "easee", "zaptec", "alfen", "tesla", "cocharger"],
+      "— Niet koppelen —");
+
+    fillCategorizedSelect("sel-hp", savedSensors.hp, 
+      ["heat_pump", "warmtepomp", "heatpump", "hp_", "quatt", "daikin", "wp_", "elga"],
+      "— Niet koppelen —");
+
+    fillCategorizedSelect("sel-bat-in", savedSensors.batIn, 
+      ["battery_charge", "battery_in", "accu_laden", "bat_charge", "charge_energy", "accu_in"],
+      "— Niet koppelen —");
+
+    fillCategorizedSelect("sel-bat-out", savedSensors.batOut, 
+      ["battery_discharge", "battery_out", "accu_ontladen", "bat_discharge", "discharge_energy", "accu_uit"],
+      "— Niet koppelen —");
 
     localStorage.setItem("ha_url", urlInput);
     localStorage.setItem("ha_token", tokenInput);
@@ -1037,15 +1195,39 @@ async function handleHAImport() {
     (savedSensorsForUnit.solar === solarSensor ? savedSensorsForUnit.solarUnit : null) ||
     "kWh";
 
+  const evSensor = document.getElementById("sel-ev")?.value || "";
+  const hpSensor = document.getElementById("sel-hp")?.value || "";
+  const batInSensor = document.getElementById("sel-bat-in")?.value || "";
+  const batOutSensor = document.getElementById("sel-bat-out")?.value || "";
+
+  const unitOf = (entId) => (window._haSensorUnitMap?.[entId]) ||
+    document.querySelector(`#sel-ev option[value="${CSS.escape(entId)}"]`)?.dataset?.unit ||
+    (savedSensorsForUnit.ev === entId ? savedSensorsForUnit.evUnit : null) ||
+    (savedSensorsForUnit.hp === entId ? savedSensorsForUnit.hpUnit : null) ||
+    (savedSensorsForUnit.batIn === entId ? savedSensorsForUnit.batInUnit : null) ||
+    (savedSensorsForUnit.batOut === entId ? savedSensorsForUnit.batOutUnit : null) ||
+    "kWh";
+
+  const evUnit = unitOf(evSensor);
+  const hpUnit = unitOf(hpSensor);
+  const batInUnit = unitOf(batInSensor);
+  const batOutUnit = unitOf(batOutSensor);
+
   const entities = [
     document.getElementById("sel-imp1").value,
     document.getElementById("sel-imp2").value,
     document.getElementById("sel-exp1").value,
     document.getElementById("sel-exp2").value,
     solarSensor,
+    evSensor,
+    hpSensor,
+    batInSensor,
+    batOutSensor,
   ].filter(Boolean); // remove empty (not selected)
 
-  if (entities.length === 0) {
+  const uniqueEntities = [...new Set(entities)];
+
+  if (uniqueEntities.length === 0) {
     statusEl.textContent = "Selecteer minimaal één sensor.";
     statusEl.style.color = "var(--accent-orange)";
     return;
@@ -1059,6 +1241,14 @@ async function handleHAImport() {
     exp2: document.getElementById("sel-exp2").value,
     solar: document.getElementById("sel-solar")?.value || "",
     solarUnit,   // onthoud of het Wh of kWh was
+    ev: evSensor,
+    evUnit,
+    hp: hpSensor,
+    hpUnit,
+    batIn: batInSensor,
+    batInUnit,
+    batOut: batOutSensor,
+    batOutUnit,
   }));
 
   statusEl.textContent = "Verbinding via WebSocket…";
@@ -1073,36 +1263,50 @@ async function handleHAImport() {
     exp1: document.getElementById("sel-exp1").value,
     exp2: document.getElementById("sel-exp2").value,
     solar: document.getElementById("sel-solar")?.value || "",
-    solarUnit,   // "kWh" of "Wh" — voor automatische conversie in processHAStatistics
+    solarUnit,
+    ev: evSensor,
+    evUnit,
+    hp: hpSensor,
+    hpUnit,
+    batIn: batInSensor,
+    batInUnit,
+    batOut: batOutSensor,
+    batOutUnit,
   };
 
   try {
     const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const endTime = new Date().toISOString();
 
-    const stats = await fetchHAStatisticsWS(wsUrl, tokenInput, entities, startTime, endTime, statusEl);
+    const stats = await fetchHAStatisticsWS(wsUrl, tokenInput, uniqueEntities, startTime, endTime, statusEl);
 
     energyData = processHAStatistics(stats, roleMap);
     isDemoData = false;   // echte HA-data: verdere uploads mergen erbij
 
-    if (energyData.length === 0) {
-      throw new Error(
-        "Statistieken ontvangen maar geen uurrecords gegenereerd. " +
-        "Controleer of de geselecteerde sensoren langetermijnstatistieken bijhouden in HA."
-      );
-    }
+    const untangle = energyData.untangle || { active: false };
+    updateDigitalTwinBanner(untangle);
 
     statusEl.textContent = `✓ ${energyData.length} uurrecords geladen · EPEX prijzen ophalen…`;
     statusEl.style.color = "var(--accent-cyan)";
 
     // Fetch real EPEX prices for the loaded period in the background
+    let successMsg = "";
     try {
       await fetchEPEXHistory(energyData[0].timestamp, energyData[energyData.length - 1].timestamp);
-      statusEl.textContent = `✓ ${energyData.length} uurrecords + ${epexHistory.size} echte EPEX-prijzen geladen (${days} dagen)`;
+      successMsg = `✓ ${energyData.length} uurrecords + ${epexHistory.size} echte EPEX-prijzen geladen (${days} dagen)`;
     } catch (_) {
-      statusEl.textContent = `✓ ${energyData.length} uurrecords geladen (EPEX-prijzen niet beschikbaar)`;
+      successMsg = `✓ ${energyData.length} uurrecords geladen (EPEX-prijzen niet beschikbaar)`;
     }
-    statusEl.style.color = "var(--accent-green)";
+
+    if (untangle.batterySensorSuspect) {
+      statusEl.innerHTML = `<strong>${successMsg}</strong><br>` +
+        `<span style="color:var(--accent-orange);font-size:0.78rem;">⚠ Batterij-sensoren controleren: ontladen > laden over de hele periode is fysiek onmogelijk. ` +
+        `Kies sensoren die beide aan de net-/AC-zijde meten (of verwissel in/uit).</span>`;
+    } else {
+      statusEl.textContent = successMsg;
+      statusEl.style.color = "var(--accent-green)";
+    }
+
     document.getElementById("data-status").textContent =
       `HA statistieken — ${energyData.length} uurrecords (${days}d)`;
     localStorage.setItem("ha_url", urlInput);
@@ -1143,7 +1347,7 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
           end_time: endTime,
           statistic_ids: statIds,
           period: "hour",
-          types: ["sum"]
+          types: ["sum", "mean"]
         }));
 
       } else if (msg.type === "auth_invalid") {
@@ -1166,23 +1370,34 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 
 // ── Convert HA statistics (cumulative sum per hour) to hourly P1 records ───
 function processHAStatistics(stats, roleMap) {
-  // stats: { entity_id: [ { start: epochMs, sum: float }, ... ] }
+  // stats: { entity_id: [ { start: epochMs, sum: float, mean: float }, ... ] }
   const hourlySum = {};
+  const hourlyMean = {};
   for (const [entId, rows] of Object.entries(stats)) {
-    const m = new Map();
+    const sumMap = new Map();
+    const meanMap = new Map();
     for (const row of rows) {
-      if (row.sum == null) continue;
-      m.set(row.start, row.sum);
+      if (row.sum != null) sumMap.set(row.start, row.sum);
+      if (row.mean != null) meanMap.set(row.start, row.mean);
     }
-    if (m.size > 0) hourlySum[entId] = m;
+    if (sumMap.size > 0) hourlySum[entId] = sumMap;
+    if (meanMap.size > 0) hourlyMean[entId] = meanMap;
   }
 
   const usedEntities = Object.values(roleMap).filter(Boolean);
-  if (usedEntities.every(e => !hourlySum[e])) return [];
+  if (usedEntities.every(e => !hourlySum[e] && !hourlyMean[e])) return [];
 
   const allTs = new Set();
-  usedEntities.forEach(e => { if (hourlySum[e]) hourlySum[e].forEach((_, t) => allTs.add(t)); });
+  usedEntities.forEach(e => {
+    if (hourlySum[e]) hourlySum[e].forEach((_, t) => allTs.add(t));
+    if (hourlyMean[e]) hourlyMean[e].forEach((_, t) => allTs.add(t));
+  });
   const timestamps = Array.from(allTs).sort((a, b) => a - b);
+
+  let totBatIn = 0, totBatOut = 0;
+  // Eénmalig: zijn er überhaupt apparaten gekoppeld? Alléén dán ontwarren we in
+  // net-space (Digital Twin). Zonder apparaten bewaren we de ruwe meterstanden 1-op-1.
+  const anyDevice = !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
 
   const records = [];
   for (let i = 1; i < timestamps.length; i++) {
@@ -1191,33 +1406,106 @@ function processHAStatistics(stats, roleMap) {
     if (curr - prev > 2 * 3600 * 1000) continue; // skip gaps > 2h
 
     const delta = (ent, maxVal = 100) => {
-      if (!ent || !hourlySum[ent]) return 0;
-      const a = hourlySum[ent].get(prev) ?? null;
-      const b = hourlySum[ent].get(curr) ?? null;
-      if (a === null || b === null) return 0;
-      const d = b - a;
-      // Negatief = meter-reset of fout; boven maxVal = absurde piek of reset
-      return (d > 0 && d < maxVal) ? d : 0;
+      if (!ent) return 0;
+      // 1. Probeer eerst cumulatieve sum (tellerstand)
+      if (hourlySum[ent]) {
+        const a = hourlySum[ent].get(prev) ?? null;
+        const b = hourlySum[ent].get(curr) ?? null;
+        if (a === null || b === null) return 0;
+        const d = b - a;
+        return (d > 0 && d < maxVal) ? d : 0;
+      }
+      // 2. Fallback: probeer mean (live vermogen in W/kW)
+      if (hourlyMean[ent]) {
+        const val = hourlyMean[ent].get(curr) ?? null;
+        if (val === null) return 0;
+        return (val > 0 && val < maxVal) ? val : 0;
+      }
+      return 0;
     };
-    // Voor Wh-sensoren is een uurproductie van 20.000 Wh (20 kWh) realistisch max
-    const deltaSolar = (ent) => roleMap.solarUnit === "Wh" ? delta(ent, 20000) : delta(ent, 100);
 
-    // Solar: gebruik deltaSolar (juiste maxVal voor Wh vs kWh)
+    // Solar: gebruik deltaSolar (juiste maxVal voor Wh/W vs kWh/kW)
+    const deltaSolar = (ent) => {
+      const isWattBased = roleMap.solarUnit === "Wh" || roleMap.solarUnit === "W";
+      return isWattBased ? delta(ent, 20000) : delta(ent, 100);
+    };
+
+    // Solar: gebruik deltaSolar
     const rawSolarDelta = roleMap.solar ? deltaSolar(roleMap.solar) : null;
     const solarYieldKwh = rawSolarDelta !== null
-      ? (roleMap.solarUnit === "Wh" ? rawSolarDelta / 1000 : rawSolarDelta)
+      ? ((roleMap.solarUnit === "Wh" || roleMap.solarUnit === "W") ? rawSolarDelta / 1000 : rawSolarDelta)
       : null;
 
-    records.push({
-      timestamp: new Date(curr).toISOString(),
-      import_t1: delta(roleMap.imp1),
-      import_t2: delta(roleMap.imp2),
-      export_t1: delta(roleMap.exp1),
-      export_t2: delta(roleMap.exp2),
-      solar_yield: solarYieldKwh,
-    });
+    // kWh delta voor apparaat, Wh/W-bewust
+    const deviceKwh = (ent, unit) => {
+      if (!ent) return 0;
+      const isWattBased = unit === "Wh" || unit === "W";
+      const d = delta(ent, isWattBased ? 20000 : 100);
+      return isWattBased ? d / 1000 : d;
+    };
+
+    const evLoad  = deviceKwh(roleMap.ev,     roleMap.evUnit);
+    const hpLoad  = deviceKwh(roleMap.hp,     roleMap.hpUnit);
+    const batIn   = deviceKwh(roleMap.batIn,  roleMap.batInUnit);
+    const batOut  = deviceKwh(roleMap.batOut, roleMap.batOutUnit);
+
+    const imp1 = delta(roleMap.imp1), imp2 = delta(roleMap.imp2);
+    const exp1 = delta(roleMap.exp1), exp2 = delta(roleMap.exp2);
+
+    // Accumulate for the battery-boundary sanity check
+    totBatIn  += batIn;
+    totBatOut += batOut;
+
+    let rec;
+    if (anyDevice) {
+      // Digital Twin: ontwar in NET-DEMAND space en hersplits naar import/export.
+      // Dit collapset het sub-uur import/export-overlap (onvermijdelijk: HA-uurstatistiek
+      // verliest timing) én de t1/t2-registers (de engine leidt piek/dal af uit de
+      // timestamp, niet uit het register — zie _simulateCore).
+      const baseNet = (imp1 + imp2 - exp1 - exp2) - evLoad - hpLoad - batIn + batOut;
+      rec = { import_t1: Math.max(0, baseNet), import_t2: 0,
+              export_t1: Math.max(0, -baseNet), export_t2: 0 };
+    } else {
+      // Geen apparaten gekoppeld → bewaar de ruwe meterstanden 1-op-1 (byte-identiek aan
+      // het pre-Digital-Twin gedrag). NIET salderen: een uur met gelijktijdige import én
+      // export (sub-uur, bv. wolkenflarden) moet bruto blijven, anders onderschatten we de
+      // bruto import/export en daarmee de energiebelasting (2027 = EB op bruto afname).
+      rec = { import_t1: imp1, import_t2: imp2, export_t1: exp1, export_t2: exp2 };
+    }
+    rec.timestamp = new Date(curr).toISOString();
+    rec.solar_yield = solarYieldKwh;
+    records.push(rec);
   }
+
+  // Battery boundary sanity check
+  records.untangle = {
+    active: anyDevice,
+    batIn: totBatIn, batOut: totBatOut,
+    batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
+    devices: {
+      ev: !!roleMap.ev, hp: !!roleMap.hp,
+      battery: !!(roleMap.batIn || roleMap.batOut),
+    },
+  };
+
   return records;
+}
+
+function updateDigitalTwinBanner(meta) {
+  const banner = document.getElementById("digital-twin-banner");
+  if (!banner) return;
+  window.digitalTwinMode = meta && meta.active ? meta : null;
+  if (!meta || !meta.active) { banner.style.display = "none"; return; }
+
+  const names = [];
+  if (meta.devices.ev) names.push("elektrische auto");
+  if (meta.devices.hp) names.push("warmtepomp");
+  if (meta.devices.battery) names.push("thuisbatterij");
+  const human = names.length === 1 ? names[0]
+    : names.slice(0, -1).join(", ") + " en " + names.slice(-1);
+  const el = document.getElementById("digital-twin-devices");
+  if (el) el.textContent = human || "hardware";
+  banner.style.display = "block";
 }
 
 // Convert HA History output to aligned hourly P1 records
@@ -1945,8 +2233,6 @@ function _simulateCore(cfg, full = false) {
     if (spot > 0 && stressMultiplier !== 1.0) spot *= stressMultiplier;
 
     if (full) {
-      hourly[hour].imports.push(rawImp);
-      hourly[hour].exports.push(rawExp);
       hourly[hour].spots.push(spot);
     }
 
@@ -1959,10 +2245,15 @@ function _simulateCore(cfg, full = false) {
     }
 
     // ── STRATEGIE SPLIT: DYNAMISCH VS VAST APPARAATGEDRAG ──
-    let impDyn = rawImp + hpLoad;
-    let expDyn = rawExp;
-    let impFx = rawImp + hpLoad;
-    let expFx = rawExp;
+    // Warmtepomp consumeert éérst lokaal zonoverschot (net als de EV's solar-match),
+    // pas het tekort komt van het net. Anders zou een uur met zon-overschot tegelijk
+    // import (WP) én export (zon) tonen → overschat bruto import + export + EB.
+    const hpFromSolar = Math.min(hpLoad, rawExp);   // rawExp = gemeten zon-overschot
+    const hpFromGrid = hpLoad - hpFromSolar;
+    let impDyn = rawImp + hpFromGrid;
+    let expDyn = rawExp - hpFromSolar;
+    let impFx = rawImp + hpFromGrid;
+    let expFx = rawExp - hpFromSolar;
 
     // EV verbruik injecteren vanuit gescheiden dagschemas
     if (hasEv) {
@@ -2076,6 +2367,8 @@ function _simulateCore(cfg, full = false) {
     dynExpKwh += dynExp;
 
     if (full) {
+      hourly[hour].imports.push(dynImp);
+      hourly[hour].exports.push(dynExp);
       const allIn = basePrice + eb;
       const dynHrCost = dynImp * allIn - dynExp * (spot / 1.21);   // teruglevering = kale spot (excl. BTW, 2027)
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
@@ -2111,11 +2404,16 @@ function _simulateCore(cfg, full = false) {
   const fxFeedCredit = (fxPeakExp + fxDalExp) * fixedFeedInRate;
   const fxFeedPenalt = (fxPeakExp + fxDalExp) * fixedFeedInFee;
   const fxSub = fixedVastrecht * 12.0;
-  const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub;
+
+  // Heffingskorting (vaste jaarlijkse EB-vermindering per aansluiting) — identiek voor
+  // beide contracten, dus comparison-neutraal, maar nodig voor realistische jaartotalen.
+  const ebRebate = EB_REBATE_2026;
+
+  const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub - ebRebate;
 
   const dynEB = dynImpKwh * eb; // Gross energy tax charging rule
   const dynSub = dynamicVastrecht * 12.0;
-  const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub;
+  const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub - ebRebate;
 
   const out = { fixedBill, dynBill };
 
@@ -2125,12 +2423,15 @@ function _simulateCore(cfg, full = false) {
       netDynamicKwh: Math.max(0, dynImpKwh - dynExpKwh),
       dynamicRawImportCost: dynImpCost, dynamicRawExportRevenue: dynExpRev,
       dynamicNetTax: dynEB, dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
+      taxRebate: ebRebate,
       fixedPeakImport: fxPeakImp, fixedPeakExport: fxPeakExp,
       fixedDalImport: fxDalImp, fixedDalExport: fxDalExp,
       fixedImportCost: fxImpCost, fixedFeedInCredit: fxFeedCredit,
       fixedFeedInFee: fxFeedPenalt, fixedSubscription: fxSub, fixedTotalBill: fixedBill,
       totalSavings: fixedBill - dynBill,
-      savingsPct: fixedBill !== 0 ? ((fixedBill - dynBill) / fixedBill) * 100 : 0,
+      // Deel door |fixedBill|: door de heffingskorting kan een totaal negatief zijn
+      // (zon-huishouden krijgt geld terug) → anders zou het % van teken wisselen.
+      savingsPct: fixedBill !== 0 ? ((fixedBill - dynBill) / Math.abs(fixedBill)) * 100 : 0,
       hourlyProfile: hourly, weekdayProfile: weekly, perDayTotals: dayTot, perDayHourly: dayHour,
       epexPct: (epexReal + epexFall) > 0 ? Math.round(epexReal / (epexReal + epexFall) * 100) : 0,
     });
@@ -2145,6 +2446,9 @@ function computeBillForConfig(cfg) {
 
 /** Leest alle contract-/hardware-instellingen eenmalig uit de DOM tot één cfg-object. */
 function readSimConfig() {
+  const isSimple = document.body && document.body.classList && typeof document.body.classList.contains === "function"
+    ? document.body.classList.contains("mode-simple")
+    : true; // Default to simple if not in a proper browser environment
   return {
     fixedPeakRate: parseFloat(document.getElementById("fixed-peak").value),
     fixedDalRate: parseFloat(document.getElementById("fixed-dal").value),
@@ -2153,16 +2457,16 @@ function readSimConfig() {
     fixedFeedInFee: parseFloat(document.getElementById("fixed-feedin-fee")?.value) || 0,
     dynamicMarkup: parseFloat(document.getElementById("dynamic-markup").value),
     dynamicVastrecht: parseFloat(document.getElementById("dynamic-vastrecht").value),
-    stressMultiplier: parseFloat(document.getElementById("stress-multiplier")?.value) || 1.0,
-    solarDimmingMode: document.getElementById("solar-dimming-mode")?.value || "off",
-    hasHeatPump: document.getElementById("has-heatpump").checked,
+    stressMultiplier: isSimple ? 1.0 : (parseFloat(document.getElementById("stress-multiplier")?.value) || 1.0),
+    solarDimmingMode: isSimple ? "off" : (document.getElementById("solar-dimming-mode")?.value || "off"),
+    hasHeatPump: isSimple ? false : document.getElementById("has-heatpump").checked,
     hpWinterBaseload: parseFloat(document.getElementById("hp-baseload").value),
-    hasEv: document.getElementById("has-ev").checked,
+    hasEv: isSimple ? false : document.getElementById("has-ev").checked,
     evWeeklyDist: parseFloat(document.getElementById("ev-dist").value),
     evConsumption: parseFloat(document.getElementById("ev-cons").value) / 100.0,
     evSolarMatch: document.getElementById("ev-solar-match").checked,
     evProfile: document.getElementById("ev-profile")?.value || "home",
-    hasBattery: document.getElementById("has-battery").checked,
+    hasBattery: isSimple ? false : document.getElementById("has-battery").checked,
     batCapacity: parseFloat(document.getElementById("bat-cap").value),
     batPower: parseFloat(document.getElementById("bat-power").value),
     batEfficiency: parseFloat(document.getElementById("bat-eff").value) / 100.0,
@@ -2264,45 +2568,69 @@ function optimizeBatterySize() {
       batEfficiency: baseCfg.batEfficiency, // UI-instelling
       batMode: baseCfg.batMode,            // UI-instelling
     });
-    const savingsVsFixed = baselineFix - r.dynBill;   // dynamisch+accu t.o.v. vast contract
-    const extra = baselineDyn - r.dynBill;   // meerwaarde van de accu zelf (€/jaar)
+    const extra = baselineDyn - r.dynBill;      // ROI dynamic
+    const extraFix = baselineFix - r.fixedBill; // ROI fixed (zelfconsumptie)
     const cost = cap * BATTERY_COST_PER_KWH;
     const payback = extra > 0 ? cost / extra : Infinity;
-    return { cap, power: cap * 0.5, dynBill: r.dynBill, savingsVsFixed, extra, cost, payback };
+    const paybackFix = extraFix > 0 ? cost / extraFix : Infinity;
+    return { cap, power: cap * 0.5, dynBill: r.dynBill, fixedBill: r.fixedBill, extra, extraFix, cost, payback, paybackFix };
   });
 
-  // Sweet spot = kortste (eindige) terugverdientijd; anders hoogste jaarbesparing.
-  let sweetIdx = -1, bestPayback = Infinity;
-  rows.forEach((r, i) => { if (r.payback < bestPayback) { bestPayback = r.payback; sweetIdx = i; } });
-  if (sweetIdx === -1) rows.forEach((r, i) => { if (sweetIdx === -1 || r.savingsVsFixed > rows[sweetIdx].savingsVsFixed) sweetIdx = i; });
-
-  renderBatteryOptimization(rows, sweetIdx, resEl);
+  window.lastOptResults = { rows, noBat };
+  const currentType = window.optContractType || "dyn";
+  renderBatteryOptimization(rows, currentType, resEl);
 }
 
-function renderBatteryOptimization(rows, sweetIdx, resEl) {
+function renderBatteryOptimization(rows, type, resEl) {
   const eur = v => (v >= 0 ? "" : "−") + "€" + Math.abs(v).toFixed(0);
   const yrs = p => Number.isFinite(p) ? `${p.toFixed(1)} jr` : "—";
+
+  // Bepaal sweet spot (ROI)
+  let sweetIdx = -1, bestPayback = Infinity;
+  rows.forEach((r, i) => {
+    const pb = type === "dyn" ? r.payback : r.paybackFix;
+    if (pb < bestPayback) { bestPayback = pb; sweetIdx = i; }
+  });
+  if (sweetIdx === -1) {
+    rows.forEach((r, i) => {
+      const extraVal = type === "dyn" ? r.extra : r.extraFix;
+      const sweetExtraVal = sweetIdx === -1 ? 0 : (type === "dyn" ? rows[sweetIdx].extra : rows[sweetIdx].extraFix);
+      if (sweetIdx === -1 || extraVal > sweetExtraVal) sweetIdx = i;
+    });
+  }
 
   const body = rows.map((r, i) => {
     const sweet = i === sweetIdx;
     const bg = sweet ? "background:rgba(56,239,125,0.14);" : "";
     const star = sweet ? " ⭐" : "";
+    const extraVal = type === "dyn" ? r.extra : r.extraFix;
+    const paybackVal = type === "dyn" ? r.payback : r.paybackFix;
     return `<tr style="${bg}">
       <td style="padding:0.25rem 0.4rem;">${r.cap} kWh${star}</td>
       <td style="padding:0.25rem 0.4rem;text-align:right;">${r.power.toFixed(1)} kW</td>
-      <td style="padding:0.25rem 0.4rem;text-align:right;color:var(--accent-green);">${eur(r.extra)}/jr</td>
-      <td style="padding:0.25rem 0.4rem;text-align:right;">${yrs(r.payback)}</td>
+      <td style="padding:0.25rem 0.4rem;text-align:right;color:var(--accent-green);">${eur(extraVal)}/jr</td>
+      <td style="padding:0.25rem 0.4rem;text-align:right;">${yrs(paybackVal)}</td>
     </tr>`;
   }).join("");
 
   const sweet = rows[sweetIdx];
-  const verdict = sweet && Number.isFinite(sweet.payback)
-    ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweet.extra)}/jaar, terugverdiend in ${yrs(sweet.payback)} (bij €${BATTERY_COST_PER_KWH}/kWh).`
-    : `Binnen dit scenario verdient geen enkele accu zichzelf terug (meerwaarde ≤ €0/jaar). Een dynamisch contract levert hier vooral op zonder accu.`;
+  const sweetPayback = sweet ? (type === "dyn" ? sweet.payback : sweet.paybackFix) : Infinity;
+  const sweetExtra = sweet ? (type === "dyn" ? sweet.extra : sweet.extraFix) : 0;
+  const contractLabel = type === "dyn" ? "dynamisch" : "vast";
+
+  const verdict = sweet && Number.isFinite(sweetPayback)
+    ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweetExtra)}/jaar, terugverdiend in ${yrs(sweetPayback)} (bij €${BATTERY_COST_PER_KWH}/kWh).`
+    : `Binnen dit scenario verdient geen enkele accu zichzelf terug op een ${contractLabel} contract (meerwaarde ≤ €0/jaar).`;
+
+  const tabDynActive = type === "dyn" ? "active" : "";
+  const tabFixActive = type === "fix" ? "active" : "";
 
   resEl.style.display = "";
   resEl.innerHTML = `
-    <div style="margin-bottom:0.5rem;">${verdict}</div>
+    <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:0.75rem; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.6rem;">
+      <button type="button" class="btn-toggle ${tabDynActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('dyn')">Dynamisch Contract</button>
+      <button type="button" class="btn-toggle ${tabFixActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('fix')">Vast Contract</button>
+    </div>
     <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
       <thead><tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.12);">
         <th style="padding:0.25rem 0.4rem;text-align:left;">Accu</th>
@@ -2312,11 +2640,27 @@ function renderBatteryOptimization(rows, sweetIdx, resEl) {
       </tr></thead>
       <tbody>${body}</tbody>
     </table>
-    <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.45rem;">
-      Meerwaarde = besparing op het dynamische jaarbedrag t.o.v. dezelfde opstelling zónder accu.
-      Vermogen = 0,5× capaciteit. Investering €${BATTERY_COST_PER_KWH}/kWh (indicatief).
+    <div style="margin-top: 0.6rem; font-size: 0.72rem; line-height: 1.5; color: var(--text-main); margin-bottom:0.5rem;">
+      ${verdict}
+    </div>
+    <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.45rem;line-height:1.45;">
+      💡 <strong>Let op:</strong> De besparingen worden berekend ten opzichte van dezelfde opstelling zónder thuisbatterij.
+      ${type === "dyn" 
+        ? "Bij een <strong>dynamisch contract</strong> laadt de batterij op bij zonnestroom en bij goedkope uren van het net, en levert/ontlaadt bij dure uren."
+        : "Bij een <strong>vast contract</strong> doet de batterij uitsluitend aan zelfconsumptie (zonne-overschot opslaan en 's avonds/nachts gebruiken)."}
+    </p>
+    <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.25rem;line-height:1.45;">
+      Investering €${BATTERY_COST_PER_KWH}/kWh (indicatief). Vermogen = 0,5× capaciteit.
     </p>`;
 }
+
+window.setOptContract = function(type) {
+  window.optContractType = type;
+  if (window.lastOptResults && window.lastOptResults.rows) {
+    const resEl = document.getElementById("battery-optimization-result");
+    renderBatteryOptimization(window.lastOptResults.rows, type, resEl);
+  }
+};
 
 // =============================================================================
 // HOOFD-SIMULATIE: leest DOM eenmalig, bouwt cfg, roept _simulateCore aan.
@@ -2516,6 +2860,7 @@ function updateUIElements() {
   document.getElementById("tbl-fixed-feedin-credit").textContent = `− € ${sim.fixedFeedInCredit.toFixed(2)}`;
   document.getElementById("tbl-fixed-net-energy").textContent = `€ ${(sim.fixedImportCost - sim.fixedFeedInCredit).toFixed(2)}`;
   document.getElementById("tbl-fixed-subcost").textContent = `€ ${sim.fixedSubscription.toFixed(2)}`;
+  document.getElementById("tbl-fixed-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
   document.getElementById("tbl-fixed-total").textContent = `€ ${sim.fixedTotalBill.toFixed(2)}`;
 
   // Dynamic breakdown table
@@ -2536,6 +2881,7 @@ function updateUIElements() {
   document.getElementById("tbl-dyn-tax-vol").textContent = `${sim.totalImportKwh.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
   document.getElementById("tbl-dyn-tax").textContent = `€ ${sim.dynamicNetTax.toFixed(2)}`;
   document.getElementById("tbl-dyn-subcost").textContent = `€ ${sim.dynamicSubscription.toFixed(2)}`;
+  document.getElementById("tbl-dyn-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
   document.getElementById("tbl-dyn-total").textContent = `€ ${sim.dynamicTotalBill.toFixed(2)}`;
 }
 

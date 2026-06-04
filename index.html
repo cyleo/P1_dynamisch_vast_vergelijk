@@ -7,7 +7,7 @@
   <title>P1 Energie Contract Analysator | Dynamisch vs Vast</title>
   <meta name="description"
     content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2026 het goedkoopste is voor jouw situatie.">
-  <link rel="stylesheet" href="/energie/style.css?v=41">
+  <link rel="stylesheet" href="/energie/style.css?v=44">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal */
     #modal-backdrop,
@@ -216,6 +216,15 @@
       transition: background 0.15s, color 0.15s;
       user-select: none;
       font-family: var(--font-display);
+    }
+
+    .info-icon::before {
+      content: "";
+      position: absolute;
+      top: -12px;
+      left: -12px;
+      right: -12px;
+      bottom: -12px;
     }
 
     .info-icon:hover,
@@ -429,6 +438,15 @@
 
       <!-- LEFT SIDEBAR: Configuration & Uploads -->
       <aside class="sidebar">
+
+        <!-- Progressive Disclosure View Toggle -->
+        <div class="view-toggle-container glass-panel">
+          <span>Weergavemodus</span>
+          <div class="view-toggle-buttons">
+            <button type="button" id="btn-view-simple" class="btn-toggle active" onclick="setViewMode('simple')">Eenvoudig</button>
+            <button type="button" id="btn-view-advanced" class="btn-toggle" onclick="setViewMode('advanced')">Geavanceerd</button>
+          </div>
+        </div>
 
         <!-- STAP 1 — Importeer je verbruiksdata (kies één van beide methodes) -->
         <div class="config-group">
@@ -739,7 +757,7 @@
             <p style="font-size:0.68rem;color:var(--accent-orange);margin-top:0.35rem;">⚠ 2027-tarief nog niet bekend —
               standaard = 2026-benadering.</p>
           </div>
-          <div class="form-group" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
+          <div class="form-group advanced-only" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
             <label for="stress-multiplier" style="color: var(--accent-orange);">🚨 Stresstest: Marktprijzen (x) <span
                   class="info-icon" tabindex="0">i<span class="info-tooltip">Simuleer een energiecrisis. Vermenigvuldigt
                   alle positieve beursprijzen met deze factor. Handig om te zien of dynamisch nog steeds rendabel is in
@@ -749,7 +767,7 @@
         </section>
 
         <!-- Hardware Smart Scenarios -->
-        <section class="glass-panel" style="padding: 1.2rem;" id="hardware-panel">
+        <section class="glass-panel advanced-only" style="padding: 1.2rem;" id="hardware-panel">
           <h2 class="section-title" onclick="toggleCard(this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -826,7 +844,7 @@
             </div>
             <div class="switch-control" style="padding: 0.5rem; margin-bottom: 0;">
               <div class="switch-label-desc">
-                <strong>Zonne-laden inschakelen</strong>
+                <strong>Zonne-laden inschakelen <span class="info-icon" tabindex="0">i<span class="info-tooltip">Opgewekte zonnestroom stroomt volgens de zonne-waterval: eerst naar het huisverbruik, dan pas naar de EV, daarna naar de thuisaccu, en het resterende overschot naar het net.</span></span></strong>
                 <span>Laad overdag slim bij zonne-overschot</span>
               </div>
               <label class="toggle-switch">
@@ -897,6 +915,9 @@
               style="background: rgba(56, 239, 125, 0.08); border-color: var(--accent-green); color: #ffffff; width: 100%;">
               📊 Bereken Ideale Accu Formaat (ROI)
             </button>
+            <p style="font-size:0.68rem;color:var(--accent-green);margin-top:0.35rem;text-align:center;">
+              ℹ️ De terugverdientijd wordt berekend op basis van het dynamische contract scenario.
+            </p>
             <div id="battery-optimization-result"
               style="font-size: 0.75rem; margin-top: 0.6rem; color: var(--text-muted); line-height: 1.6; display: none; background: rgba(0,0,0,0.2); padding: 0.6rem; border-radius: 8px;">
             </div>
@@ -964,6 +985,13 @@
               <em>salderingsregeling</em> — je mag teruggeleverde zonnestroom niet meer wegstrepen tegen je afname.
               Daarom rekenen we energiebelasting over je <em>bruto</em> afname en krijg je een aparte, lagere
               terugleververgoeding. Met de regels van vandaag zou de uitkomst er anders uitzien.</p>
+            <p style="margin: 0.8rem 0 0.4rem; font-weight: 700; color: var(--text-main);">🌊 Prioriteit van zonnestroom-verdeling (De Zonne-waterval):</p>
+            <ol style="margin: 0 0 0.8rem 1.1rem; padding: 0; list-style-type: decimal;">
+              <li><strong>Huisverbruik:</strong> Zonnestroom gaat eerst naar de actieve apparaten in je woning.</li>
+              <li><strong>Elektrische auto (EV):</strong> Wat over is, gaat naar de EV (indien zonne-laden actief is).</li>
+              <li><strong>Thuisaccu:</strong> Wat daarna nog over is, laadt de thuisaccu op.</li>
+              <li><strong>Elektriciteitsnet:</strong> Het resterende overschot gaat naar het net (en kan gedimd worden bij negatieve prijzen).</li>
+            </ol>
             <p style="margin:0;">📊 <strong>Let vooral op het <span style="color:var(--accent-green);">verschil</span>
                 tussen beide contracten</strong> — niet op de absolute bedragen (zie de toelichting bij de cijfers
               hieronder).</p>
@@ -1189,7 +1217,7 @@
         </section>
 
         <!-- Hardware effect breakdown -->
-        <section class="glass-panel chart-card" id="hw-chart-card" style="display:none;">
+        <section class="glass-panel chart-card advanced-only" id="hw-chart-card" style="display:none;">
           <div class="chart-header-row">
             <div>
               <h2 style="font-size:1.1rem;font-family:var(--font-display);font-weight:700;">Effect Apparaten op Rekening
@@ -1289,9 +1317,14 @@
                   <td>Per jaar (12 maanden)</td>
                   <td id="tbl-fixed-subcost">-</td>
                 </tr>
+                <tr>
+                  <td>Heffingskorting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong>: een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
+                  <td>Vaste korting per aansluiting / jaar</td>
+                  <td id="tbl-fixed-rebate" style="color:var(--accent-green);">-</td>
+                </tr>
                 <tr class="total-row">
                   <td>Totale rekening</td>
-                  <td>Netto energie + VTK + vast</td>
+                  <td>Netto energie + VTK + vast − korting</td>
                   <td id="tbl-fixed-total" style="color:var(--text-main);">-</td>
                 </tr>
               </tbody>
@@ -1357,9 +1390,14 @@
                   <td>Per jaar (12 maanden)</td>
                   <td id="tbl-dyn-subcost">-</td>
                 </tr>
+                <tr>
+                  <td>Heffingskorting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong>: een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
+                  <td>Vaste korting per aansluiting / jaar</td>
+                  <td id="tbl-dyn-rebate" style="color:var(--accent-green);">-</td>
+                </tr>
                 <tr class="total-row">
                   <td>Totale rekening</td>
-                  <td>Netto + EB + vast</td>
+                  <td>Netto + EB + vast − korting</td>
                   <td id="tbl-dyn-total" style="color:var(--accent-cyan);">-</td>
                 </tr>
               </tbody>
@@ -1391,7 +1429,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=41"></script>
+  <script src="/energie/app.js?v=44"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
