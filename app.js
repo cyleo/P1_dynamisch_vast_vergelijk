@@ -3121,8 +3121,19 @@ function renderChart() {
   maxEnergy *= 1.15; // Give headroom
 
   // Show all-in consumer price in chart: pure EPEX + EB + markup + 21% BTW on (EPEX+markup)
-  const minPrice = 0;
-  const maxPrice = 0.40;
+  let minPrice = 0.0;
+  let maxPrice = 0.40;
+  hourMedians.forEach(h => {
+    const p = toConsumerPrice(h.spot);
+    if (p > maxPrice) maxPrice = p;
+    if (p < minPrice) minPrice = p;
+  });
+  if (minPrice < 0) {
+    minPrice = Math.floor(minPrice * 20) / 20;
+  }
+  if (maxPrice > 0.40) {
+    maxPrice = Math.ceil(maxPrice * 20) / 20;
+  }
 
   // Axis projection formulas
   const getX = (hour) => paddingLeft + (hour / 23.0) * chartWidth;
@@ -3164,6 +3175,19 @@ function renderChart() {
     const priceVal = minPrice + ratio * (maxPrice - minPrice);
     labelPrice.textContent = `€ ${priceVal.toFixed(2)}/kWh`;
     svg.appendChild(labelPrice);
+  }
+
+  // Draw Price Zero Line if minPrice < 0
+  if (minPrice < 0) {
+    const zeroLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    zeroLine.setAttribute("x1", paddingLeft);
+    zeroLine.setAttribute("y1", getYPrice(0));
+    zeroLine.setAttribute("x2", width - paddingRight);
+    zeroLine.setAttribute("y2", getYPrice(0));
+    zeroLine.setAttribute("stroke", "rgba(234, 179, 8, 0.25)");
+    zeroLine.setAttribute("stroke-width", "1");
+    zeroLine.setAttribute("stroke-dasharray", "2,2");
+    svg.appendChild(zeroLine);
   }
 
   // 2. Draw Hour labels on X-axis
@@ -3588,15 +3612,37 @@ function _renderSimDrill() {
   // Price line + right axis
   const validSpots = spots.filter(s => s != null);
   if (validSpots.length) {
-    const priceMax = Math.max(...validSpots.map(s => toConsumerPrice(s)), fixedPeak, 0.10) * 1.15;
-    const yP = v => PAD_T + cH * (1 - v / priceMax);
+    const pricesList = validSpots.map(s => toConsumerPrice(s)).concat([fixedPeak, fixedDal]);
+    let priceMin = 0.0;
+    let priceMax = 0.10;
+    pricesList.forEach(p => {
+      if (p > priceMax) priceMax = p;
+      if (p < priceMin) priceMin = p;
+    });
+    priceMax *= 1.15;
+    if (priceMin < 0) {
+      priceMin *= 1.15;
+    }
+    const yP = v => PAD_T + cH - ((v - priceMin) / (priceMax - priceMin)) * cH;
     const pRX = W - PAD_R + 4;
     [0, 0.5, 1].forEach(r => {
-      const val = r * priceMax, y = yP(val);
+      const val = priceMin + r * (priceMax - priceMin), y = yP(val);
       svg.appendChild(mk("line", { x1: W - PAD_R, y1: y, x2: W - PAD_R + 3, y2: y, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
       const lbl = mk("text", { x: pRX + 1, y: y + 3, "text-anchor": "start", fill: "rgba(255,255,255,0.35)", "font-size": "7" });
       lbl.textContent = `€${val.toFixed(2)}`; svg.appendChild(lbl);
     });
+    // Add zero line if price is negative
+    if (priceMin < 0) {
+      svg.appendChild(mk("line", {
+        x1: PAD_L,
+        y1: yP(0),
+        x2: W - PAD_R,
+        y2: yP(0),
+        stroke: "rgba(0, 242, 254, 0.25)",
+        "stroke-dasharray": "2,2",
+        "stroke-width": "1"
+      }));
+    }
     const axL = mk("text", { x: W - 2, y: PAD_T + cH / 2, "text-anchor": "middle", fill: "rgba(255,255,255,0.25)", "font-size": "7", transform: `rotate(-90,${W - 2},${PAD_T + cH / 2})` });
     axL.textContent = "€/kWh"; svg.appendChild(axL);
     // Fixed tariff lines
