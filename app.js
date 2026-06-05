@@ -3029,7 +3029,7 @@ function updateUIElements() {
   document.getElementById("tbl-fixed-total").textContent = `€ ${sim.fixedTotalBill.toFixed(2)}`;
 
   // Dynamic breakdown table
-  const dynNetCost = sim.dynamicRawImportCost - sim.dynamicRawExportRevenue;
+  const dynNetCost = sim.dynamicRawImportCost - sim.dynamicRawExportRevenue + sim.dynamicNetTax;
   document.getElementById("tbl-dyn-net-cost-header").textContent = `€ ${dynNetCost.toFixed(2)}`;
 
   document.getElementById("tbl-dyn-imp-kwh").innerHTML = `${sim.totalImportKwh.toFixed(1)} kWh${synthTag}`;
@@ -3044,7 +3044,7 @@ function updateUIElements() {
   document.getElementById("tbl-dyn-net-kwh").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh`;
   document.getElementById("tbl-dyn-net-cost").textContent = `€ ${dynNetCost.toFixed(2)}`;
 
-  const dynVasteLasten = sim.dynamicNetTax + sim.dynamicSubscription - (sim.taxRebate ?? 0) + (sim.gridFees ?? 0);
+  const dynVasteLasten = sim.dynamicSubscription - (sim.taxRebate ?? 0) + (sim.gridFees ?? 0);
   document.getElementById("tbl-dyn-vaste-lasten").textContent = `€ ${dynVasteLasten.toFixed(2)}`;
 
   // EB 2027: over BRUTO afname van het net (geen saldering) — volume = totale import,
