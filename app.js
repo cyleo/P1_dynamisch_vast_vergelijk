@@ -3879,15 +3879,47 @@ function renderMonthlyChart() {
   const padL = 46, padR = 12, padT = 14, padB = 24;
   const cw = W - padL - padR, ch = H - padT - padB;
   const labels = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
-  const maxV = Math.max(1, ...months.map(m => Math.max(m.fixed, m.dyn)));
+  
+  let minV = 0.0;
+  let maxV = 1.0;
+  months.forEach(m => {
+    if (m.has) {
+      if (m.fixed > maxV) maxV = m.fixed;
+      if (m.dyn > maxV) maxV = m.dyn;
+      if (m.fixed < minV) minV = m.fixed;
+      if (m.dyn < minV) minV = m.dyn;
+    }
+  });
+
+  maxV = Math.ceil(maxV * 1.15);
+  if (minV < 0) {
+    minV = Math.floor(minV * 1.15);
+  }
+
+  const yOf = (val) => padT + ch - ((val - minV) / (maxV - minV)) * ch;
+  const zeroY = yOf(0);
 
   // y-as gridlijnen + labels
   for (let i = 0; i <= 4; i++) {
-    const y = padT + ch - (ch * i / 4);
+    const ratio = i / 4;
+    const val = minV + ratio * (maxV - minV);
+    const y = padT + ch - (ratio * ch);
     svg.appendChild(mk("line", { x1: padL, y1: y, x2: W - padR, y2: y, stroke: "rgba(255,255,255,0.06)", "stroke-width": 1 }));
     const lbl = mk("text", { x: padL - 6, y: y + 3, "text-anchor": "end", "font-size": 9, fill: "var(--text-muted)" });
-    lbl.textContent = `€${Math.round(maxV * i / 4)}`;
+    lbl.textContent = (val < 0 ? "−" : "") + `€${Math.abs(Math.round(val))}`;
     svg.appendChild(lbl);
+  }
+
+  // Zero line if minV < 0
+  if (minV < 0) {
+    svg.appendChild(mk("line", {
+      x1: padL,
+      y1: zeroY,
+      x2: W - padR,
+      y2: zeroY,
+      stroke: "rgba(255, 255, 255, 0.15)",
+      "stroke-width": 1
+    }));
   }
 
   const groupW = cw / 12;
@@ -3895,10 +3927,20 @@ function renderMonthlyChart() {
   months.forEach((m, i) => {
     const gx = padL + groupW * i + groupW / 2;
     const bar = (val, offset, color) => {
-      const h = ch * (val / maxV);
-      const r = mk("rect", { x: gx + offset, y: padT + ch - h, width: barW, height: Math.max(0, h), fill: color, rx: 2, opacity: 0.85 });
+      const yVal = yOf(val);
+      const barTop = Math.min(zeroY, yVal);
+      const barHeight = Math.max(0.5, Math.abs(yVal - zeroY));
+      const r = mk("rect", {
+        x: gx + offset,
+        y: barTop,
+        width: barW,
+        height: barHeight,
+        fill: color,
+        rx: 2,
+        opacity: 0.85
+      });
       const t = document.createElementNS(NS, "title");
-      t.textContent = `${labels[i]} — €${val.toFixed(0)}`;
+      t.textContent = `${labels[i]} — ` + (val < 0 ? "−" : "") + `€${Math.abs(val).toFixed(0)}`;
       r.appendChild(t);
       svg.appendChild(r);
     };
