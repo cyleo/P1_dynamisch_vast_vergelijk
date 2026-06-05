@@ -162,9 +162,10 @@ function buildDay(perHour, spotInclBtw) {
   const { rows, epex } = buildDay({ imp: 1 }, 0.10);
   const y1 = RUN({ rows, epex, cfg: cfgBase, eb: EB, yearScale: 1.0 });
   const y2 = RUN({ rows, epex, cfg: cfgBase, eb: EB, yearScale: 2.0 });
-  // Vaste (niet-geschaalde) posten = vastrecht ×12 + heffingskorting.
-  const dynFixed = 6.00 * 12 - (y1.taxRebate ?? 0);
-  const fxFixed = 7.50 * 12 - (y1.taxRebate ?? 0);
+  // Vaste (niet-geschaalde) posten = vastrecht ×12 - heffingskorting + netbeheerkosten.
+  const gridFees = y1.gridFees ?? 480.00;
+  const dynFixed = 6.00 * 12 - (y1.taxRebate ?? 0) + gridFees;
+  const fxFixed = 7.50 * 12 - (y1.taxRebate ?? 0) + gridFees;
   ok(near(y2.dynamicTotalBill - dynFixed, 2 * (y1.dynamicTotalBill - dynFixed), 0.02),
      `B5 dyn energie schaalt ×2 (excl. vaste posten): €${(y1.dynamicTotalBill-dynFixed).toFixed(2)} → €${(y2.dynamicTotalBill-dynFixed).toFixed(2)}`);
   ok(near(y2.fixedTotalBill - fxFixed, 2 * (y1.fixedTotalBill - fxFixed), 0.02),
@@ -179,8 +180,9 @@ function buildDay(perHour, spotInclBtw) {
   const rowsPV = buildYear(3500, 3500);
   const res = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: EB, yearScale: 1.0 });
   ok(near(res.taxRebate, 628.96, 0.01), `B6 heffingskorting = €628,96 (2026) → €${(res.taxRebate ?? 0).toFixed(2)}`);
-  // Reconstrueer: dyn-totaal = energie + EB + vastrecht − korting.
-  const dynRecon = (res.dynamicRawImportCost - res.dynamicRawExportRevenue) + res.dynamicNetTax + res.dynamicSubscription - res.taxRebate;
+  // Reconstrueer: dyn-totaal = energie + EB + vastrecht − korting + netbeheerkosten.
+  const gridFees = res.gridFees ?? 480.00;
+  const dynRecon = (res.dynamicRawImportCost - res.dynamicRawExportRevenue) + res.dynamicNetTax + res.dynamicSubscription - res.taxRebate + gridFees;
   ok(near(dynRecon, res.dynamicTotalBill, 0.01), `B6 dyn-totaal bevat korting-aftrek (recon €${dynRecon.toFixed(2)} = €${res.dynamicTotalBill.toFixed(2)})`);
 }
 

@@ -1081,7 +1081,7 @@
         <!-- Scope-toelichting bij de kerncijfers -->
         <div id="scope-note" style="position:relative;font-size:0.76rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem;display:flex;gap:0.45rem;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.8rem;">
           <span style="flex-shrink:0;">ℹ️</span>
-          <span>Deze bedragen zijn de <strong>stroomkosten inclusief belastingen en de vermindering energiebelasting</strong>. <strong>Niet</strong> inbegrepen zijn de <strong>netbeheerkosten</strong> (~€400–600/jaar) — die betaal je rechtstreeks aan je netbeheerder, zijn voor beide contracten gelijk en vallen weg in de vergelijking. Vergelijk daarom het <strong>verschil</strong>, niet het absolute bedrag met je echte jaarafrekening.</span>
+          <span>Deze bedragen zijn de <strong>complete stroomkosten</strong>, inclusief belastingen, de vermindering energiebelasting en de gemiddelde netbeheerkosten (~€480/jaar). Dit geeft een realistisch beeld van je totale jaarrekening. Omdat netbeheerkosten en de vermindering energiebelasting voor beide contracten gelijk zijn, vallen ze weg in het <strong>verschil</strong>.</span>
           <button type="button" class="dismiss-x" data-dismiss="scope-note" data-persist title="Verberg deze toelichting">×</button>
         </div>
 
@@ -1373,7 +1373,7 @@
                 <!-- Vaste lasten (Header) -->
                 <tr id="hdr-fixed-vaste-lasten" onclick="toggleTableDetail('hdr-fixed-vaste-lasten', 'fixed-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
                   <td>Vaste lasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
-                  <td style="font-size:0.75rem;color:var(--text-muted);">vastrecht − vermindering EB</td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">vastrecht − vermindering EB + netbeheer</td>
                   <td id="tbl-fixed-vaste-lasten">-</td>
                 </tr>
                 <!-- Sub-rows under Vaste lasten -->
@@ -1386,6 +1386,11 @@
                   <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-fixed-rebate" style="color:var(--accent-green);">-</td>
+                </tr>
+                <tr class="fixed-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
+                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het gemiddelde van €480/jaar.</span></span></td>
+                  <td>Gemiddelde kosten per jaar</td>
+                  <td id="tbl-fixed-grid-fees">-</td>
                 </tr>
 
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
@@ -1447,7 +1452,7 @@
                 <!-- Vaste & overheidslasten (Header) -->
                 <tr id="hdr-dyn-vaste-lasten" onclick="toggleTableDetail('hdr-dyn-vaste-lasten', 'dyn-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
                   <td>Vaste &amp; overheidslasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
-                  <td style="font-size:0.75rem;color:var(--text-muted);">belasting + vastrecht − korting</td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">belastingen + vastrecht − korting + netbeheer</td>
                   <td id="tbl-dyn-vaste-lasten">-</td>
                 </tr>
                 <!-- Sub-rows under Vaste lasten -->
@@ -1465,6 +1470,11 @@
                   <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-dyn-rebate" style="color:var(--accent-green);">-</td>
+                </tr>
+                <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
+                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het gemiddelde van €480/jaar.</span></span></td>
+                  <td>Gemiddelde kosten per jaar</td>
+                  <td id="tbl-dyn-grid-fees">-</td>
                 </tr>
 
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">

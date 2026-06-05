@@ -107,6 +107,11 @@ const ENERGY_TAX_2026 = 0.11084; // €/kWh (including VAT)
 // Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar zonder
 // deze post liggen de absolute jaartotalen ~€629 te hoog t.o.v. de echte jaarrekening.
 const EB_REBATE_2026 = 628.96; // €/jaar incl. BTW
+// Netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) — gemiddeld over grote netbeheerders
+// (Enexis/Liander/Stedin) voor 2026: ca €480,- per jaar incl. BTW.
+// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar nodig
+// voor een realistisch en compleet totaalbedrag op de jaarrekening.
+const NETBEHEER_2026 = 480.00; // €/jaar incl. BTW
 
 // Lokale datum+uur sleutel voor epexHistory (vermijdt UTC/lokaal-tijdzone verwarring)
 function epexKey(dt) {
@@ -2559,12 +2564,13 @@ function _simulateCore(cfg, full = false) {
   // Heffingskorting (vaste jaarlijkse EB-vermindering per aansluiting) — identiek voor
   // beide contracten, dus comparison-neutraal, maar nodig voor realistische jaartotalen.
   const ebRebate = EB_REBATE_2026;
+  const gridFees = NETBEHEER_2026;
 
-  const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub - ebRebate;
+  const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub - ebRebate + gridFees;
 
   const dynEB = dynImpKwh * eb; // Gross energy tax charging rule
   const dynSub = dynamicVastrecht * 12.0;
-  const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub - ebRebate;
+  const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub - ebRebate + gridFees;
 
   const out = { fixedBill, dynBill };
 
@@ -2574,7 +2580,7 @@ function _simulateCore(cfg, full = false) {
       netDynamicKwh: Math.max(0, dynImpKwh - dynExpKwh),
       dynamicRawImportCost: dynImpCost, dynamicRawExportRevenue: dynExpRev,
       dynamicNetTax: dynEB, dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
-      taxRebate: ebRebate,
+      taxRebate: ebRebate, gridFees: gridFees,
       fixedPeakImport: fxPeakImp, fixedPeakExport: fxPeakExp,
       fixedDalImport: fxDalImp, fixedDalExport: fxDalExp,
       fixedImportCost: fxImpCost, fixedFeedInCredit: fxFeedCredit,
@@ -3014,11 +3020,12 @@ function updateUIElements() {
   const fixedNetCost = sim.fixedImportCost - sim.fixedFeedInCredit + sim.fixedFeedInFee;
   document.getElementById("tbl-fixed-net-energy").textContent = `€ ${fixedNetCost.toFixed(2)}`;
 
-  const fixedVasteLasten = sim.fixedSubscription - (sim.taxRebate ?? 0);
+  const fixedVasteLasten = sim.fixedSubscription - (sim.taxRebate ?? 0) + (sim.gridFees ?? 0);
   document.getElementById("tbl-fixed-vaste-lasten").textContent = `€ ${fixedVasteLasten.toFixed(2)}`;
 
   document.getElementById("tbl-fixed-subcost").textContent = `€ ${sim.fixedSubscription.toFixed(2)}`;
   document.getElementById("tbl-fixed-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
+  document.getElementById("tbl-fixed-grid-fees").textContent = `€ ${(sim.gridFees ?? 0).toFixed(2)}`;
   document.getElementById("tbl-fixed-total").textContent = `€ ${sim.fixedTotalBill.toFixed(2)}`;
 
   // Dynamic breakdown table
@@ -3037,7 +3044,7 @@ function updateUIElements() {
   document.getElementById("tbl-dyn-net-kwh").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh`;
   document.getElementById("tbl-dyn-net-cost").textContent = `€ ${dynNetCost.toFixed(2)}`;
 
-  const dynVasteLasten = sim.dynamicNetTax + sim.dynamicSubscription - (sim.taxRebate ?? 0);
+  const dynVasteLasten = sim.dynamicNetTax + sim.dynamicSubscription - (sim.taxRebate ?? 0) + (sim.gridFees ?? 0);
   document.getElementById("tbl-dyn-vaste-lasten").textContent = `€ ${dynVasteLasten.toFixed(2)}`;
 
   // EB 2027: over BRUTO afname van het net (geen saldering) — volume = totale import,
@@ -3046,6 +3053,7 @@ function updateUIElements() {
   document.getElementById("tbl-dyn-tax").textContent = `€ ${sim.dynamicNetTax.toFixed(2)}`;
   document.getElementById("tbl-dyn-subcost").textContent = `€ ${sim.dynamicSubscription.toFixed(2)}`;
   document.getElementById("tbl-dyn-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
+  document.getElementById("tbl-dyn-grid-fees").textContent = `€ ${(sim.gridFees ?? 0).toFixed(2)}`;
   document.getElementById("tbl-dyn-total").textContent = `€ ${sim.dynamicTotalBill.toFixed(2)}`;
 }
 
