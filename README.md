@@ -12,7 +12,7 @@
 Upload je P1-data (of koppel Home Assistant) en zie direct:
 
 - **Jaarkosten vast vs. dynamisch** — tarieven instelbaar, leverancier-presets ingebouwd
-- **2027-model** — energiebelasting over bruto afname, geen saldering, heffingskorting verwerkt
+- **2027-model** — energiebelasting over bruto afname, geen saldering, vermindering energiebelasting verwerkt
 - **Hardware-simulaties** — warmtepomp, elektrische auto, thuisbatterij, zonnepanelen dimmen
 - **Sweet Spot Finder** — optimaal accuformaat met terugverdientijd
 - **Jaarprognose** — minder dan een jaar data? Een seizoensprofiel vult de rest aan
@@ -106,7 +106,7 @@ Vanaf **1 januari 2027** vervalt de salderingsregeling:
 
 - **Energiebelasting** over **bruto afname** — teruglevering verlaagt de EB-grondslag niet meer
 - **Geen saldering** — je krijgt alleen het teruglevertarief voor teruggeleverde stroom
-- **Heffingskorting** (€628,96/jaar incl. BTW, 2026-tarief) wordt van beide totalen afgetrokken
+- **Vermindering energiebelasting (heffingskorting)** (€628,96/jaar incl. BTW, 2026-tarief) wordt van beide totalen afgetrokken
 
 > ⚠️ Het EB-tarief 2027 is nog niet vastgesteld (verwacht Prinsjesdag, september 2026). De standaardwaarde is een 2026-benadering (~11,1 ct/kWh) en is instelbaar.
 
