@@ -3476,7 +3476,15 @@ function renderSimChart() {
   const N = keys.length;
   if (!N) return;
 
-  const maxVal = Math.max(...dyns, ...fixeds, 0.01) * 1.15;
+  let minVal = 0.0;
+  let maxVal = 0.01;
+  dyns.forEach(v => { if (v > maxVal) maxVal = v; if (v < minVal) minVal = v; });
+  fixeds.forEach(v => { if (v > maxVal) maxVal = v; if (v < minVal) minVal = v; });
+  maxVal *= 1.15;
+  if (minVal < 0) {
+    minVal *= 1.15;
+  }
+
   const container = document.getElementById("sim-svg-container");
   const svg = document.getElementById("sim-svg");
   const tooltip = document.getElementById("sim-tooltip");
@@ -3489,22 +3497,43 @@ function renderSimChart() {
   const barSlot = cW / N, barW = Math.max(2, barSlot * 0.35);
 
   const mk = (tag, a) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); Object.entries(a).forEach(([k, v]) => el.setAttribute(k, v)); return el; };
-  const yOf = v => PAD_T + cH - Math.max(0, v) / maxVal * cH;
-  const htOf = v => Math.max(0, v) / maxVal * cH;
+  const yOf = v => PAD_T + cH - ((v - minVal) / (maxVal - minVal)) * cH;
+  const zeroY = yOf(0);
   const xOf = i => PAD_L + i * barSlot + barSlot / 2;
 
-  svg.appendChild(mk("line", { x1: PAD_L, y1: PAD_T + cH, x2: W - PAD_R, y2: PAD_T + cH, stroke: "rgba(255,255,255,0.15)", "stroke-width": "1" }));
-  [0.25, 0.5, 0.75, 1].forEach(r => svg.appendChild(mk("line", { x1: PAD_L, y1: PAD_T + cH * (1 - r), x2: W - PAD_R, y2: PAD_T + cH * (1 - r), stroke: "rgba(255,255,255,0.04)" })));
-  [0, 0.5, 1].forEach(r => {
-    const lbl = mk("text", { x: PAD_L - 5, y: PAD_T + cH * (1 - r) + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
-    lbl.textContent = `€${(r * maxVal).toFixed(2)}`; svg.appendChild(lbl);
+  // Draw grid lines and labels
+  [0, 0.25, 0.5, 0.75, 1].forEach(r => {
+    const y = PAD_T + cH * (1 - r);
+    const val = minVal + r * (maxVal - minVal);
+    svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(255,255,255,0.04)" }));
+    const lbl = mk("text", { x: PAD_L - 5, y: y + 3, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
+    lbl.textContent = (val < 0 ? "−" : "") + `€${Math.abs(val).toFixed(2)}`;
+    svg.appendChild(lbl);
   });
+
+  // Solid zero line if minVal < 0
+  if (minVal < 0) {
+    svg.appendChild(mk("line", {
+      x1: PAD_L,
+      y1: zeroY,
+      x2: W - PAD_R,
+      y2: zeroY,
+      stroke: "rgba(255,255,255,0.2)",
+      "stroke-width": "1"
+    }));
+  } else {
+    // Standard bottom baseline border
+    svg.appendChild(mk("line", { x1: PAD_L, y1: PAD_T + cH, x2: W - PAD_R, y2: PAD_T + cH, stroke: "rgba(255,255,255,0.15)", "stroke-width": "1" }));
+  }
 
   for (let i = 0; i < N; i++) {
     svg.appendChild(mk("rect", { x: PAD_L + i * barSlot, y: PAD_T, width: barSlot, height: cH, fill: dyns[i] < fixeds[i] ? "rgba(56,239,125,0.05)" : "rgba(255,100,100,0.05)" }));
     [[dyns[i], "rgba(0,242,254,0.75)", -barW * 0.55], [fixeds[i], "rgba(102,126,234,0.75)", barW * 0.05]].forEach(([val, col, off]) => {
-      const ht = htOf(val); if (ht < 0.5) return;
-      svg.appendChild(mk("rect", { x: xOf(i) + off, y: yOf(val), width: barW, height: ht, fill: col, rx: "1" }));
+      const yVal = yOf(val);
+      const top = Math.min(zeroY, yVal);
+      const ht = Math.abs(yVal - zeroY);
+      if (ht < 0.5) return;
+      svg.appendChild(mk("rect", { x: xOf(i) + off, y: top, width: barW, height: ht, fill: col, rx: "1" }));
     });
   }
 
@@ -3522,8 +3551,8 @@ function renderSimChart() {
       const diff = dyns[i] - fixeds[i];
       const label = isWeekMode ? keys[i] : (() => { const d = new Date(keys[i] + "T12:00:00"); return d.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); })();
       document.getElementById("sim-tt-hour").textContent = label + (isWeekMode ? "" : " · klik voor uurdetail");
-      document.getElementById("sim-tt-dyn").textContent = `€ ${dyns[i].toFixed(2)}`;
-      document.getElementById("sim-tt-fixed").textContent = `€ ${fixeds[i].toFixed(2)}`;
+      document.getElementById("sim-tt-dyn").textContent = (dyns[i] < 0 ? "− " : "") + `€ ${Math.abs(dyns[i]).toFixed(2)}`;
+      document.getElementById("sim-tt-fixed").textContent = (fixeds[i] < 0 ? "− " : "") + `€ ${Math.abs(fixeds[i]).toFixed(2)}`;
       const de = document.getElementById("sim-tt-diff");
       de.textContent = (diff < 0 ? "−" : "+") + ` € ${Math.abs(diff).toFixed(2)} (${diff < 0 ? "dyn goedkoper" : "dyn duurder"})`;
       de.style.color = diff < 0 ? "var(--accent-green)" : "var(--accent-orange)";
