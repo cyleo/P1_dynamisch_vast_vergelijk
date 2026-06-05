@@ -236,12 +236,12 @@ function getFallbackSpot(month, hour) {
 // Vult de tariefschuiven; teruglevertarief/VTK volgens gevonden marktcijfers, piek/dal
 // en opslag als typische NL-marktbenadering. Stappen sluiten aan op de slider-steps.
 const SUPPLIER_PRESETS = {
-  vattenfall: { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.045, "dynamic-markup": 0.025 },
-  eneco: { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.030, "dynamic-markup": 0.025 },
-  greenchoice: { "fixed-peak": 0.29, "fixed-dal": 0.26, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.010, "dynamic-markup": 0.020 },
-  budgetthuis: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.020, "dynamic-markup": 0.020 },
-  anwb: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.020 },
-  zonneplan: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.015 },
+  vattenfall: { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.045, "dynamic-markup": 0.025, "dynamic-export-markup": 0.025 },
+  eneco: { "fixed-peak": 0.28, "fixed-dal": 0.25, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.030, "dynamic-markup": 0.025, "dynamic-export-markup": 0.025 },
+  greenchoice: { "fixed-peak": 0.29, "fixed-dal": 0.26, "fixed-feedin-rate": 0.040, "fixed-feedin-fee": 0.010, "dynamic-markup": 0.020, "dynamic-export-markup": 0.020 },
+  budgetthuis: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.045, "fixed-feedin-fee": 0.020, "dynamic-markup": 0.020, "dynamic-export-markup": 0.020 },
+  anwb: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.020, "dynamic-export-markup": 0.020 },
+  zonneplan: { "fixed-peak": 0.27, "fixed-dal": 0.24, "fixed-feedin-rate": 0.050, "fixed-feedin-fee": 0.000, "dynamic-markup": 0.015, "dynamic-export-markup": 0.015 },
 };
 
 // Aangeroepen vanuit de leverancier-dropdown (inline onchange). setSlider() (verderop,
@@ -2157,7 +2157,7 @@ function ensureFullYearData() {
 function _simulateCore(cfg, full = false) {
   const {
     fixedPeakRate, fixedDalRate, fixedFeedInRate, fixedVastrecht, fixedFeedInFee,
-    dynamicMarkup, dynamicVastrecht, stressMultiplier = 1.0,
+    dynamicMarkup, dynamicExportMarkup = 0.0, dynamicVastrecht, stressMultiplier = 1.0,
     solarDimmingMode,
     hasHeatPump, hpWinterBaseload,
     hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile = "home",
@@ -2176,6 +2176,7 @@ function _simulateCore(cfg, full = false) {
   const gridExport = mode === "winst";                        // aan het net mogen verkopen
 
   const markupBtw = dynamicMarkup * 1.21;
+  const exportMarkupBtw = dynamicExportMarkup * 1.21;
   const eb = liveEnergyTax;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
   const simData = fullYearData || energyData;
@@ -2318,8 +2319,8 @@ function _simulateCore(cfg, full = false) {
 
       if (gridExport) {
         // Maximale winst: óók aan het net verkopen. Een verkochte kWh levert kale spot
-        // (spot/1.21, géén EB) op, geen all-in — dus toets de export-uren tegen díe waarde.
-        const expHrs = expensive.filter(e => (e.spot / 1.21) * batEfficiency > loAllin);
+        // (spot/1.21, we trekken hier de terugleveropslag incl. BTW vanaf) op.
+        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkupBtw) * batEfficiency > loAllin);
         // Ruimte om voor de winstgevende export-uren te laden — exact wat die uren kunnen
         // ontladen (vermogen × #uren), begrensd door de capaciteit bóven de zelf-voorraad.
         // Alléén als er zúlke vrije ruimte is verkopen we: anders is de capaciteit volledig
@@ -2452,10 +2453,10 @@ function _simulateCore(cfg, full = false) {
         batDischargeVal += toHouse;
 
         // Terugleveren aan net mag alleen als (a) het rendement oplevert (opbrengst spot/1.21
-        // > laadkosten loAllin/rendement) én (b) het écht overschot is: we houden de
-        // resterende eigen import van vandaag in de accu, want zelfconsumptie is waardevoller.
+        // minus terugleveropslag > laadkosten loAllin/rendement) én (b) het écht overschot is:
+        // we houden de resterende eigen import van vandaag in de accu.
         const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
-        const minExportSpot = (loAllin / batEfficiency) * 1.21;
+        const minExportSpot = ((loAllin / batEfficiency) + exportMarkupBtw) * 1.21;
         const reserve = batSelfReserve[dayKey] ?? 0;                 // bewaar de eigen-verbruik-voorraad
         const exportable = Math.min(d, Math.max(0, batSoC - reserve));
         if (gridExport && exportable > 0 && spot > minExportSpot) {
@@ -2506,7 +2507,7 @@ function _simulateCore(cfg, full = false) {
     // Accumuleer Dynamische Resultaten
     const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
-    dynExpRev += dynExp * (spot / 1.21);
+    dynExpRev += dynExp * ((spot / 1.21) - exportMarkupBtw);
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
@@ -2514,7 +2515,7 @@ function _simulateCore(cfg, full = false) {
       hourly[hour].imports.push(dynImp);
       hourly[hour].exports.push(dynExp);
       const allIn = basePrice + eb;
-      const dynHrCost = dynImp * allIn - dynExp * (spot / 1.21);   // teruglevering = kale spot (excl. BTW, 2027)
+      const dynHrCost = dynImp * allIn - dynExp * ((spot / 1.21) - exportMarkupBtw);   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
 
@@ -2540,7 +2541,7 @@ function _simulateCore(cfg, full = false) {
       pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
       pd.impKwh += dynImp; pd.expKwh += dynExp;
       pd.impCost += dynImp * allIn;   // all-in afname-kosten incl. EB (voor de "per dag"-detailtabel)
-      pd.expRev += dynExp * (spot / 1.21);   // teruglever-opbrengst = kale spotprijs (excl. BTW, 2027)
+      pd.expRev += dynExp * ((spot / 1.21) - exportMarkupBtw);   // teruglever-opbrengst = kale spotprijs (excl. BTW, 2027) minus opslag
       if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
 
       if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
@@ -2613,6 +2614,7 @@ function readSimConfig() {
     fixedVastrecht: parseFloat(document.getElementById("fixed-vastrecht").value),
     fixedFeedInFee: parseFloat(document.getElementById("fixed-feedin-fee")?.value) || 0,
     dynamicMarkup: parseFloat(document.getElementById("dynamic-markup").value),
+    dynamicExportMarkup: parseFloat(document.getElementById("dynamic-export-markup")?.value || 0.0),
     dynamicVastrecht: parseFloat(document.getElementById("dynamic-vastrecht").value),
     stressMultiplier: isSimple ? 1.0 : (parseFloat(document.getElementById("stress-multiplier")?.value) || 1.0),
     solarDimmingMode: isSimple ? "off" : (document.getElementById("solar-dimming-mode")?.value || "off"),
@@ -2643,6 +2645,7 @@ function downloadDataWithPrices() {
   const cfg = readSimConfig();
   const eb = liveEnergyTax;
   const markupBtw = cfg.dynamicMarkup * 1.21;
+  const exportMarkupBtw = (cfg.dynamicExportMarkup ?? 0.0) * 1.21;
 
   const header = [
     "tijdstip", "afname_kWh", "teruglevering_kWh", "opwek_kWh",
@@ -2660,7 +2663,7 @@ function downloadDataWithPrices() {
     const real = epexHistory.has(key);
     const spot = real ? epexHistory.get(key) : getFallbackSpot(month, hour);
     const allIn = spot + markupBtw + eb;                       // all-in consumentenprijs dynamisch
-    const dynCost = imp * allIn - exp * (spot / 1.21);                  // netto kosten dat uur (dynamisch)
+    const dynCost = imp * allIn - exp * ((spot / 1.21) - exportMarkupBtw);                  // netto kosten dat uur (dynamisch)
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
     const tariff = isPeak ? cfg.fixedPeakRate : cfg.fixedDalRate;
     const vastCost = imp * tariff - exp * cfg.fixedFeedInRate + exp * cfg.fixedFeedInFee;
