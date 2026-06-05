@@ -864,3 +864,28 @@ body.mode-simple .advanced-only {
   display: none !important;
 }
 
+body.mode-simple #intro-explainer,
+body.mode-simple #scope-note,
+body.mode-simple #data-quality-banner,
+body.mode-simple #prognosis-badge,
+body.mode-simple .info-box,
+body.mode-simple .warning-note,
+body.mode-simple #show-setup-btn,
+body.mode-simple #dynprice-explainer {
+  display: none !important;
+}
+
+/* Table sub-row details styling */
+.detail-table tr.sub-row td {
+  padding-left: 1.5rem !important;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.toggle-chevron {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--accent-cyan);
+  transition: transform 0.2s ease;
+}
+

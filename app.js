@@ -254,6 +254,30 @@ function toggleCard(titleEl) {
   if (card) card.classList.toggle("collapsed");
 }
 
+// Klap een detail-tabelgedeelte in/uit
+function toggleTableDetail(headerId, subRowClass) {
+  const header = document.getElementById(headerId);
+  if (!header) return;
+  const chevron = header.querySelector(".toggle-chevron");
+  const subRows = document.querySelectorAll("." + subRowClass);
+  if (!subRows.length) return;
+  
+  const isHidden = subRows[0].style.display === "none";
+  subRows.forEach(row => {
+    if (row.id === "tbl-dyn-afname-detail") {
+      row.style.display = "none";
+      const subChevron = document.getElementById("afname-toggle-icon");
+      if (subChevron) subChevron.style.transform = "rotate(0deg)";
+    } else {
+      row.style.display = isHidden ? "" : "none";
+    }
+  });
+  if (chevron) {
+    chevron.style.transform = isHidden ? "rotate(0deg)" : "rotate(-90deg)";
+  }
+}
+window.toggleTableDetail = toggleTableDetail;
+
 // Progressive Disclosure: view mode toggle
 function setViewMode(mode) {
   const body = document.body;
@@ -409,8 +433,40 @@ function setupEventListeners() {
     if (e.target === e.currentTarget) closeHardwareExplainer();
   });
 
-  // Wegklik-knoppen voor uitleg/waarschuwingen activeren
+  // Wegklik-knoppen voor uitleg/waarschuwingen adviseren
   initDismissHandlers();
+
+  // Listen for changes to the Home Assistant sensor selectors for auto-fetch/collapse
+  ["sel-imp1", "sel-imp2", "sel-exp1", "sel-exp2"].forEach(id => {
+    document.getElementById(id)?.addEventListener("change", checkHAAutoImportAndCollapse);
+  });
+}
+
+let haAutoTimeout = null;
+function checkHAAutoImportAndCollapse() {
+  const imp1 = document.getElementById("sel-imp1")?.value;
+  const imp2 = document.getElementById("sel-imp2")?.value;
+  const exp1 = document.getElementById("sel-exp1")?.value;
+  const exp2 = document.getElementById("sel-exp2")?.value;
+
+  if (imp1 && imp2 && exp1 && exp2) {
+    if (haAutoTimeout) clearTimeout(haAutoTimeout);
+    haAutoTimeout = setTimeout(async () => {
+      const statusEl = document.getElementById("ha-sync-status");
+      if (statusEl) {
+        statusEl.textContent = "Sensoren compleet. Data automatisch ophalen...";
+        statusEl.style.color = "var(--accent-cyan)";
+      }
+      try {
+        await handleHAImport();
+        // Collapse the Home Assistant card
+        const haCard = document.getElementById("ha-card");
+        if (haCard) haCard.classList.add("collapsed");
+      } catch (err) {
+        console.error("Auto import failed:", err);
+      }
+    }, 1500);
+  }
 }
 
 // Restore saved HA credentials from localStorage
@@ -744,6 +800,12 @@ async function handleFileSelect(e) {
   for (const f of files) await processFile(f);
   e.target.value = "";   // reset zodat hetzelfde bestand opnieuw gekozen kan worden
   autoFetchEpex();        // best-effort: echte EPEX-prijzen ophalen + herberekenen
+
+  // Auto-collapse the upload panel after a timeout
+  setTimeout(() => {
+    const uploadPanel = document.getElementById("upload-panel");
+    if (uploadPanel) uploadPanel.classList.add("collapsed");
+  }, 1500);
 }
 
 function processFile(file) {
@@ -1184,6 +1246,9 @@ async function handleHAConnect() {
     statusEl.textContent = `✓ Verbonden — ${kwhSensors.length} kWh sensoren${offlineNote}${whNote}. Kies de juiste P1 sensoren hieronder.`;
     statusEl.style.color = "var(--accent-green)";
     document.getElementById("ha-sensor-picker").style.display = "block";
+    
+    // Auto-import if all required sensors are pre-selected
+    checkHAAutoImportAndCollapse();
 
   } catch (err) {
     console.error(err);
@@ -2944,13 +3009,22 @@ function updateUIElements() {
   document.getElementById("tbl-fixed-dal-cost").textContent = `€ ${dalImpCost.toFixed(2)}`;
   document.getElementById("tbl-fixed-exp").textContent = `${totalFixedExp.toFixed(1)} kWh × €${feedRate.toFixed(3)}`;
   document.getElementById("tbl-fixed-feedin-credit").textContent = `− € ${sim.fixedFeedInCredit.toFixed(2)}`;
-  document.getElementById("tbl-fixed-net-energy").textContent = `€ ${(sim.fixedImportCost - sim.fixedFeedInCredit).toFixed(2)}`;
+  document.getElementById("tbl-fixed-vtk-cost").textContent = `€ ${sim.fixedFeedInFee.toFixed(2)}`;
+
+  const fixedNetCost = sim.fixedImportCost - sim.fixedFeedInCredit + sim.fixedFeedInFee;
+  document.getElementById("tbl-fixed-net-energy").textContent = `€ ${fixedNetCost.toFixed(2)}`;
+
+  const fixedVasteLasten = sim.fixedSubscription - (sim.taxRebate ?? 0);
+  document.getElementById("tbl-fixed-vaste-lasten").textContent = `€ ${fixedVasteLasten.toFixed(2)}`;
+
   document.getElementById("tbl-fixed-subcost").textContent = `€ ${sim.fixedSubscription.toFixed(2)}`;
   document.getElementById("tbl-fixed-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
   document.getElementById("tbl-fixed-total").textContent = `€ ${sim.fixedTotalBill.toFixed(2)}`;
 
   // Dynamic breakdown table
   const dynNetCost = sim.dynamicRawImportCost - sim.dynamicRawExportRevenue;
+  document.getElementById("tbl-dyn-net-cost-header").textContent = `€ ${dynNetCost.toFixed(2)}`;
+
   document.getElementById("tbl-dyn-imp-kwh").innerHTML = `${sim.totalImportKwh.toFixed(1)} kWh${synthTag}`;
   document.getElementById("tbl-dyn-raw-imp").textContent = `€ ${sim.dynamicRawImportCost.toFixed(2)}`;
   document.getElementById("tbl-dyn-exp-kwh").textContent = `${sim.totalExportKwh.toFixed(1)} kWh`;
@@ -2962,6 +3036,10 @@ function updateUIElements() {
   expEl.title = expRev < 0 ? "Negatief: export tijdens uren met negatieve EPEX-prijs kost geld" : "";
   document.getElementById("tbl-dyn-net-kwh").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh`;
   document.getElementById("tbl-dyn-net-cost").textContent = `€ ${dynNetCost.toFixed(2)}`;
+
+  const dynVasteLasten = sim.dynamicNetTax + sim.dynamicSubscription - (sim.taxRebate ?? 0);
+  document.getElementById("tbl-dyn-vaste-lasten").textContent = `€ ${dynVasteLasten.toFixed(2)}`;
+
   // EB 2027: over BRUTO afname van het net (geen saldering) — volume = totale import,
   // zodat volume × tarief exact gelijk is aan het getoonde bedrag.
   document.getElementById("tbl-dyn-tax-vol").textContent = `${sim.totalImportKwh.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;

@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=47">
+  <link rel="stylesheet" href="/energie/style.css?v=49">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal */
     #modal-backdrop,
@@ -475,7 +475,7 @@
           <div class="config-group-label">Stap 1 · Importeer je verbruiksdata</div>
 
           <!-- Methode A: bestand uploaden -->
-          <section class="glass-panel upload-card" id="upload-panel">
+          <section class="glass-panel upload-card collapsed" id="upload-panel">
           <h2 class="section-title" onclick="toggleCard(this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -515,7 +515,7 @@
         </section>
 
         <!-- Home Assistant API Sync -->
-        <section class="glass-panel ha-card" id="ha-card">
+        <section class="glass-panel ha-card collapsed" id="ha-card">
           <h2 class="section-title" onclick="toggleCard(this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -556,7 +556,7 @@
             <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.8rem;">
               Kies de juiste P1 sensoren. Automatisch herkende waarden zijn al ingevuld.
             </p>
-            <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.8rem; line-height:1.5; background:rgba(255,255,255,0.03); padding:0.5rem 0.6rem; border-radius:6px; border-left:2px solid var(--accent-blue);">
+            <p class="info-box" style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.8rem; line-height:1.5; background:rgba(255,255,255,0.03); padding:0.5rem 0.6rem; border-radius:6px; border-left:2px solid var(--accent-blue);">
               💡 <strong>Welke sensor kiezen?</strong> Selecteer de <em>cumulatieve meterstand</em>-sensoren van je P1 slimme meter (eenheid: <strong>kWh</strong>). In Home Assistant herken je ze aan namen als <code>sensor.p1_meter_*</code>, <code>sensor.electricity_meter_*</code> of <code>sensor.dsmr_*</code>. Ze tonen een stijgend totaal — <em>niet</em> het actuele vermogen (W/kW).
             </p>
 
@@ -670,7 +670,7 @@
         <!-- /Stap 1 -->
 
         <!-- Tariffs Config Panel -->
-        <section class="glass-panel" style="padding: 1.2rem;" id="tariffs-config">
+        <section class="glass-panel collapsed" style="padding: 1.2rem;" id="tariffs-config">
           <h2 class="section-title" onclick="toggleCard(this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="1" x2="12" y2="23"></line>
@@ -725,7 +725,7 @@
               <span class="val-badge" id="fixed-feedin-rate-val">€ 0.070</span></label>
             <input type="range" id="fixed-feedin-rate" min="0.00" max="0.25" step="0.005" value="0.070" data-suffix="">
           </div>
-          <div class="form-group">
+          <div class="form-group advanced-only">
             <label for="fixed-feedin-fee">Vaste Terugleverkosten (VTK) / kWh <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">Veel leveranciers rekenen per 2027 een VTK (Vaste Terugleverkosten) per
                   teruggeleverde kWh — bovenop het netwerk. Hierdoor kost terugleveren jou geld per kWh in plaats van
@@ -733,7 +733,7 @@
               <span class="val-badge" id="fixed-feedin-fee-val">€ 0.000</span></label>
             <input type="range" id="fixed-feedin-fee" min="0.00" max="0.15" step="0.005" value="0.000" data-suffix="">
           </div>
-          <div class="form-group">
+          <div class="form-group advanced-only">
             <label for="fixed-vastrecht">Vaste Leveringskosten/mnd <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">Maandelijks vast bedrag voor levering, ongeacht je verbruik.</span></span> <span
                 class="val-badge" id="fixed-vastrecht-val">€ 7.50</span></label>
@@ -741,8 +741,7 @@
           </div>
 
           <!-- Live tariff fetch -->
-          <div
-            style="margin: 0.8rem 0 1rem; padding: 0.7rem 0.8rem; background: rgba(0,242,254,0.04); border: 1px solid rgba(0,242,254,0.12); border-radius: 10px;">
+          <div id="live-tariffs-box" class="advanced-only" style="margin: 0.8rem 0 1rem; padding: 0.7rem 0.8rem; background: rgba(0,242,254,0.04); border: 1px solid rgba(0,242,254,0.12); border-radius: 10px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
               <div>
                 <div style="font-size:0.78rem; font-weight:600; color:var(--text-main);">Live tarieven ophalen</div>
@@ -765,14 +764,14 @@
           <h3
             style="font-size: 0.85rem; color: var(--accent-cyan); margin-bottom: 0.8rem; font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1.5rem;">
             Dynamisch Parameters</h3>
-          <div class="form-group">
+          <div class="form-group advanced-only">
             <label for="dynamic-markup">Inkoop Opslag / kWh <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">De marge die de leverancier bovenop de EPEX beursprijs rekent. Bij dynamische
                   contracten betaal je de spotprijs + deze opslag per kWh.</span></span> <span class="val-badge"
                 id="dynamic-markup-val">€ 0.020</span></label>
             <input type="range" id="dynamic-markup" min="0.00" max="0.08" step="0.005" value="0.020" data-suffix="">
           </div>
-          <div class="form-group">
+          <div class="form-group advanced-only">
             <label for="dynamic-vastrecht">Vaste Leveringskosten/mnd <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">Maandelijkse vaste leveringskosten bij een dynamisch contract. Doorgaans iets
                   lager dan bij vaste contracten door minder risicobuffer voor de leverancier.</span></span> <span
@@ -788,7 +787,7 @@
                   afname.</span></span>
               <span class="val-badge" id="energy-tax-val">€ 0.111</span></label>
             <input type="range" id="energy-tax" min="0.00" max="0.20" step="0.001" value="0.11084" data-suffix="">
-            <p style="font-size:0.68rem;color:var(--accent-orange);margin-top:0.35rem;">⚠ 2027-tarief nog niet bekend —
+            <p class="warning-note" style="font-size:0.68rem;color:var(--accent-orange);margin-top:0.35rem;">⚠ 2027-tarief nog niet bekend —
               standaard = 2026-benadering.</p>
           </div>
           <div class="form-group advanced-only" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
@@ -801,7 +800,7 @@
         </section>
 
         <!-- Hardware Smart Scenarios -->
-        <section class="glass-panel advanced-only" style="padding: 1.2rem;" id="hardware-panel">
+        <section class="glass-panel advanced-only collapsed" style="padding: 1.2rem;" id="hardware-panel">
           <h2 class="section-title" onclick="toggleCard(this)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -1155,7 +1154,7 @@
         </section>
 
         <!-- Daily Overview Chart -->
-        <section class="glass-panel chart-card" id="overview-chart-card" style="display:none;">
+        <section class="glass-panel chart-card advanced-only" id="overview-chart-card" style="display:none;">
           <div class="chart-header-row">
             <div>
               <h2 style="font-size: 1.1rem; font-family: var(--font-display); font-weight: 700;">
@@ -1222,7 +1221,7 @@
         </section>
 
         <!-- Dynamic simulation per-hour cost chart -->
-        <section class="glass-panel chart-card" id="sim-chart-card" style="display:none;">
+        <section class="glass-panel chart-card advanced-only" id="sim-chart-card" style="display:none;">
           <div class="chart-header-row">
             <div>
               <h2 style="font-size:1.1rem;font-family:var(--font-display);font-weight:700;">
@@ -1347,39 +1346,55 @@
                 </tr>
               </thead>
               <tbody>
-                <tr>
+                <!-- Netto energiekosten (Header) -->
+                <tr id="hdr-fixed-net-energy" onclick="toggleTableDetail('hdr-fixed-net-energy', 'fixed-net-detail')" style="cursor:pointer; font-weight:600;">
+                  <td>Netto energiekosten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">afname − vergoeding + VTK</td>
+                  <td id="tbl-fixed-net-energy">-</td>
+                </tr>
+                <!-- Sub-rows under Netto energiekosten -->
+                <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Piekafname</td>
                   <td id="tbl-fixed-peak-imp">-</td>
                   <td id="tbl-fixed-peak-cost">-</td>
                 </tr>
-                <tr>
+                <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Dalafname</td>
                   <td id="tbl-fixed-dal-imp">-</td>
                   <td id="tbl-fixed-dal-cost">-</td>
                 </tr>
-                <tr>
+                <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td style="color:var(--accent-green);">Teruglevering (vergoeding)</td>
                   <td id="tbl-fixed-exp">-</td>
                   <td id="tbl-fixed-feedin-credit" style="color:var(--accent-green);">-</td>
                 </tr>
-                <tr style="border-top:1px solid rgba(255,255,255,0.08);">
-                  <td>Netto energiekosten</td>
-                  <td style="font-size:0.75rem;color:var(--text-muted);">afname − teruglevertarief</td>
-                  <td id="tbl-fixed-net-energy">-</td>
+                <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
+                  <td style="color:var(--accent-orange);">Vaste terugleverkosten (VTK)</td>
+                  <td>-</td>
+                  <td id="tbl-fixed-vtk-cost" style="color:var(--accent-orange);">-</td>
                 </tr>
-                <tr>
+
+                <!-- Vaste lasten (Header) -->
+                <tr id="hdr-fixed-vaste-lasten" onclick="toggleTableDetail('hdr-fixed-vaste-lasten', 'fixed-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
+                  <td>Vaste lasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">vastrecht − heffingskorting</td>
+                  <td id="tbl-fixed-vaste-lasten">-</td>
+                </tr>
+                <!-- Sub-rows under Vaste lasten -->
+                <tr class="fixed-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Vaste leveringskosten</td>
                   <td>Per jaar (12 maanden)</td>
                   <td id="tbl-fixed-subcost">-</td>
                 </tr>
-                <tr>
+                <tr class="fixed-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Heffingskorting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong>: een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-fixed-rebate" style="color:var(--accent-green);">-</td>
                 </tr>
-                <tr class="total-row">
+
+                <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
                   <td>Totale rekening</td>
-                  <td>Netto energie + VTK + vast − korting</td>
+                  <td>Netto energie + vaste lasten</td>
                   <td id="tbl-fixed-total" style="color:var(--text-main);">-</td>
                 </tr>
               </tbody>
@@ -1402,55 +1417,61 @@
                 </tr>
               </thead>
               <tbody>
-                <tr id="tbl-dyn-afname-row" onclick="toggleAfnameDetail()" style="cursor:pointer;"
-                  title="Klik voor dagelijkse uitwerking">
+                <!-- Netto energiekosten (Header) -->
+                <tr id="hdr-dyn-net-energy" onclick="toggleTableDetail('hdr-dyn-net-energy', 'dyn-net-detail')" style="cursor:pointer; font-weight:600;">
+                  <td>Netto energiekosten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">afname − teruglevering</td>
+                  <td id="tbl-dyn-net-cost-header">-</td>
+                </tr>
+                <!-- Sub-rows under Netto energiekosten -->
+                <tr id="tbl-dyn-afname-row" class="dyn-net-detail sub-row" onclick="toggleAfnameDetail(); event.stopPropagation();" style="display:none; cursor:pointer; background:rgba(255,255,255,0.015);" title="Klik voor dagelijkse uitwerking">
                   <td style="display:flex;align-items:center;gap:0.4rem;">
                     Afname (EPEX + opslag + BTW)
-                    <span class="info-icon" tabindex="0">i<span class="info-tooltip">Wat je per kWh betaalt bij een
-                        dynamisch contract: de <strong>EPEX-beursprijs</strong> van dat uur (de groothandelsprijs voor
-                        stroom) + de <strong>opslag</strong> van je leverancier + 21% BTW. Klik op de rij voor de
-                        uitwerking per dag.</span></span>
-                    <span id="afname-toggle-icon"
-                      style="font-size:0.7rem;opacity:0.5;transition:transform 0.2s;">▼</span>
+                    <span id="afname-toggle-icon" style="font-size:0.7rem;opacity:0.5;transition:transform 0.2s;">▼</span>
                   </td>
                   <td id="tbl-dyn-imp-kwh">-</td>
                   <td id="tbl-dyn-raw-imp">-</td>
                 </tr>
-                <tr id="tbl-dyn-afname-detail" style="display:none;">
+                <tr id="tbl-dyn-afname-detail" class="dyn-net-detail" style="display:none;">
                   <td colspan="3" style="padding:0;">
-                    <div id="afname-detail-body" style="max-height:260px;overflow-y:auto;font-size:0.72rem;"></div>
+                    <div id="afname-detail-body" style="max-height:260px;overflow-y:auto;font-size:0.72rem;background:#060913;"></div>
                   </td>
                 </tr>
-                <tr>
+                <tr class="dyn-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td style="color:var(--accent-green);">Teruglevering (EPEX spotprijs)</td>
                   <td id="tbl-dyn-exp-kwh">-</td>
                   <td id="tbl-dyn-raw-exp" style="color:var(--accent-green);">-</td>
                 </tr>
-                <tr style="border-top:1px solid rgba(255,255,255,0.08);">
-                  <td>Netto stroom (afname − terug)</td>
+                <tr class="dyn-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015); border-top:1px solid rgba(255,255,255,0.04);">
+                  <td style="font-style:italic;">Subtotaal stroom (afname − terug)</td>
                   <td id="tbl-dyn-net-kwh">-</td>
                   <td id="tbl-dyn-net-cost">-</td>
                 </tr>
-                <tr>
-                  <td>Energiebelasting <span style="font-size:0.68rem;color:var(--text-muted);">(bruto afname —
-                      2027)</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Belasting die de
-                        overheid per kWh heft. <strong>Bruto afname:</strong> vanaf 2027 (einde saldering) wordt deze
-                        geheven over álle stroom die je van het net haalt — je teruglevering wordt er niet meer van
-                        afgetrokken. Zonnestroom verlaagt je belasting dus minder dan vroeger.</span></span></td>
+
+                <!-- Vaste & overheidslasten (Header) -->
+                <tr id="hdr-dyn-vaste-lasten" onclick="toggleTableDetail('hdr-dyn-vaste-lasten', 'dyn-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
+                  <td>Vaste &amp; overheidslasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
+                  <td style="font-size:0.75rem;color:var(--text-muted);">belasting + vastrecht − korting</td>
+                  <td id="tbl-dyn-vaste-lasten">-</td>
+                </tr>
+                <!-- Sub-rows under Vaste lasten -->
+                <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
+                  <td>Energiebelasting <span style="font-size:0.68rem;color:var(--text-muted);">(bruto afname)</span></td>
                   <td id="tbl-dyn-tax-vol">-</td>
                   <td id="tbl-dyn-tax">-</td>
                 </tr>
-                <tr>
+                <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Vaste leveringskosten</td>
                   <td>Per jaar (12 maanden)</td>
                   <td id="tbl-dyn-subcost">-</td>
                 </tr>
-                <tr>
+                <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
                   <td>Heffingskorting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong>: een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-dyn-rebate" style="color:var(--accent-green);">-</td>
                 </tr>
-                <tr class="total-row">
+
+                <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
                   <td>Totale rekening</td>
                   <td>Netto + EB + vast − korting</td>
                   <td id="tbl-dyn-total" style="color:var(--accent-cyan);">-</td>
@@ -1484,7 +1505,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=46"></script>
+  <script src="/energie/app.js?v=49"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
