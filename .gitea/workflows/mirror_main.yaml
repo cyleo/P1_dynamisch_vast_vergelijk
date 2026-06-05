@@ -1,0 +1,23 @@
+name: Mirror Main to GitHub
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  push-to-github:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history so the push isn't rejected
+
+      - name: Push to GitHub Remote
+        run: |
+          # Configure authentication using the secret token
+          git remote add github https://x-token-auth:${{ secrets.GH_TOKEN }}@github.com/cyleo/P1_dynamisch_vast_vergelijk.git
+          
+          # Force push or standard push main specifically
+          git push github main
