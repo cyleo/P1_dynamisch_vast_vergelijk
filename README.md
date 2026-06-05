@@ -107,6 +107,7 @@ Vanaf **1 januari 2027** vervalt de salderingsregeling:
 - **Energiebelasting** over **bruto afname** — teruglevering verlaagt de EB-grondslag niet meer
 - **Geen saldering** — je krijgt alleen het teruglevertarief voor teruggeleverde stroom
 - **Vermindering energiebelasting (heffingskorting)** (€628,96/jaar incl. BTW, 2026-tarief) wordt van beide totalen afgetrokken
+- **Netbeheerkosten** (€480,00/jaar incl. BTW, 2026-gemiddelde) worden bij beide totalen opgeteld voor een compleet beeld van de jaarrekening
 
 > ⚠️ Het EB-tarief 2027 is nog niet vastgesteld (verwacht Prinsjesdag, september 2026). De standaardwaarde is een 2026-benadering (~11,1 ct/kWh) en is instelbaar.
 
