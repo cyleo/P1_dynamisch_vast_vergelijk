@@ -889,3 +889,106 @@ body.mode-simple #dynprice-explainer {
   transition: transform 0.2s ease;
 }
 
+/* ============================================================================
+   Mobile Responsive Adjustments (Screens <= 600px)
+   ============================================================================ */
+@media (max-width: 600px) {
+  /* 1. App Container & Header Paddings */
+  .app-container {
+    padding: 1rem 0.6rem;
+  }
+  
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .logo-section h1 {
+    font-size: 1.6rem !important;
+  }
+  
+  .logo-section p {
+    font-size: 0.85rem;
+  }
+
+  /* Reduce glass panel and container padding to save space */
+  .glass-panel,
+  .table-panel,
+  .chart-card,
+  .ha-card,
+  .upload-card {
+    padding: 1rem !important;
+  }
+
+  /* 2. Compact Stats Row (2 columns instead of vertical stack or wide horizontal row) */
+  .stats-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+
+  .stat-card {
+    padding: 0.8rem !important;
+  }
+
+  .stat-value {
+    font-size: 1.4rem !important;
+  }
+  
+  .stat-value span.curr {
+    font-size: 0.95rem;
+  }
+  
+  .stat-value span.sub {
+    font-size: 0.75rem;
+    margin-left: 0.15rem;
+  }
+
+  /* 3. Larger Slider Touch Targets for Range Inputs */
+  input[type="range"] {
+    height: 8px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 20px !important;
+    height: 20px !important;
+    box-shadow: 0 0 10px rgba(0, 242, 254, 0.5) !important;
+  }
+
+  /* 4. Prevent iOS Safari Auto-Zoom on form fields (must be at least 16px) */
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  input[type="email"],
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  select,
+  .ha-select,
+  .ha-inputs input {
+    font-size: 16px !important;
+  }
+
+  /* 5. Chart Height Reduction */
+  .svg-chart-container {
+    height: 260px !important;
+  }
+
+  /* 6. Detailed Table Padding - prevents wrapping of currency values/names */
+  .detail-table th,
+  .detail-table td {
+    padding: 0.6rem 0.25rem !important;
+  }
+
+  .detail-table tr.sub-row td {
+    padding-left: 0.75rem !important;
+  }
+}
+
+/* Very Small Mobile Screen Adjustments (Screens <= 400px) */
+@media (max-width: 400px) {
+  /* Stack the stats-row vertically as 2 columns becomes too narrow */
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+}
+

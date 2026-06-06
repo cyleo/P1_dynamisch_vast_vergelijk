@@ -322,6 +322,10 @@ document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
   restoreHACredentials();
   
+  if (typeof window !== "undefined" && window.innerWidth <= 800) {
+    document.getElementById("intro-explainer")?.removeAttribute("open");
+  }
+  
   // View mode initialiseren
   const savedMode = (typeof localStorage !== "undefined" && localStorage.getItem("view_mode")) || "simple";
   setViewMode(savedMode);
