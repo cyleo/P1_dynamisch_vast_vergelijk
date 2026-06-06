@@ -341,8 +341,9 @@ function setupEventListeners() {
     slider.addEventListener("input", (e) => {
       const badge = document.getElementById(`${e.target.id}-val`);
       if (badge) {
+        let prefix = e.target.dataset.prefix || "";
         let suffix = e.target.dataset.suffix || "";
-        badge.textContent = `${e.target.value}${suffix}`;
+        badge.textContent = `${prefix}${e.target.value}${suffix}`;
       }
       runSimulation();
     });
@@ -2634,6 +2635,7 @@ function readSimConfig() {
     batPower: parseFloat(document.getElementById("bat-power").value),
     batEfficiency: parseFloat(document.getElementById("bat-eff").value) / 100.0,
     batMode: document.getElementById("bat-mode")?.value || "zelf",
+    batCost: parseFloat(document.getElementById("bat-cost")?.value || 450),
   };
 }
 
@@ -2734,7 +2736,7 @@ function optimizeBatterySize() {
     });
     const extra = baselineDyn - r.dynBill;      // ROI dynamic
     const extraFix = baselineFix - r.fixedBill; // ROI fixed (zelfconsumptie)
-    const cost = cap * BATTERY_COST_PER_KWH;
+    const cost = cap * baseCfg.batCost;
     const payback = extra > 0 ? cost / extra : Infinity;
     const paybackFix = extraFix > 0 ? cost / extraFix : Infinity;
     return { cap, power: cap * 0.5, dynBill: r.dynBill, fixedBill: r.fixedBill, extra, extraFix, cost, payback, paybackFix };
@@ -2747,7 +2749,10 @@ function optimizeBatterySize() {
 
 function renderBatteryOptimization(rows, type, resEl) {
   const eur = v => (v >= 0 ? "" : "−") + "€" + Math.abs(v).toFixed(0);
+  const eurKwh = v => (v >= 0 ? "" : "−") + "€" + Math.abs(v).toFixed(2);
   const yrs = p => Number.isFinite(p) ? `${p.toFixed(1)} jr` : "—";
+  const costEl = document.getElementById("bat-cost");
+  const currentCostPerKwh = costEl ? parseFloat(costEl.value) : 450;
 
   // Bepaal sweet spot (ROI)
   let sweetIdx = -1, bestPayback = Infinity;
@@ -2769,10 +2774,11 @@ function renderBatteryOptimization(rows, type, resEl) {
     const star = sweet ? " ⭐" : "";
     const extraVal = type === "dyn" ? r.extra : r.extraFix;
     const paybackVal = type === "dyn" ? r.payback : r.paybackFix;
+    const perKwh = r.cap > 0 ? extraVal / r.cap : 0;
     return `<tr style="${bg}">
       <td style="padding:0.25rem 0.4rem;">${r.cap} kWh${star}</td>
       <td style="padding:0.25rem 0.4rem;text-align:right;">${r.power.toFixed(1)} kW</td>
-      <td style="padding:0.25rem 0.4rem;text-align:right;color:var(--accent-green);">${eur(extraVal)}/jr</td>
+      <td style="padding:0.25rem 0.4rem;text-align:right;color:var(--accent-green);">${eur(extraVal)}/jr <span style="font-size:0.65rem;color:var(--text-muted);">(${eurKwh(perKwh)}/kWh)</span></td>
       <td style="padding:0.25rem 0.4rem;text-align:right;">${yrs(paybackVal)}</td>
     </tr>`;
   }).join("");
@@ -2783,7 +2789,7 @@ function renderBatteryOptimization(rows, type, resEl) {
   const contractLabel = type === "dyn" ? "dynamisch" : "vast";
 
   const verdict = sweet && Number.isFinite(sweetPayback)
-    ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweetExtra)}/jaar, terugverdiend in ${yrs(sweetPayback)} (bij €${BATTERY_COST_PER_KWH}/kWh).`
+    ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweetExtra)}/jaar, terugverdiend in ${yrs(sweetPayback)} (bij €${currentCostPerKwh}/kWh).`
     : `Binnen dit scenario verdient geen enkele accu zichzelf terug op een ${contractLabel} contract (meerwaarde ≤ €0/jaar).`;
 
   const tabDynActive = type === "dyn" ? "active" : "";
@@ -2799,7 +2805,7 @@ function renderBatteryOptimization(rows, type, resEl) {
       <thead><tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.12);">
         <th style="padding:0.25rem 0.4rem;text-align:left;">Accu</th>
         <th style="padding:0.25rem 0.4rem;text-align:right;">Vermogen</th>
-        <th style="padding:0.25rem 0.4rem;text-align:right;">Meerwaarde</th>
+        <th style="padding:0.25rem 0.4rem;text-align:right;">Meerwaarde / kWh</th>
         <th style="padding:0.25rem 0.4rem;text-align:right;">Terugverdientijd</th>
       </tr></thead>
       <tbody>${body}</tbody>
@@ -2814,7 +2820,7 @@ function renderBatteryOptimization(rows, type, resEl) {
         : "Bij een <strong>vast contract</strong> doet de batterij uitsluitend aan zelfconsumptie (zonne-overschot opslaan en 's avonds/nachts gebruiken)."}
     </p>
     <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.25rem;line-height:1.45;">
-      Investering €${BATTERY_COST_PER_KWH}/kWh (indicatief). Vermogen = 0,5× capaciteit.
+      Investering €${currentCostPerKwh}/kWh (indicatief). Vermogen = 0,5× capaciteit.
     </p>`;
 }
 
@@ -2890,6 +2896,12 @@ function runSimulation() {
   renderHwChart();
   renderDynPriceExample();
   renderDataQualityBanner();
+
+  // Recalculate ROI Sweet Spot if currently displayed
+  const resEl = document.getElementById("battery-optimization-result");
+  if (resEl && resEl.style.display !== "none") {
+    optimizeBatterySize();
+  }
 }
 
 // Toont een (wegklikbare) samenvatting van de importcheck: hoeveel uren echt waren

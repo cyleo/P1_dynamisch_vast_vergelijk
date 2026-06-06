@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=56">
+  <link rel="stylesheet" href="/energie/style.css?v=57">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal */
     #modal-backdrop,
@@ -929,6 +929,10 @@
               <input type="range" id="bat-eff" min="70" max="98" step="1" value="90" data-suffix="%">
             </div>
             <div class="form-group">
+              <label for="bat-cost">Investering per kWh <span class="info-icon" tabindex="0">i<span class="info-tooltip">De geschatte aanschafprijs van de thuisbatterij per kWh opslagcapaciteit (inclusief installatie/omvormer). Plug-in batterijen zijn vaak goedkoper (bijv. €240/kWh), terwijl grotere systemen duurder kunnen zijn. Dit bepaalt de terugverdientijd in de ROI-berekening.</span></span> <span class="val-badge" id="bat-cost-val">€450/kWh</span></label>
+              <input type="range" id="bat-cost" min="150" max="1000" step="10" value="450" data-prefix="€" data-suffix="/kWh">
+            </div>
+            <div class="form-group">
               <label for="bat-mode">Accu-strategie <span class="info-icon" tabindex="0">i<span class="info-tooltip">Bepaalt
                     hoe de accu beslist wanneer te laden/ontladen.<br><br>
                     <strong>Maximaal zelfverbruik</strong> (standaard): alléén zon opslaan en ontladen om je eigen
@@ -1517,7 +1521,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=56"></script>
+  <script src="/energie/app.js?v=57"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
