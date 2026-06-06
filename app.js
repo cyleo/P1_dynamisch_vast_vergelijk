@@ -2,7 +2,11 @@
 
 // Global state
 let energyData = [];
-let overviewMode = "day"; // "day" | "week"
+let overviewMode = "day"; // "day" | "week" | "month"
+let overviewMetric = "energy"; // "energy" | "cost" | "savings"
+let activeViewType = "bars"; // "bars" | "sankey"
+let sankeyInterval = "year"; // "year" | "month" | "week" | "day"
+let sankeyValue = ""; // Period identifier (YYYY-MM, ISO week, or YYYY-MM-DD)
 let simMode = "day";  // "day" | "week"
 let simDrillDay = null;   // YYYY-MM-DD — drill-down naar uurweergave voor die dag
 let activeSimulation = {};
@@ -469,9 +473,6 @@ function checkHAAutoImportAndCollapse() {
       }
       try {
         await handleHAImport();
-        // Collapse the Home Assistant card
-        const haCard = document.getElementById("ha-card");
-        if (haCard) haCard.classList.add("collapsed");
       } catch (err) {
         console.error("Auto import failed:", err);
       }
@@ -1385,8 +1386,8 @@ async function handleHAConnect() {
     statusEl.style.color = "var(--accent-green)";
     document.getElementById("ha-sensor-picker").style.display = "block";
     
-    // Auto-import if all required sensors are pre-selected
-    checkHAAutoImportAndCollapse();
+    // Do not auto-import on connect; user will press "Data ophalen" manually
+    // checkHAAutoImportAndCollapse();
 
   } catch (err) {
     console.error(err);
@@ -1541,6 +1542,14 @@ async function handleHAImport() {
     localStorage.setItem("ha_url", urlInput);
     localStorage.setItem("ha_token", tokenInput);
     runSimulation();
+
+    // Auto-collapse the Home Assistant card after a timeout if there is no warning
+    if (!untangle.batterySensorSuspect) {
+      setTimeout(() => {
+        const haCard = document.getElementById("ha-card");
+        if (haCard) haCard.classList.add("collapsed");
+      }, 1500);
+    }
 
   } catch (err) {
     console.error(err);
@@ -2505,6 +2514,13 @@ function _simulateCore(cfg, full = false) {
 
     let batChargeVal = 0;
     let batDischargeVal = 0;
+    let batChargeSolarVal = 0;
+    let batChargeGridVal = 0;
+    let batDischargeToHouseVal = 0;
+    let batDischargeToGridVal = 0;
+
+    let batChargeSolarFxVal = 0;
+    let batDischargeToHouseFxVal = 0;
 
     if (full) {
       hourly[hour].spots.push(spot);
@@ -2558,6 +2574,7 @@ function _simulateCore(cfg, full = false) {
         expDyn = Math.max(0, expDyn - c);
         currentPowerLimit -= c;
         batChargeVal += c;
+        batChargeSolarVal += c;
       }
       // 2. Van het net laden in de geplande goedkope uren — begrensd door zowel het
       //    inkoop-budget (bruto-EB-val) als de dag-behoefte op de SoC.
@@ -2571,6 +2588,7 @@ function _simulateCore(cfg, full = false) {
           currentPowerLimit -= c;
           batGridDrawn[dayKey] = (batGridDrawn[dayKey] || 0) + c;
           batChargeVal += c;
+          batChargeGridVal += c;
         }
       }
       // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
@@ -2584,6 +2602,7 @@ function _simulateCore(cfg, full = false) {
         const toHouse = Math.min(impDyn, d);
         impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
         batDischargeVal += toHouse;
+        batDischargeToHouseVal += toHouse;
 
         // Terugleveren aan net mag alleen als (a) het rendement oplevert (opbrengst spot/1.21
         // minus terugleveropslag > laadkosten loAllin/rendement) én (b) het écht overschot is:
@@ -2595,6 +2614,7 @@ function _simulateCore(cfg, full = false) {
         if (gridExport && exportable > 0 && spot > minExportSpot) {
           expDyn += exportable; batSoC -= exportable;
           batDischargeVal += exportable;
+          batDischargeToGridVal += exportable;
         }
       }
 
@@ -2602,10 +2622,12 @@ function _simulateCore(cfg, full = false) {
       if (expFx > 0 && batSoCFx < batCapacity) {
         const c = Math.min(expFx, batPower, (batCapacity - batSoCFx) / batEfficiency);
         batSoCFx += c * batEfficiency; expFx = Math.max(0, expFx - c);
+        batChargeSolarFxVal += c;
       }
       if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
         const d = Math.min(impFx, batPower, batSoCFx);
         batSoCFx -= d; impFx = Math.max(0, impFx - d);
+        batDischargeToHouseFxVal += d;
       }
     }
 
@@ -2648,7 +2670,8 @@ function _simulateCore(cfg, full = false) {
       hourly[hour].imports.push(dynImp);
       hourly[hour].exports.push(dynExp);
       const allIn = basePrice + eb;
-      const dynHrCost = dynImp * allIn - dynExp * ((spot / 1.21) - exportMarkupBtw);   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
+      const returnPrice = (spot / 1.21) - exportMarkupBtw;
+      const dynHrCost = dynImp * allIn - dynExp * returnPrice;   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
 
@@ -2659,23 +2682,92 @@ function _simulateCore(cfg, full = false) {
 
       // Collect simulated hardware values for 24h profile
       hourly[hour].solar.push(row.solar_yield || 0);
+      const evD = hasEv ? evScheduleCacheDyn[dayKey]?.[hour] : null;
+      const evF = hasEv ? evScheduleCacheFx[dayKey]?.[hour] : null;
       let evVal = 0;
-      if (hasEv) {
-        const evD = evScheduleCacheDyn[dayKey]?.[hour];
-        if (evD) evVal = evD.grid + evD.solar;
-      }
+      if (evD) evVal = evD.grid + evD.solar;
       hourly[hour].ev.push(evVal);
       hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
       hourly[hour].batCharge.push(batChargeVal);
       hourly[hour].batDischarge.push(batDischargeVal);
 
-      if (!dayTot[dayKey]) dayTot[dayKey] = { dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0 };
+      // Detailed hourly calculations for savings breakdown
+      const evGridDyn = evD ? evD.grid : 0;
+      const evSolarDyn = evD ? evD.solar : 0;
+      const evGridFx = evF ? evF.grid : 0;
+      const evSolarFx = evF ? evF.solar : 0;
+      const hpSolar = hpFromSolar;
+      const hpGrid = hpFromGrid;
+      const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
+
+      const evCostFx = evGridFx * tariff - evSolarFx * fixedReturnPrice;
+      const evCostDyn = evGridDyn * allIn - evSolarDyn * returnPrice;
+      const evSavings = evCostFx - evCostDyn;
+
+      const hpCostFx = hpGrid * tariff - hpSolar * fixedReturnPrice;
+      const hpCostDyn = hpGrid * allIn - hpSolar * returnPrice;
+      const hpSavings = hpCostFx - hpCostDyn;
+
+      const batCostFx = batChargeSolarFxVal * fixedReturnPrice - batDischargeToHouseFxVal * tariff;
+      const batCostDyn = (batChargeGridVal * allIn + batChargeSolarVal * returnPrice) - (batDischargeToHouseVal * allIn + batDischargeToGridVal * returnPrice);
+      const batSavings = batCostFx - batCostDyn;
+
+      const baseloadImportSavings = rawImp * (tariff - allIn);
+      const baseloadExportSavings = rawExp * (returnPrice - fixedReturnPrice);
+
+      if (!dayTot[dayKey]) {
+        dayTot[dayKey] = {
+          dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0,
+          rawImp: 0, rawExp: 0, solarYield: 0,
+          evKwh: 0, evCost: 0, evSavings: 0, evSolar: 0, evGrid: 0,
+          hpKwh: 0, hpCost: 0, hpSavings: 0, hpSolar: 0, hpGrid: 0,
+          batCharge: 0, batDischarge: 0, batCost: 0, batSavings: 0,
+          batChargeCost: 0, batDischargeValue: 0,
+          batChargeGrid: 0, batChargeGridCost: 0, batChargeSolar: 0,
+          batDischargeToHouse: 0, batDischargeToGrid: 0,
+          baseloadCost: 0, baseloadReturn: 0,
+          baseloadImportSavings: 0, baseloadExportSavings: 0
+        };
+      }
       const pd = dayTot[dayKey];
       pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
       pd.impKwh += dynImp; pd.expKwh += dynExp;
-      pd.impCost += dynImp * allIn;   // all-in afname-kosten incl. EB (voor de "per dag"-detailtabel)
-      pd.expRev += dynExp * ((spot / 1.21) - exportMarkupBtw);   // teruglever-opbrengst = kale spotprijs (excl. BTW, 2027) minus opslag
+      pd.impCost += dynImp * allIn;
+      pd.expRev += dynExp * returnPrice;
       if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
+
+      pd.rawImp += rawImp;
+      pd.rawExp += rawExp;
+      pd.solarYield += (row.solar_yield || 0);
+      
+      pd.evKwh += (evGridDyn + evSolarDyn);
+      pd.evCost += evCostDyn;
+      pd.evSavings += evSavings;
+      pd.evSolar += evSolarDyn;
+      pd.evGrid += evGridDyn;
+      
+      pd.hpKwh += hpLoad;
+      pd.hpCost += hpCostDyn;
+      pd.hpSavings += hpSavings;
+      pd.hpSolar += hpSolar;
+      pd.hpGrid += hpGrid;
+      
+      pd.batCharge += (batChargeSolarVal + batChargeGridVal);
+      pd.batDischarge += (batDischargeToHouseVal + batDischargeToGridVal);
+      pd.batCost += batCostDyn;
+      pd.batSavings += batSavings;
+      pd.batChargeCost += (batChargeGridVal * allIn + batChargeSolarVal * returnPrice);
+      pd.batDischargeValue += (batDischargeToHouseVal * allIn + batDischargeToGridVal * returnPrice);
+      pd.batChargeGrid += batChargeGridVal;
+      pd.batChargeGridCost += batChargeGridVal * allIn;
+      pd.batChargeSolar += batChargeSolarVal;
+      pd.batDischargeToHouse += batDischargeToHouseVal;
+      pd.batDischargeToGrid += batDischargeToGridVal;
+      
+      pd.baseloadCost += rawImp * allIn;
+      pd.baseloadReturn += rawExp * returnPrice;
+      pd.baseloadImportSavings += baseloadImportSavings;
+      pd.baseloadExportSavings += baseloadExportSavings;
 
       if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
       dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
@@ -2926,8 +3018,8 @@ function renderBatteryOptimization(rows, type, resEl) {
   resEl.style.display = "";
   resEl.innerHTML = `
     <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:0.75rem; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.6rem;">
-      <button type="button" class="btn-toggle ${tabDynActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('dyn')">Dynamisch Contract</button>
-      <button type="button" class="btn-toggle ${tabFixActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('fix')">Vast Contract</button>
+      <button type="button" class="btn-toggle ${tabDynActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('dyn')">Dynamisch contract</button>
+      <button type="button" class="btn-toggle ${tabFixActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('fix')">Vast contract</button>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
       <thead><tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.12);">
@@ -3140,9 +3232,9 @@ function updateUIElements() {
   document.getElementById("stat-savings-value").style.color = col;
   document.getElementById("stat-savings-pct").style.color = col;
   document.getElementById("stat-savings-card").classList.toggle("negative", !positive);
-  document.getElementById("stat-savings-header").textContent = positive ? "Jouw besparing" : "Extra kosten dynamisch";
+  document.getElementById("stat-savings-text").textContent = positive ? "Besparing per jaar" : "Extra kosten per jaar";
   const subEl = document.getElementById("stat-savings-sub");
-  subEl.textContent = positive ? "▲ in het voordeel van Dynamisch" : "▼ Vast contract is goedkoper";
+  subEl.textContent = positive ? "▲ in het voordeel van dynamisch" : "▼ vast contract is goedkoper";
   subEl.style.color = col;
   document.getElementById("stat-fixed-val").textContent = `${sim.fixedTotalBill.toFixed(2)}`;
   document.getElementById("stat-dynamic-val").textContent = `${sim.dynamicTotalBill.toFixed(2)}`;
@@ -4330,47 +4422,180 @@ function isoWeek(dateStr) {
 
 function setOverviewMode(mode) {
   overviewMode = mode;
-  document.getElementById("ov-btn-day").className = mode === "day" ? "btn-primary" : "btn-secondary";
-  document.getElementById("ov-btn-week").className = mode === "week" ? "btn-primary" : "btn-secondary";
-  document.getElementById("ov-btn-day").style.cssText = "padding:0.3rem 0.7rem;font-size:0.75rem;";
-  document.getElementById("ov-btn-week").style.cssText = "padding:0.3rem 0.7rem;font-size:0.75rem;";
+  ["day", "week", "month"].forEach(m => {
+    const btn = document.getElementById(`ov-btn-${m}`);
+    if (btn) btn.classList.toggle("active", m === mode);
+  });
+  renderOverviewChart();
+}
+
+function setOverviewMetric(metric) {
+  overviewMetric = metric;
+  ["energy", "cost", "savings"].forEach(m => {
+    const btn = document.getElementById(`ov-btn-${m}`);
+    if (btn) btn.classList.toggle("active", m === metric);
+  });
   renderOverviewChart();
 }
 
 function renderOverviewChart() {
+  if (activeViewType === "sankey") {
+    renderSankeyDiagram();
+    return;
+  }
   const card = document.getElementById("overview-chart-card");
   if (!energyData || energyData.length === 0) { card.style.display = "none"; return; }
   card.style.display = "";
 
-  // Use simulated perDayTotals if available (reflects slider/switch changes),
-  // otherwise fall back to raw energyData for the base view.
   const pdt = activeSimulation?.perDayTotals;
   const bucketMap = new Map();
 
   if (pdt && Object.keys(pdt).length > 0) {
-    // perDayTotals is { "2025-06-01": { impKwh, expKwh, ... }, ... }
     for (const [dayKey, v] of Object.entries(pdt)) {
-      const key = overviewMode === "week" ? isoWeek(dayKey) : dayKey;
-      if (!bucketMap.has(key)) bucketMap.set(key, { imp: 0, exp: 0 });
+      const key = overviewMode === "week" ? isoWeek(dayKey) : (overviewMode === "month" ? dayKey.slice(0, 7) : dayKey);
+      if (!bucketMap.has(key)) {
+        bucketMap.set(key, {
+          rawImp: 0, rawExp: 0,
+          evKwh: 0, evCost: 0, evSavings: 0,
+          hpKwh: 0, hpCost: 0, hpSavings: 0,
+          batCharge: 0, batDischarge: 0, batCost: 0, batSavings: 0,
+          batChargeCost: 0, batDischargeValue: 0,
+          baseloadCost: 0, baseloadReturn: 0,
+          baseloadImportSavings: 0, baseloadExportSavings: 0,
+          dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0
+        });
+      }
       const e = bucketMap.get(key);
-      e.imp += v.impKwh || 0;
-      e.exp += v.expKwh || 0;
+      e.rawImp += v.rawImp || 0;
+      e.rawExp += v.rawExp || 0;
+      e.evKwh += v.evKwh || 0;
+      e.evCost += v.evCost || 0;
+      e.evSavings += v.evSavings || 0;
+      e.hpKwh += v.hpKwh || 0;
+      e.hpCost += v.hpCost || 0;
+      e.hpSavings += v.hpSavings || 0;
+      e.batCharge += v.batCharge || 0;
+      e.batDischarge += v.batDischarge || 0;
+      e.batCost += v.batCost || 0;
+      e.batSavings += v.batSavings || 0;
+      e.batChargeCost += v.batChargeCost || 0;
+      e.batDischargeValue += v.batDischargeValue || 0;
+      e.baseloadCost += v.baseloadCost || 0;
+      e.baseloadReturn += v.baseloadReturn || 0;
+      e.baseloadImportSavings += v.baseloadImportSavings || 0;
+      e.baseloadExportSavings += v.baseloadExportSavings || 0;
+      e.dynCost += v.dynCost || 0;
+      e.fixedCost += v.fixedCost || 0;
+      e.impKwh += v.impKwh || 0;
+      e.expKwh += v.expKwh || 0;
     }
   } else {
     energyData.forEach(row => {
-      const key = overviewMode === "week"
-        ? isoWeek(row.timestamp.slice(0, 10))
-        : row.timestamp.slice(0, 10);
-      if (!bucketMap.has(key)) bucketMap.set(key, { imp: 0, exp: 0 });
+      const dayKey = row.timestamp.slice(0, 10);
+      const key = overviewMode === "week" ? isoWeek(dayKey) : (overviewMode === "month" ? dayKey.slice(0, 7) : dayKey);
+      if (!bucketMap.has(key)) {
+        bucketMap.set(key, {
+          rawImp: 0, rawExp: 0,
+          evKwh: 0, evCost: 0, evSavings: 0,
+          hpKwh: 0, hpCost: 0, hpSavings: 0,
+          batCharge: 0, batDischarge: 0, batCost: 0, batSavings: 0,
+          batChargeCost: 0, batDischargeValue: 0,
+          baseloadCost: 0, baseloadReturn: 0,
+          baseloadImportSavings: 0, baseloadExportSavings: 0,
+          dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0
+        });
+      }
       const e = bucketMap.get(key);
-      e.imp += (row.import_t1 || 0) + (row.import_t2 || 0);
-      e.exp += (row.export_t1 || 0) + (row.export_t2 || 0);
+      const imp = (row.import_t1 || 0) + (row.import_t2 || 0);
+      const exp = (row.export_t1 || 0) + (row.export_t2 || 0);
+      e.rawImp += imp;
+      e.rawExp += exp;
+      e.baseloadCost += imp * 0.25;
+      e.baseloadReturn += exp * 0.08;
+      e.impKwh += imp;
+      e.expKwh += exp;
     });
   }
 
   const days = Array.from(bucketMap.keys()).sort();
   const values = days.map(d => bucketMap.get(d));
-  const maxVal = Math.max(...values.map(v => Math.max(v.imp, v.exp)), 1) * 1.15;
+
+  const hasEv = !!activeSimulation?.hwEffects?.ev?.enabled;
+  const hasHp = !!activeSimulation?.hwEffects?.hp?.enabled;
+  const hasBat = !!activeSimulation?.hwEffects?.bat?.enabled;
+
+  const colors = {
+    import: "var(--accent-cyan)",
+    return: "var(--accent-green)",
+    ev: "var(--accent-blue)",
+    hp: "var(--accent-purple)",
+    bat_charge: "var(--accent-yellow)",
+    bat_discharge: "var(--accent-orange)",
+    bat: "var(--accent-orange)"
+  };
+
+  // Render Legends
+  const legendContainer = document.getElementById("overview-legends");
+  legendContainer.innerHTML = "";
+  const activeCats = [];
+  if (overviewMetric === "energy") {
+    activeCats.push({ label: "Overige Afname", color: colors.import });
+    if (hasEv) activeCats.push({ label: "EV Lader", color: colors.ev });
+    if (hasHp) activeCats.push({ label: "Warmtepomp", color: colors.hp });
+    if (hasBat) activeCats.push({ label: "Thuisaccu (Laden)", color: colors.bat_charge });
+    activeCats.push({ label: "Overige Teruglevering", color: colors.return });
+    if (hasBat) activeCats.push({ label: "Thuisaccu (Ontladen)", color: colors.bat_discharge });
+  } else if (overviewMetric === "cost") {
+    activeCats.push({ label: "Overige Kosten", color: colors.import });
+    if (hasEv) activeCats.push({ label: "EV Lader", color: colors.ev });
+    if (hasHp) activeCats.push({ label: "Warmtepomp", color: colors.hp });
+    if (hasBat) activeCats.push({ label: "Thuisaccu (Laden)", color: colors.bat_charge });
+    activeCats.push({ label: "Overige Teruglevering (Opbrengst)", color: colors.return });
+    if (hasBat) activeCats.push({ label: "Thuisaccu (Ontladen)", color: colors.bat_discharge });
+  } else { // savings
+    activeCats.push({ label: "Besparing Overige Afname", color: colors.import });
+    activeCats.push({ label: "Besparing Overige Terug", color: colors.return });
+    if (hasEv) activeCats.push({ label: "EV Lader Besparing", color: colors.ev });
+    if (hasHp) activeCats.push({ label: "Warmtepomp Besparing", color: colors.hp });
+    if (hasBat) activeCats.push({ label: "Thuisaccu Besparing", color: colors.bat });
+  }
+  activeCats.forEach(c => {
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.innerHTML = `<span class="legend-color" style="background:${c.color}; width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:4px;"></span> ${c.label}`;
+    legendContainer.appendChild(item);
+  });
+
+  // Calculate Max Height for Symmetric Y Scale
+  let maxAbs = 0;
+  days.forEach(d => {
+    const e = bucketMap.get(d);
+    if (overviewMetric === "energy") {
+      const posSum = e.rawImp + (hasEv ? e.evKwh : 0) + (hasHp ? e.hpKwh : 0) + (hasBat ? e.batCharge : 0);
+      const negSum = e.rawExp + (hasBat ? e.batDischarge : 0);
+      maxAbs = Math.max(maxAbs, posSum, negSum);
+    } else if (overviewMetric === "cost") {
+      const posSum = e.baseloadCost + (hasEv ? e.evCost : 0) + (hasHp ? e.hpCost : 0) + (hasBat ? e.batChargeCost : 0);
+      const negSum = e.baseloadReturn + (hasBat ? e.batDischargeValue : 0);
+      maxAbs = Math.max(maxAbs, posSum, negSum);
+    } else { // savings
+      let posSum = 0, negSum = 0;
+      const cats = [
+        e.baseloadImportSavings,
+        e.baseloadExportSavings,
+        hasEv ? e.evSavings : 0,
+        hasHp ? e.hpSavings : 0,
+        hasBat ? e.batSavings : 0
+      ];
+      cats.forEach(c => {
+        if (c > 0) posSum += c;
+        else negSum += Math.abs(c);
+      });
+      maxAbs = Math.max(maxAbs, posSum, negSum);
+    }
+  });
+  if (maxAbs <= 0) maxAbs = 1;
+  const maxVal = maxAbs * 1.15;
 
   const container = document.getElementById("overview-svg-container");
   const svg = document.getElementById("overview-svg");
@@ -4380,14 +4605,15 @@ function renderOverviewChart() {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = "";
 
-  const PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
+  const PAD_L = 52, PAD_R = 12, PAD_T = 16, PAD_B = 28;
   const chartW = W - PAD_L - PAD_R;
   const chartH = H - PAD_T - PAD_B;
   const n = days.length;
-  const barW = Math.max(1, (chartW / n) - 1);
+  const barW = Math.max(1.5, (chartW / n) - 2);
 
-  const xOf = i => PAD_L + i * (chartW / n) + 0.5;
-  const yOf = v => PAD_T + chartH - (v / maxVal) * chartH;
+  const xOf = i => PAD_L + i * (chartW / n) + 1.0;
+  const yOfZero = PAD_T + chartH / 2;
+  const yOfVal = val => yOfZero - (val / maxVal) * (chartH / 2);
 
   const mk = (tag, attrs) => {
     const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -4395,43 +4621,193 @@ function renderOverviewChart() {
     return el;
   };
 
-  // Grid lines + Y labels
-  for (let t = 0; t <= 4; t++) {
-    const ratio = t / 4;
-    const y = PAD_T + chartH * (1 - ratio);
-    const val = (ratio * maxVal).toFixed(0);
+  // Draw Gridlines and Y Labels
+  for (let t = -2; t <= 2; t++) {
+    const ratio = t / 2;
+    const y = yOfZero - ratio * (chartH / 2);
+    const val = ratio * maxVal;
+    
     svg.appendChild(mk("line", {
       x1: PAD_L, y1: y, x2: W - PAD_R, y2: y,
-      stroke: "rgba(255,255,255,0.04)"
+      stroke: t === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.04)",
+      "stroke-dasharray": t === 0 ? "none" : "2,2"
     }));
+    
     const lbl = mk("text", {
-      x: PAD_L - 6, y: y + 4, "text-anchor": "end",
+      x: PAD_L - 6, y: y + 3, "text-anchor": "end",
       fill: "var(--text-muted)", "font-size": 9
     });
-    lbl.textContent = val;
+    
+    let labelText = "";
+    if (overviewMetric === "energy") {
+      labelText = (val >= 0 ? "+" : "") + val.toFixed(0) + " kWh";
+    } else {
+      labelText = (val >= 0 ? "+" : "-") + "€" + Math.abs(val).toFixed(0);
+    }
+    lbl.textContent = labelText;
     svg.appendChild(lbl);
   }
 
-  // Bars — export first (behind), then import on top
-  values.forEach((v, i) => {
+  const drawSegment = (x, yStart, yEnd, color, rx = 0) => {
+    const y = Math.min(yStart, yEnd);
+    const height = Math.abs(yStart - yEnd);
+    if (height < 0.5) return null;
+    const rect = mk("rect", {
+      x, y, width: barW, height,
+      fill: color, rx
+    });
+    svg.appendChild(rect);
+    return rect;
+  };
+
+  // Draw Stacked Bars
+  days.forEach((d, i) => {
     const x = xOf(i);
-    // Export bar (green, full height relative to export value)
-    if (v.exp > 0) {
-      svg.appendChild(mk("rect", {
-        x, y: yOf(v.exp), width: barW, height: chartH - (yOf(v.exp) - PAD_T),
-        fill: "rgba(56,239,125,0.55)", rx: 1
+    const e = bucketMap.get(d);
+
+    if (overviewMetric === "energy") {
+      // Positive Stack (import/consumption)
+      let currentPosVal = 0;
+      
+      // 1. Baseload Import
+      let nextPosVal = currentPosVal + e.rawImp;
+      drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.import, 1);
+      currentPosVal = nextPosVal;
+
+      // 2. EV Lader
+      if (hasEv && e.evKwh > 0) {
+        nextPosVal = currentPosVal + e.evKwh;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.ev, 0);
+        currentPosVal = nextPosVal;
+      }
+
+      // 3. Warmtepomp
+      if (hasHp && e.hpKwh > 0) {
+        nextPosVal = currentPosVal + e.hpKwh;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.hp, 0);
+        currentPosVal = nextPosVal;
+      }
+
+      // 4. Thuisaccu Laden
+      if (hasBat && e.batCharge > 0) {
+        nextPosVal = currentPosVal + e.batCharge;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.bat_charge, 1);
+        currentPosVal = nextPosVal;
+      }
+
+      // Negative Stack (export/generation)
+      let currentNegVal = 0;
+
+      // 1. Baseload Export
+      let nextNegVal = currentNegVal - e.rawExp;
+      drawSegment(x, yOfVal(currentNegVal), yOfVal(nextNegVal), colors.return, 1);
+      currentNegVal = nextNegVal;
+
+      // 2. Thuisaccu Ontladen
+      if (hasBat && e.batDischarge > 0) {
+        nextNegVal = currentNegVal - e.batDischarge;
+        drawSegment(x, yOfVal(currentNegVal), yOfVal(nextNegVal), colors.bat_discharge, 1);
+        currentNegVal = nextNegVal;
+      }
+
+      // Net marker
+      const net = (e.rawImp + (hasEv ? e.evKwh : 0) + (hasHp ? e.hpKwh : 0) + (hasBat ? e.batCharge : 0))
+                - (e.rawExp + (hasBat ? e.batDischarge : 0));
+      const yNet = yOfVal(net);
+      svg.appendChild(mk("line", {
+        x1: x - 1, y1: yNet, x2: x + barW + 1, y2: yNet,
+        stroke: "#ffffff", "stroke-width": 1.5, "stroke-linecap": "round"
       }));
-    }
-    // Import bar (cyan)
-    if (v.imp > 0) {
-      svg.appendChild(mk("rect", {
-        x, y: yOf(v.imp), width: barW, height: chartH - (yOf(v.imp) - PAD_T),
-        fill: "rgba(0,242,254,0.55)", rx: 1
+
+    } else if (overviewMetric === "cost") {
+      // Positive Stack (Costs)
+      let currentPosVal = 0;
+
+      // 1. Baseload Cost
+      let nextPosVal = currentPosVal + e.baseloadCost;
+      drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.import, 1);
+      currentPosVal = nextPosVal;
+
+      // 2. EV Cost
+      if (hasEv && e.evCost > 0) {
+        nextPosVal = currentPosVal + e.evCost;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.ev, 0);
+        currentPosVal = nextPosVal;
+      }
+
+      // 3. HP Cost
+      if (hasHp && e.hpCost > 0) {
+        nextPosVal = currentPosVal + e.hpCost;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.hp, 0);
+        currentPosVal = nextPosVal;
+      }
+
+      // 4. Battery Charge Cost
+      if (hasBat && e.batChargeCost > 0) {
+        nextPosVal = currentPosVal + e.batChargeCost;
+        drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPosVal), colors.bat_charge, 1);
+        currentPosVal = nextPosVal;
+      }
+
+      // Negative Stack (Revenues)
+      let currentNegVal = 0;
+
+      // 1. Baseload Return
+      let nextNegVal = currentNegVal - e.baseloadReturn;
+      drawSegment(x, yOfVal(currentNegVal), yOfVal(nextNegVal), colors.return, 1);
+      currentNegVal = nextNegVal;
+
+      // 2. Battery Discharge Value
+      if (hasBat && e.batDischargeValue > 0) {
+        nextNegVal = currentNegVal - e.batDischargeValue;
+        drawSegment(x, yOfVal(currentNegVal), yOfVal(nextNegVal), colors.bat_discharge, 1);
+        currentNegVal = nextNegVal;
+      }
+
+      // Net marker
+      const net = (e.baseloadCost + (hasEv ? e.evCost : 0) + (hasHp ? e.hpCost : 0) + (hasBat ? e.batChargeCost : 0))
+                - (e.baseloadReturn + (hasBat ? e.batDischargeValue : 0));
+      const yNet = yOfVal(net);
+      svg.appendChild(mk("line", {
+        x1: x - 1, y1: yNet, x2: x + barW + 1, y2: yNet,
+        stroke: "#ffffff", "stroke-width": 1.5, "stroke-linecap": "round"
+      }));
+
+    } else { // savings
+      let currentPosVal = 0;
+      let currentNegVal = 0;
+
+      const segments = [
+        { val: e.baseloadImportSavings, color: colors.import },
+        { val: e.baseloadExportSavings, color: colors.return },
+        { val: hasEv ? e.evSavings : 0, color: colors.ev },
+        { val: hasHp ? e.hpSavings : 0, color: colors.hp },
+        { val: hasBat ? e.batSavings : 0, color: colors.bat }
+      ];
+
+      segments.forEach(seg => {
+        if (seg.val > 0) {
+          const nextPos = currentPosVal + seg.val;
+          drawSegment(x, yOfVal(currentPosVal), yOfVal(nextPos), seg.color, 1);
+          currentPosVal = nextPos;
+        } else if (seg.val < 0) {
+          const nextNeg = currentNegVal + seg.val;
+          drawSegment(x, yOfVal(currentNegVal), yOfVal(nextNeg), seg.color, 1);
+          currentNegVal = nextNeg;
+        }
+      });
+
+      // Net marker
+      const net = e.baseloadImportSavings + e.baseloadExportSavings + (hasEv ? e.evSavings : 0) + (hasHp ? e.hpSavings : 0) + (hasBat ? e.batSavings : 0);
+      const yNet = yOfVal(net);
+      svg.appendChild(mk("line", {
+        x1: x - 1, y1: yNet, x2: x + barW + 1, y2: yNet,
+        stroke: "#ffffff", "stroke-width": 1.5, "stroke-linecap": "round"
       }));
     }
   });
 
-  // X-axis date labels (show ~8 labels max)
+  // X-axis date labels
   const step = Math.max(1, Math.floor(n / 8));
   days.forEach((d, i) => {
     if (i % step !== 0 && i !== n - 1) return;
@@ -4439,45 +4815,577 @@ function renderOverviewChart() {
       x: xOf(i) + barW / 2, y: H - 8,
       "text-anchor": "middle", fill: "var(--text-muted)", "font-size": 9
     });
+    
     const labelText = overviewMode === "week"
       ? d.replace(/(\d{4})-W(\d+)/, (_, y, w) => `W${w} '${y.slice(2)}`)
-      : new Date(d + "T12:00:00Z").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+      : (overviewMode === "month"
+         ? new Date(d + "-02T12:00:00Z").toLocaleDateString("nl-NL", { month: "short", year: "2-digit" })
+         : new Date(d + "T12:00:00Z").toLocaleDateString("nl-NL", { day: "numeric", month: "short" })
+        );
+        
     lbl.textContent = labelText;
     svg.appendChild(lbl);
   });
 
-  // Hover overlay bars (invisible, for tooltip)
+  // Invisible Hover Overlays for Tooltip
   values.forEach((v, i) => {
     const x = xOf(i);
     const overlay = mk("rect", {
-      x, y: PAD_T, width: barW, height: chartH,
+      x: x - 0.5, y: PAD_T, width: barW + 1.0, height: chartH,
       fill: "transparent", cursor: "crosshair"
     });
+    
     overlay.addEventListener("mouseenter", (e) => {
       const key = days[i];
-      document.getElementById("ov-date").textContent = overviewMode === "week"
-        ? key.replace(/(\d{4})-W(\d+)/, (_, y, w) => `Week ${w}, ${y}`)
-        : new Date(key + "T12:00:00Z").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
-      document.getElementById("ov-import").textContent = v.imp.toFixed(2) + " kWh";
-      document.getElementById("ov-export").textContent = v.exp.toFixed(2) + " kWh";
-      const net = v.imp - v.exp;
-      const netEl = document.getElementById("ov-net");
-      netEl.textContent = (net >= 0 ? "+" : "") + net.toFixed(2) + " kWh";
-      netEl.style.color = net >= 0 ? "var(--accent-orange)" : "var(--accent-green)";
-      // Position tooltip
-      const rect = container.getBoundingClientRect();
+      const val = bucketMap.get(key);
+      
+      let dateStr = "";
+      if (overviewMode === "week") {
+        dateStr = key.replace(/(\d{4})-W(\d+)/, (_, y, w) => `Week ${w}, ${y}`);
+      } else if (overviewMode === "month") {
+        const date = new Date(key + "-02T12:00:00Z");
+        dateStr = date.toLocaleDateString("nl-NL", { year: "numeric", month: "long" });
+      } else {
+        dateStr = new Date(key + "T12:00:00Z").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
+      }
+      
+      let html = `<h4 style="font-family:var(--font-display); border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:0.2rem; margin-bottom:0.4rem; color:var(--accent-cyan); font-size:0.85rem;">${dateStr}</h4>`;
+      
+      if (overviewMetric === "energy") {
+        html += `<div class="tooltip-row"><span>Overige Afname:</span><span class="val" style="color:${colors.import}">${val.rawImp.toFixed(1)} kWh</span></div>`;
+        if (hasEv) html += `<div class="tooltip-row"><span>EV Lader:</span><span class="val" style="color:${colors.ev}">${val.evKwh.toFixed(1)} kWh</span></div>`;
+        if (hasHp) html += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:${colors.hp}">${val.hpKwh.toFixed(1)} kWh</span></div>`;
+        if (hasBat) html += `<div class="tooltip-row"><span>Thuisaccu (Laden):</span><span class="val" style="color:${colors.bat_charge}">${val.batCharge.toFixed(1)} kWh</span></div>`;
+        html += `<div class="tooltip-row" style="margin-top:0.3rem; border-top:1px dashed rgba(255,255,255,0.08); padding-top:0.3rem;"><span>Overige Teruglevering:</span><span class="val" style="color:${colors.return}">${val.rawExp.toFixed(1)} kWh</span></div>`;
+        if (hasBat) html += `<div class="tooltip-row"><span>Thuisaccu (Ontladen):</span><span class="val" style="color:${colors.bat_discharge}">${val.batDischarge.toFixed(1)} kWh</span></div>`;
+        
+        const net = (val.rawImp + (hasEv ? val.evKwh : 0) + (hasHp ? val.hpKwh : 0) + (hasBat ? val.batCharge : 0))
+                  - (val.rawExp + (hasBat ? val.batDischarge : 0));
+        html += `<div class="tooltip-row" style="margin-top:0.3rem; border-top:1px solid rgba(255,255,255,0.15); padding-top:0.3rem; font-weight:700;"><span>Netto Netbalans:</span><span class="val" style="color:${net >= 0 ? "var(--accent-orange)" : "var(--accent-green)"}">${net >= 0 ? "+" : ""}${net.toFixed(1)} kWh</span></div>`;
+      } else if (overviewMetric === "cost") {
+        html += `<div class="tooltip-row"><span>Overige Kosten:</span><span class="val" style="color:${colors.import}">€ ${val.baseloadCost.toFixed(2)}</span></div>`;
+        if (hasEv) html += `<div class="tooltip-row"><span>EV Lader:</span><span class="val" style="color:${colors.ev}">€ ${val.evCost.toFixed(2)}</span></div>`;
+        if (hasHp) html += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:${colors.hp}">€ ${val.hpCost.toFixed(2)}</span></div>`;
+        if (hasBat) html += `<div class="tooltip-row"><span>Thuisaccu (Laden):</span><span class="val" style="color:${colors.bat_charge}">€ ${val.batChargeCost.toFixed(2)}</span></div>`;
+        html += `<div class="tooltip-row" style="margin-top:0.3rem; border-top:1px dashed rgba(255,255,255,0.08); padding-top:0.3rem;"><span>Overige Teruglevering:</span><span class="val" style="color:${colors.return}">€ ${val.baseloadReturn.toFixed(2)}</span></div>`;
+        if (hasBat) html += `<div class="tooltip-row"><span>Thuisaccu (Ontladen):</span><span class="val" style="color:${colors.bat_discharge}">€ ${val.batDischargeValue.toFixed(2)}</span></div>`;
+        
+        const net = (val.baseloadCost + (hasEv ? val.evCost : 0) + (hasHp ? val.hpCost : 0) + (hasBat ? val.batChargeCost : 0))
+                  - (val.baseloadReturn + (hasBat ? val.batDischargeValue : 0));
+        html += `<div class="tooltip-row" style="margin-top:0.3rem; border-top:1px solid rgba(255,255,255,0.15); padding-top:0.3rem; font-weight:700;"><span>Netto Variabele Kosten:</span><span class="val" style="color:${net >= 0 ? "var(--accent-orange)" : "var(--accent-green)"}">€ ${net.toFixed(2)}</span></div>`;
+      } else { // savings
+        html += `<div class="tooltip-row"><span>Besparing Overige Afname:</span><span class="val" style="color:${colors.import}">€ ${val.baseloadImportSavings.toFixed(2)}</span></div>`;
+        html += `<div class="tooltip-row"><span>Besparing Overige Terug:</span><span class="val" style="color:${colors.return}">€ ${val.baseloadExportSavings.toFixed(2)}</span></div>`;
+        if (hasEv) html += `<div class="tooltip-row"><span>EV Lader Besparing:</span><span class="val" style="color:${colors.ev}">€ ${val.evSavings.toFixed(2)}</span></div>`;
+        if (hasHp) html += `<div class="tooltip-row"><span>Warmtepomp Besparing:</span><span class="val" style="color:${colors.hp}">€ ${val.hpSavings.toFixed(2)}</span></div>`;
+        if (hasBat) html += `<div class="tooltip-row"><span>Thuisaccu Besparing:</span><span class="val" style="color:${colors.bat}">€ ${val.batSavings.toFixed(2)}</span></div>`;
+        
+        const net = val.baseloadImportSavings + val.baseloadExportSavings + (hasEv ? val.evSavings : 0) + (hasHp ? val.hpSavings : 0) + (hasBat ? val.batSavings : 0);
+        html += `<div class="tooltip-row" style="margin-top:0.3rem; border-top:1px solid rgba(255,255,255,0.15); padding-top:0.3rem; font-weight:700;"><span>Totale Besparing:</span><span class="val" style="color:${net >= 0 ? "var(--accent-green)" : "var(--accent-orange)"}">€ ${net.toFixed(2)}</span></div>`;
+      }
+      
+      tooltip.innerHTML = html;
       tooltip.style.display = "block";
+      
       let tx = x + barW + 8;
-      if (tx + 180 > W) tx = x - 188;
+      if (tx + 220 > W) tx = x - 228;
       tooltip.style.left = tx + "px";
-      tooltip.style.top = Math.max(0, yOf(Math.max(v.imp, v.exp)) - 10) + "px";
-      // Highlight bar
+      
+      let yRef = yOfZero;
+      if (overviewMetric === "energy") {
+        const posSum = val.rawImp + (hasEv ? val.evKwh : 0) + (hasHp ? val.hpKwh : 0) + (hasBat ? val.batCharge : 0);
+        const negSum = val.rawExp + (hasBat ? val.batDischarge : 0);
+        yRef = yOfVal(Math.max(posSum, negSum));
+      } else if (overviewMetric === "cost") {
+        const posSum = val.baseloadCost + (hasEv ? val.evCost : 0) + (hasHp ? val.hpCost : 0) + (hasBat ? val.batChargeCost : 0);
+        const negSum = val.baseloadReturn + (hasBat ? val.batDischargeValue : 0);
+        yRef = yOfVal(Math.max(posSum, negSum));
+      } else {
+        let posSum = 0;
+        const cats = [
+          val.baseloadImportSavings,
+          val.baseloadExportSavings,
+          hasEv ? val.evSavings : 0,
+          hasHp ? val.hpSavings : 0,
+          hasBat ? val.batSavings : 0
+        ];
+        cats.forEach(c => { if (c > 0) posSum += c; });
+        yRef = yOfVal(posSum);
+      }
+      tooltip.style.top = Math.max(0, yRef - 20) + "px";
       overlay.setAttribute("fill", "rgba(255,255,255,0.06)");
     });
+    
     overlay.addEventListener("mouseleave", () => {
       tooltip.style.display = "none";
       overlay.setAttribute("fill", "transparent");
     });
+    
     svg.appendChild(overlay);
+  });
+}
+
+function setOverviewViewType(type) {
+  activeViewType = type;
+  const btnBars = document.getElementById("ov-btn-view-bars");
+  const btnSankey = document.getElementById("ov-btn-view-sankey");
+  
+  if (btnBars) btnBars.classList.toggle("active", type === "bars");
+  if (btnSankey) btnSankey.classList.toggle("active", type === "sankey");
+  
+  const barControls = document.getElementById("bar-controls-row");
+  const sankeyControls = document.getElementById("sankey-controls-row");
+  const legends = document.getElementById("overview-legends");
+  
+  if (type === "bars") {
+    if (barControls) barControls.style.display = "flex";
+    if (sankeyControls) sankeyControls.style.display = "none";
+    if (legends) legends.style.display = "flex";
+    renderOverviewChart();
+  } else {
+    if (barControls) barControls.style.display = "none";
+    if (sankeyControls) sankeyControls.style.display = "flex";
+    if (legends) legends.style.display = "none";
+    
+    initSankeyPickers();
+    renderSankeyDiagram();
+  }
+}
+
+function setSankeyInterval(interval) {
+  sankeyInterval = interval;
+  ["year", "month", "week", "day"].forEach(i => {
+    const btn = document.getElementById(`sk-btn-${i}`);
+    if (btn) btn.classList.toggle("active", i === interval);
+  });
+  
+  const periods = getUniqueSankeyPeriods();
+  if (interval === "month") sankeyValue = periods.months[0] || "";
+  else if (interval === "week") sankeyValue = periods.weeks[0] || "";
+  else if (interval === "day") sankeyValue = periods.days[0] || "";
+  else sankeyValue = "";
+  
+  initSankeyPickers();
+  renderSankeyDiagram();
+}
+
+function setSankeyValue(val) {
+  sankeyValue = val;
+  renderSankeyDiagram();
+}
+
+function getUniqueSankeyPeriods() {
+  const months = new Set();
+  const weeks = new Set();
+  const days = [];
+  
+  if (energyData && energyData.length > 0) {
+    energyData.forEach(row => {
+      const dayKey = row.timestamp.slice(0, 10);
+      months.add(dayKey.slice(0, 7));
+      weeks.add(isoWeek(dayKey));
+      if (days.length === 0 || days[days.length - 1] !== dayKey) {
+        days.push(dayKey);
+      }
+    });
+  }
+  
+  return {
+    months: Array.from(months).sort(),
+    weeks: Array.from(weeks).sort(),
+    days: days.sort()
+  };
+}
+
+function initSankeyPickers() {
+  const container = document.getElementById("sk-picker-container");
+  if (!container) return;
+  container.innerHTML = "";
+  
+  const periods = getUniqueSankeyPeriods();
+  const prevBtn = document.getElementById("sk-nav-prev");
+  const nextBtn = document.getElementById("sk-nav-next");
+  
+  if (sankeyInterval === "year") {
+    container.innerHTML = `<span style="font-size:0.75rem; color:var(--text-main); font-weight:bold; padding:0.25rem 0.5rem;">Hele Jaar</span>`;
+    sankeyValue = "";
+    if (prevBtn) prevBtn.style.display = "none";
+    if (nextBtn) nextBtn.style.display = "none";
+  } else if (sankeyInterval === "month") {
+    if (prevBtn) prevBtn.style.display = "";
+    if (nextBtn) nextBtn.style.display = "";
+    
+    const select = document.createElement("select");
+    select.id = "sk-month-select";
+    select.className = "ha-select";
+    select.style.cssText = "padding:0.25rem 2rem 0.25rem 0.5rem; font-size:0.75rem; width:auto; height:28px; background-position: right 0.5rem center;";
+    select.onchange = (e) => setSankeyValue(e.target.value);
+    
+    periods.months.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      const d = new Date(m + "-02T12:00:00Z");
+      opt.textContent = d.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+      select.appendChild(opt);
+    });
+    
+    if (periods.months.length > 0) {
+      if (!periods.months.includes(sankeyValue)) {
+        sankeyValue = periods.months[0];
+      }
+      select.value = sankeyValue;
+    }
+    container.appendChild(select);
+    
+  } else if (sankeyInterval === "week") {
+    if (prevBtn) prevBtn.style.display = "";
+    if (nextBtn) nextBtn.style.display = "";
+    
+    const select = document.createElement("select");
+    select.id = "sk-week-select";
+    select.className = "ha-select";
+    select.style.cssText = "padding:0.25rem 2rem 0.25rem 0.5rem; font-size:0.75rem; width:auto; height:28px; background-position: right 0.5rem center;";
+    select.onchange = (e) => setSankeyValue(e.target.value);
+    
+    periods.weeks.forEach(w => {
+      const opt = document.createElement("option");
+      opt.value = w;
+      opt.textContent = w.replace(/(\d{4})-W(\d+)/, (_, y, num) => `Week ${num}, ${y}`);
+      select.appendChild(opt);
+    });
+    
+    if (periods.weeks.length > 0) {
+      if (!periods.weeks.includes(sankeyValue)) {
+        sankeyValue = periods.weeks[0];
+      }
+      select.value = sankeyValue;
+    }
+    container.appendChild(select);
+    
+  } else if (sankeyInterval === "day") {
+    if (prevBtn) prevBtn.style.display = "";
+    if (nextBtn) nextBtn.style.display = "";
+    
+    const input = document.createElement("input");
+    input.type = "date";
+    input.id = "sk-day-picker";
+    input.style.cssText = "background:rgba(0,0,0,0.3); border:1px solid var(--border-color); border-radius:6px; padding:0.25rem 0.5rem; color:var(--text-main); font-size:0.75rem; font-family:var(--font-body); height:28px; outline:none;";
+    input.onchange = (e) => setSankeyValue(e.target.value);
+    
+    if (periods.days.length > 0) {
+      input.min = periods.days[0];
+      input.max = periods.days[periods.days.length - 1];
+      if (!periods.days.includes(sankeyValue)) {
+        sankeyValue = periods.days[0];
+      }
+      input.value = sankeyValue;
+    }
+    container.appendChild(input);
+  }
+}
+
+function navigateSankey(direction) {
+  const periods = getUniqueSankeyPeriods();
+  let list = [];
+  if (sankeyInterval === "month") list = periods.months;
+  else if (sankeyInterval === "week") list = periods.weeks;
+  else if (sankeyInterval === "day") list = periods.days;
+  
+  if (list.length === 0) return;
+  
+  let idx = list.indexOf(sankeyValue);
+  if (idx === -1) {
+    sankeyValue = list[0];
+  } else {
+    idx += direction;
+    if (idx < 0) idx = 0;
+    if (idx >= list.length) idx = list.length - 1;
+    sankeyValue = list[idx];
+  }
+  
+  const selectMonth = document.getElementById("sk-month-select");
+  const selectWeek = document.getElementById("sk-week-select");
+  const pickerDay = document.getElementById("sk-day-picker");
+  
+  if (selectMonth) selectMonth.value = sankeyValue;
+  else if (selectWeek) selectWeek.value = sankeyValue;
+  else if (pickerDay) pickerDay.value = sankeyValue;
+  
+  renderSankeyDiagram();
+}
+
+function renderSankeyDiagram() {
+  const card = document.getElementById("overview-chart-card");
+  if (!energyData || energyData.length === 0) { card.style.display = "none"; return; }
+  card.style.display = "";
+
+  const pdt = activeSimulation?.perDayTotals;
+  const container = document.getElementById("overview-svg-container");
+  const svg = document.getElementById("overview-svg");
+  const tooltip = document.getElementById("overview-tooltip");
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  
+  if (!pdt || Object.keys(pdt).length === 0) return;
+
+  const hasEv = !!activeSimulation?.hwEffects?.ev?.enabled;
+  const hasHp = !!activeSimulation?.hwEffects?.hp?.enabled;
+  const hasBat = !!activeSimulation?.hwEffects?.bat?.enabled;
+
+  // 1. Gather all volumes
+  let solarYield = 0;
+  let rawExp = 0;
+  let evSolar = 0;
+  let evGrid = 0;
+  let hpSolar = 0;
+  let hpGrid = 0;
+  let batChargeSolar = 0;
+  let batChargeGrid = 0;
+  let batChargeGridCost = 0;
+  let rawImp = 0;
+  let batDischargeToHouse = 0;
+  let batDischargeToGrid = 0;
+
+  for (const [dayKey, v] of Object.entries(pdt)) {
+    let match = false;
+    if (sankeyInterval === "year") match = true;
+    else if (sankeyInterval === "month") match = dayKey.slice(0, 7) === sankeyValue;
+    else if (sankeyInterval === "week") match = isoWeek(dayKey) === sankeyValue;
+    else if (sankeyInterval === "day") match = dayKey === sankeyValue;
+
+    if (match) {
+      solarYield += v.solarYield || 0;
+      rawExp += v.rawExp || 0;
+      evSolar += v.evSolar || 0;
+      evGrid += v.evGrid || 0;
+      hpSolar += v.hpSolar || 0;
+      hpGrid += v.hpGrid || 0;
+      batChargeSolar += v.batChargeSolar || 0;
+      batChargeGrid += v.batChargeGrid || 0;
+      batChargeGridCost += v.batChargeGridCost || 0;
+      rawImp += v.rawImp || 0;
+      batDischargeToHouse += v.batDischargeToHouse || 0;
+      batDischargeToGrid += v.batDischargeToGrid || 0;
+    }
+  }
+
+  // Calculate flow components
+  const solarDirectHouse = Math.max(0, solarYield - rawExp);
+  const baseloadExport = Math.max(0, rawExp - hpSolar - evSolar - batChargeSolar);
+  const baseloadImport = Math.max(0, rawImp - batDischargeToHouse);
+  const netImportVal = baseloadImport + evGrid + hpGrid + batChargeGrid;
+  
+  const batInflow = batChargeSolar + batChargeGrid;
+  const batOutflow = batDischargeToHouse + batDischargeToGrid;
+  
+  const batSoCDraw = hasBat && batOutflow > batInflow ? batOutflow - batInflow : 0;
+  const batLoss = hasBat && batInflow > batOutflow ? batInflow - batOutflow : 0;
+
+  const houseVal = solarDirectHouse + baseloadImport + batDischargeToHouse;
+  const evVal = evSolar + evGrid;
+  const hpVal = hpSolar + hpGrid;
+  const netExportVal = baseloadExport + batDischargeToGrid;
+
+  // Battery bought highlights display
+  const highlightEl = document.getElementById("sk-battery-price-highlight");
+  if (highlightEl) {
+    if (hasBat && batChargeGrid > 0) {
+      const avgPrice = batChargeGridCost / batChargeGrid;
+      highlightEl.innerHTML = `🔋 Gekocht: <span style="color:#ffffff;">${batChargeGrid.toFixed(1)} kWh</span> voor gem. <span style="color:var(--accent-yellow);">€ ${avgPrice.toFixed(3)}/kWh</span>`;
+    } else if (hasBat) {
+      highlightEl.innerHTML = `🔋 Geen net-laadstroom ingekocht in deze periode.`;
+    } else {
+      highlightEl.innerHTML = "";
+    }
+  }
+
+  // Nodes definition
+  const PAD_L = 80, PAD_R = 110, PAD_T = 24, PAD_B = 24;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+  const nodeW = 16;
+
+  // Column 0 inputs total, Column 2 outputs total
+  const col0Val = solarYield + netImportVal + batSoCDraw;
+  const totalFlow = Math.max(col0Val, 1);
+  const availableH = chartH - 40;
+  const scale = availableH / totalFlow;
+
+  const nodes = {};
+  const defineNode = (id, label, column, value, color) => {
+    if (value <= 0) return;
+    const h = Math.max(8, value * scale);
+    if (!nodes[column]) nodes[column] = [];
+    nodes[column].push({ id, label, value, h, color });
+  };
+
+  defineNode("solar", "Zon", 0, solarYield, "var(--accent-green)");
+  defineNode("net_imp", "Net (Afname)", 0, netImportVal, "var(--accent-cyan)");
+  if (hasBat && batSoCDraw > 0) {
+    defineNode("bat_buf", "Accu Ontlading", 0, batSoCDraw, "var(--accent-orange)");
+  }
+
+  const batNodeVal = Math.max(batInflow, batOutflow);
+  if (hasBat && batNodeVal > 0) {
+    defineNode("battery", "Thuisaccu", 1, batNodeVal, "var(--accent-yellow)");
+  }
+
+  defineNode("house", "Woning (Overig)", 2, houseVal, "var(--accent-cyan)");
+  if (hasEv && evVal > 0) {
+    defineNode("ev", "EV Lader", 2, evVal, "var(--accent-blue)");
+  }
+  if (hasHp && hpVal > 0) {
+    defineNode("hp", "Warmtepomp", 2, hpVal, "var(--accent-purple)");
+  }
+  defineNode("net_exp", "Net (Teruglevering)", 2, netExportVal, "var(--accent-green)");
+  if (hasBat && batLoss > 0) {
+    defineNode("loss", "Rendementsverlies", 2, batLoss, "var(--accent-orange)");
+  }
+
+  // Calculate coordinates
+  const xCoords = [
+    PAD_L,
+    PAD_L + chartW / 2 - nodeW / 2,
+    PAD_L + chartW - nodeW
+  ];
+
+  const allNodesList = [];
+  [0, 1, 2].forEach(col => {
+    const colNodes = nodes[col] || [];
+    if (colNodes.length === 0) return;
+    
+    const totalH = colNodes.reduce((sum, n) => sum + n.h, 0);
+    const gap = colNodes.length > 1 ? (chartH - totalH) / (colNodes.length - 1) : 0;
+    
+    let currentY = PAD_T;
+    if (colNodes.length === 1) {
+      currentY = PAD_T + (chartH - totalH) / 2;
+    }
+    
+    colNodes.forEach(node => {
+      node.x = xCoords[col];
+      node.y = currentY;
+      node.w = nodeW;
+      node.sourceY = node.y;
+      node.targetY = node.y;
+      currentY += node.h + gap;
+      allNodesList.push(node);
+    });
+  });
+
+  const mk = (tag, attrs) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
+  };
+
+  const drawLink = (sourceId, targetId, value, color) => {
+    if (value <= 0) return;
+    let srcNode = null, tgtNode = null;
+    allNodesList.forEach(n => {
+      if (n.id === sourceId) srcNode = n;
+      if (n.id === targetId) tgtNode = n;
+    });
+    if (!srcNode || !tgtNode) return;
+
+    const flowH = value * scale;
+    const sy = srcNode.sourceY + flowH / 2;
+    const ty = tgtNode.targetY + flowH / 2;
+    srcNode.sourceY += flowH;
+    tgtNode.targetY += flowH;
+
+    const x1 = srcNode.x + srcNode.w;
+    const x2 = tgtNode.x;
+    const dx = x2 - x1;
+    const c1 = x1 + dx * 0.45;
+    const c2 = x2 - dx * 0.45;
+
+    const d = `M ${x1} ${sy} C ${c1} ${sy}, ${c2} ${ty}, ${x2} ${ty}`;
+    const path = mk("path", {
+      d, fill: "none", stroke: color,
+      "stroke-width": Math.max(0.5, flowH),
+      "stroke-opacity": 0.22,
+      cursor: "pointer"
+    });
+
+    path.addEventListener("mouseenter", () => {
+      path.setAttribute("stroke-opacity", 0.65);
+      tooltip.innerHTML = `<div style="font-size:0.78rem;"><strong style="color:${color};">${srcNode.label} ➔ ${tgtNode.label}</strong><br/>Volume: <span style="font-family:var(--font-display); font-weight:700; color:#ffffff;">${value.toFixed(1)} kWh</span></div>`;
+      tooltip.style.display = "block";
+      
+      const tx = (x1 + x2) / 2 - 60;
+      const ty_coord = (sy + ty) / 2 - 20;
+      tooltip.style.left = Math.max(5, Math.min(W - 150, tx)) + "px";
+      tooltip.style.top = Math.max(5, Math.min(H - 60, ty_coord)) + "px";
+    });
+
+    path.addEventListener("mouseleave", () => {
+      path.setAttribute("stroke-opacity", 0.22);
+      tooltip.style.display = "none";
+    });
+
+    svg.appendChild(path);
+  };
+
+  // Draw links
+  // 1. Out from Solar (green)
+  drawLink("solar", "house", solarDirectHouse, "var(--accent-green)");
+  if (hasEv) drawLink("solar", "ev", evSolar, "var(--accent-green)");
+  if (hasHp) drawLink("solar", "hp", hpSolar, "var(--accent-green)");
+  if (hasBat) drawLink("solar", "battery", batChargeSolar, "var(--accent-green)");
+  drawLink("solar", "net_exp", baseloadExport, "var(--accent-green)");
+
+  // 2. Out from Net Import (cyan)
+  drawLink("net_imp", "house", baseloadImport, "var(--accent-cyan)");
+  if (hasEv) drawLink("net_imp", "ev", evGrid, "var(--accent-cyan)");
+  if (hasHp) drawLink("net_imp", "hp", hpGrid, "var(--accent-cyan)");
+  if (hasBat) drawLink("net_imp", "battery", batChargeGrid, "var(--accent-cyan)");
+
+  // 3. Out from Battery buffer (orange)
+  if (hasBat && batSoCDraw > 0) {
+    drawLink("bat_buf", "battery", batSoCDraw, "var(--accent-orange)");
+  }
+
+  // 4. Out from Battery (yellow/orange)
+  if (hasBat) {
+    drawLink("battery", "house", batDischargeToHouse, "var(--accent-yellow)");
+    drawLink("battery", "net_exp", batDischargeToGrid, "var(--accent-yellow)");
+    if (batLoss > 0) {
+      drawLink("battery", "loss", batLoss, "var(--accent-orange)");
+    }
+  }
+
+  // Render node rectangles & labels
+  allNodesList.forEach(node => {
+    const rect = mk("rect", {
+      x: node.x, y: node.y, width: node.w, height: node.h,
+      fill: node.color, rx: 3, "fill-opacity": 0.85,
+      stroke: "rgba(255,255,255,0.15)", "stroke-width": 1.2
+    });
+    svg.appendChild(rect);
+
+    const isCol0 = node.x < W / 3;
+    const isCol2 = node.x > (2 * W) / 3;
+    const textAnchor = isCol0 ? "end" : (isCol2 ? "start" : "middle");
+    const textX = isCol0 ? node.x - 8 : (isCol2 ? node.x + node.w + 8 : node.x + node.w / 2);
+
+    const lbl = mk("text", {
+      x: textX, y: node.y + node.h / 2 - 2,
+      "text-anchor": textAnchor, fill: "#ffffff",
+      "font-size": 9.5, "font-weight": 600,
+      "font-family": "var(--font-display)"
+    });
+    lbl.textContent = node.label;
+    svg.appendChild(lbl);
+
+    const valLbl = mk("text", {
+      x: textX, y: node.y + node.h / 2 + 8,
+      "text-anchor": textAnchor, fill: "var(--text-muted)",
+      "font-size": 8, "font-family": "var(--font-body)"
+    });
+    valLbl.textContent = `${node.value.toFixed(1)} kWh`;
+    svg.appendChild(valLbl);
   });
 }

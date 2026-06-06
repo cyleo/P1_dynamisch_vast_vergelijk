@@ -4,21 +4,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>P1 Energie Contract Analysator | Dynamisch vs Vast</title>
+  <title>P1 Energiecontracten Analysator | Dynamisch vs Vast</title>
   <meta name="description"
     content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2027 het goedkoopste is voor jouw situatie.">
 
   <!-- Open Graph / LinkedIn preview -->
   <meta property="og:type" content="website">
   <meta property="og:locale" content="nl_NL">
-  <meta property="og:title" content="P1 Energie Contract Analysator — Dynamisch vs Vast">
+  <meta property="og:title" content="P1 Energiecontracten Analysator — Dynamisch vs Vast">
   <meta property="og:description" content="Laad je eigen P1 smart meter data en bereken direct hoeveel je bespaart met een dynamisch energiecontract versus een vast tarief in 2027. Inclusief simulaties voor zonnepanelen, thuisbatterij, warmtepomp en elektrische auto.">
   <meta property="og:image" content="https://raw.githubusercontent.com/peterjan/DynOfVast/main/assets/geavanceerd_view.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=61">
+  <link rel="stylesheet" href="/energie/style.css?v=65">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -497,7 +497,7 @@
             stroke-linecap="round" stroke-linejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
-          Energie Contract Analysator
+          Energiecontracten Analysator
         </h1>
         <p>Dynamisch versus Vast &mdash; rekenmodel op basis van jouw echte P1 verbruiksprofiel</p>
       </div>
@@ -740,7 +740,7 @@
               <line x1="12" y1="1" x2="12" y2="23"></line>
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
             </svg>
-            Stap 2 · Contract &amp; tarieven
+            Stap 2 · Contracten &amp; tarieven
             <span class="collapse-chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
           </h2>
 
@@ -768,7 +768,7 @@
           <!-- Fixed sliders — 2027 model (geen saldering) -->
           <h3
             style="font-size: 0.85rem; color: var(--accent-blue); margin-bottom: 0.8rem; font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.5px;">
-            Vast Contract Parameters <span style="font-size:0.7rem;opacity:0.6;text-transform:none;">(2027 · geen
+            Parameters vast contract <span style="font-size:0.7rem;opacity:0.6;text-transform:none;">(2027 · geen
               saldering)</span></h3>
           <div class="form-group">
             <label for="fixed-peak">Piek Tarief afname <span class="info-icon" tabindex="0">i<span
@@ -827,7 +827,7 @@
           <!-- Dynamic sliders -->
           <h3
             style="font-size: 0.85rem; color: var(--accent-cyan); margin-bottom: 0.8rem; font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1.5rem;">
-            Dynamisch Parameters</h3>
+            Parameters dynamisch contract</h3>
           <div class="form-group advanced-only">
             <label for="dynamic-markup">Inkoop Opslag / kWh <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">De marge die de leverancier bovenop de EPEX beursprijs rekent. Bij dynamische
@@ -1090,7 +1090,7 @@
           </summary>
           <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
             <p style="margin:0 0 0.6rem;">Deze tool vergelijkt voor <strong>jouw eigen stroomverbruik</strong> twee
-              soorten contract:</p>
+              soorten contracten:</p>
             <ul style="margin:0 0 0.6rem 1.1rem;padding:0;">
               <li><strong>Vast contract</strong> — een vaste prijs per kWh (piek &amp; dal), het hele jaar gelijk.</li>
               <li><strong>Dynamisch contract</strong> — de prijs volgt elk uur de stroombeurs (EPEX): 's nachts en bij
@@ -1117,7 +1117,7 @@
         <div class="stats-row">
 
           <div class="glass-panel stat-card savings" id="stat-savings-card">
-            <div class="stat-header" id="stat-savings-header">Jouw besparing <span class="info-icon" tabindex="0">i<span class="info-tooltip">Het verschil tussen beide contracten voor jóuw verbruik. Dit zijn alleen leveringskosten — netbeheerkosten en de belastingvermindering zijn voor beide contracten gelijk en vallen weg in de vergelijking.</span></span></div>
+            <div class="stat-header" id="stat-savings-header"><span id="stat-savings-text">Besparing per jaar</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Het verschil tussen beide contracten voor jóuw verbruik. Dit zijn alleen leveringskosten — netbeheerkosten en de belastingvermindering zijn voor beide contracten gelijk en vallen weg in de vergelijking.</span></span></div>
             <div class="stat-value" id="stat-savings-value" style="color: var(--accent-green);">
               <span class="curr">€</span>
               <span id="stat-savings-val">0.00</span>
@@ -1129,7 +1129,7 @@
           </div>
 
           <div class="glass-panel stat-card fixed">
-            <div class="stat-header">Vaste Contract Kosten</div>
+            <div class="stat-header">Kosten vast contract per jaar</div>
             <div class="stat-value">
               <span class="curr">€</span>
               <span id="stat-fixed-val">0.00</span>
@@ -1140,7 +1140,7 @@
           </div>
 
           <div class="glass-panel stat-card dynamic">
-            <div class="stat-header">Dynamische Kosten</div>
+            <div class="stat-header">Kosten dynamisch contract per jaar</div>
             <div class="stat-value">
               <span class="curr">€</span>
               <span id="stat-dynamic-val">0.00</span>
@@ -1228,41 +1228,73 @@
           <div class="chart-header-row">
             <div>
               <h2 style="font-size: 1.1rem; font-family: var(--font-display); font-weight: 700;">
-                Verbruiksprofiel
+                Gedetailleerde Analyse
               </h2>
               <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
-                Dagelijks verbruik inclusief gesimuleerde hardware-effecten (schuiven in Stap 3)
+                Gedetailleerde opbouw van verbruik, kosten en besparing (inclusief EV, WP en batterij)
               </p>
             </div>
-            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
-              <div style="display:flex;gap:0.3rem;">
-                <button id="ov-btn-day" onclick="setOverviewMode('day')" class="btn-primary"
-                  style="padding:0.3rem 0.7rem;font-size:0.75rem;">Dag</button>
-                <button id="ov-btn-week" onclick="setOverviewMode('week')" class="btn-secondary"
-                  style="padding:0.3rem 0.7rem;font-size:0.75rem;">Week</button>
+            <div style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">
+              <!-- View type: bars vs sankey -->
+              <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
+                <button type="button" id="ov-btn-view-bars" class="btn-toggle active" onclick="setOverviewViewType('bars')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Grafiek</button>
+                <button type="button" id="ov-btn-view-sankey" class="btn-toggle" onclick="setOverviewViewType('sankey')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Sankey</button>
               </div>
-              <div class="chart-legends">
-                <div class="legend-item"><span class="legend-color import"></span> Afname</div>
-                <div class="legend-item"><span class="legend-color export"></span> Teruglevering</div>
+              
+              <!-- Bar Chart controls -->
+              <div id="bar-controls-row" style="display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;">
+                <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
+                  <button type="button" id="ov-btn-day" class="btn-toggle active" onclick="setOverviewMode('day')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Dag</button>
+                  <button type="button" id="ov-btn-week" class="btn-toggle" onclick="setOverviewMode('week')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Week</button>
+                  <button type="button" id="ov-btn-month" class="btn-toggle" onclick="setOverviewMode('month')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Maand</button>
+                </div>
+                <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
+                  <button type="button" id="ov-btn-energy" class="btn-toggle active" onclick="setOverviewMetric('energy')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">kWh</button>
+                  <button type="button" id="ov-btn-cost" class="btn-toggle" onclick="setOverviewMetric('cost')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Kosten</button>
+                  <button type="button" id="ov-btn-savings" class="btn-toggle" onclick="setOverviewMetric('savings')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Besparing</button>
+                </div>
               </div>
             </div>
           </div>
-          <div class="svg-chart-container" id="overview-svg-container" style="height:200px;">
+
+          <!-- Sankey Calendar Controls -->
+          <div id="sankey-controls-row" style="display:none; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; background:rgba(255,255,255,0.02); padding:0.6rem 0.8rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03);">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">Periode:</span>
+              <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
+                <button type="button" id="sk-btn-year" class="btn-toggle active" onclick="setSankeyInterval('year')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Jaar</button>
+                <button type="button" id="sk-btn-month" class="btn-toggle" onclick="setSankeyInterval('month')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Maand</button>
+                <button type="button" id="sk-btn-week" class="btn-toggle" onclick="setSankeyInterval('week')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Week</button>
+                <button type="button" id="sk-btn-day" class="btn-toggle" onclick="setSankeyInterval('day')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Dag</button>
+              </div>
+            </div>
+            
+            <div style="display:flex; align-items:center; gap:0.6rem;">
+              <button type="button" class="btn-secondary" id="sk-nav-prev" onclick="navigateSankey(-1)" style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg> Vorige
+              </button>
+              
+              <div id="sk-picker-container" style="display:inline-flex; align-items:center;">
+                <!-- Dynamisch gevuld door JS -->
+              </div>
+              
+              <button type="button" class="btn-secondary" id="sk-nav-next" onclick="navigateSankey(1)" style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
+                Volgende <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+            
+            <div id="sk-battery-price-highlight" style="font-size:0.75rem; color:var(--accent-cyan); font-weight:600; display:flex; align-items:center; gap:0.4rem;">
+              <!-- Dynamisch ingevuld door JS -->
+            </div>
+          </div>
+
+          <div class="chart-legends" id="overview-legends" style="margin-bottom:1.2rem; display:flex; flex-wrap:wrap; gap:0.6rem 1rem; font-size:0.78rem;">
+            <!-- Dynamisch gevuld door JS -->
+          </div>
+          <div class="svg-chart-container" id="overview-svg-container" style="height:250px;">
             <svg id="overview-svg"></svg>
             <div class="chart-tooltip" id="overview-tooltip">
-              <h4 id="ov-date">1 jan</h4>
-              <div class="tooltip-row">
-                <span>Afname:</span>
-                <span class="val" id="ov-import" style="color:var(--accent-cyan);">0.0 kWh</span>
-              </div>
-              <div class="tooltip-row">
-                <span>Teruglevering:</span>
-                <span class="val" id="ov-export" style="color:var(--accent-green);">0.0 kWh</span>
-              </div>
-              <div class="tooltip-row">
-                <span>Netto:</span>
-                <span class="val" id="ov-net">0.0 kWh</span>
-              </div>
+              <!-- Dynamisch gevuld door JS -->
             </div>
           </div>
         </section>
@@ -1403,8 +1435,7 @@
           <!-- Fixed Bill Breakdown -->
           <section class="glass-panel table-panel">
             <div class="panel-header-badge">
-              <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Vast Contract
-                Specificatie</h2>
+              <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Specificatie vast contract</h2>
               <span class="badge fixed">Vast model</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Berekening voor een <strong>vast contract</strong>: vaste piek/dal-tarieven, een vaste terugleververgoeding en eventuele vaste terugleverkosten (VTK). Onafhankelijk van de beursprijs.</span></span>
             </div>
             <table class="detail-table">
@@ -1412,7 +1443,7 @@
                 <tr>
                   <th>Onderdeel</th>
                   <th>Volume / Tarief</th>
-                  <th>Kosten</th>
+                  <th>Kosten per jaar</th>
                 </tr>
               </thead>
               <tbody>
@@ -1468,7 +1499,7 @@
                 </tr>
 
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
-                  <td>Totale rekening</td>
+                  <td>Totale jaarrekening</td>
                   <td>Netto energie + vaste lasten</td>
                   <td id="tbl-fixed-total" style="color:var(--text-main);">-</td>
                 </tr>
@@ -1479,8 +1510,7 @@
           <!-- Dynamic Bill Breakdown -->
           <section class="glass-panel table-panel">
             <div class="panel-header-badge">
-              <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Dynamisch Contract
-                Specificatie</h2>
+              <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Specificatie dynamisch contract</h2>
               <span class="badge dynamic">Beurs model</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Teruglevering wordt vergoed tegen de spotprijs van dat uur, energiebelasting over je bruto afname.</span></span>
             </div>
             <table class="detail-table">
@@ -1488,7 +1518,7 @@
                 <tr>
                   <th>Onderdeel</th>
                   <th>Volume / Berekening</th>
-                  <th>Kosten</th>
+                  <th>Kosten per jaar</th>
                 </tr>
               </thead>
               <tbody>
@@ -1552,7 +1582,7 @@
                 </tr>
 
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
-                  <td>Totale rekening</td>
+                  <td>Totale jaarrekening</td>
                   <td>Netto + EB + vast − korting</td>
                   <td id="tbl-dyn-total" style="color:var(--accent-cyan);">-</td>
                 </tr>
@@ -1585,7 +1615,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=61"></script>
+  <script src="/energie/app.js?v=65"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
