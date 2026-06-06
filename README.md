@@ -94,6 +94,15 @@ if ($request_method = OPTIONS) { return 204; }
 
 De app gebruikt `recorder/statistics_during_period` (uurstatistieken) — levert tot jarenlange data, in tegenstelling tot de REST history-API (max ~10 dagen).
 
+### Beveiliging & Mixed Content (HTTPS vs HTTP)
+
+Als deze app wordt bezocht via een beveiligde HTTPS-verbinding (zoals `https://vibe.vulpini.nl`), staat de browser om veiligheidsredenen (**Mixed Content**) geen verbindingen toe naar een onbeveiligde HTTP-URL (zoals `http://homeassistant.local:8123` of lokale IP-adressen).
+
+Om dit op te lossen zijn er drie opties:
+1. **Gebruik HTTPS voor Home Assistant**: Vul je externe HTTPS-adres in (bijv. via Nabu Casa `https://xxx.ui.nabu.casa` of een eigen domein met Let's Encrypt).
+2. **Draai de app lokaal**: Clone de repository en draai de app lokaal via HTTP (bijv. met `npm start` op `http://localhost:3000/energie/`). Omdat de app dan zelf via HTTP geladen is, mag hij wel met je lokale HTTP Home Assistant verbinden.
+3. **Handmatige export**: Exporteer je P1-data handmatig als CSV of JSON uit Home Assistant en upload het bestand in de app onder *Bestand uploaden*.
+
 ### Digital Twin
 
 Koppel je eigen apparaten (laadpaal, warmtepomp, accu) om hun verbruik uit de P1-baseline te strippen. De sliders in Stap 3 modelleren daarna **vervangende** hardware (bijv. groter accuformaat). Via de knop in de banner schakel je Digital Twin uit om terug te keren naar de ruwe meterstanden.

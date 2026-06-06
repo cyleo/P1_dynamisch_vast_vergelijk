@@ -18,11 +18,12 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=57">
+  <link rel="stylesheet" href="/energie/style.css?v=61">
   <style>
-    /* CORS Setup Modal + generieke uitleg-modal */
+    /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
-    #explain-backdrop {
+    #explain-backdrop,
+    #csv-map-backdrop {
       display: none;
       position: fixed;
       inset: 0;
@@ -32,6 +33,10 @@
       align-items: center;
       justify-content: center;
       padding: 1rem;
+    }
+
+    #csv-map-backdrop {
+      z-index: 101; /* Show on top of connection guide if both are open */
     }
 
     /* Uitleg-modal: scrollbaar + per-modus blokken */
@@ -351,12 +356,24 @@
       <button id="modal-close" title="Sluiten">&times;</button>
       <h2>&#x1F527; Home Assistant Installatiegids</h2>
 
+      <!-- Dynamische Mixed Content waarschuwing -->
+      <div id="ha-mixed-content-warning" style="display:none; background:rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.35); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; color:#ff8b8b; font-size:0.82rem; line-height:1.5;">
+        <strong>⚠ Let op: Mixed Content gedetecteerd</strong><br>
+        Je bezoekt deze site via een beveiligde verbinding (<code class="site-url">https://vibe.vulpini.nl</code>), maar je probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.
+        <br><br>
+        <strong>Oplossingen:</strong>
+        <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
+          <li>Koppel via een beveiligd HTTPS-adres (bijv. Nabu Casa of reverse proxy).</li>
+          <li>Of draai deze app lokaal via HTTP (open <a href="http://localhost:3000/energie/" style="color:#00f2fe; text-decoration:underline; font-weight:600;">http://localhost:3000/energie/</a>).</li>
+        </ul>
+      </div>
+
       <!-- Tab switcher -->
       <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
         <button onclick="showModalTab('direct')" id="tab-direct" class="btn-primary"
-          style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie A: Lokaal adres</button>
-        <button onclick="showModalTab('cors')" id="tab-cors" class="btn-secondary"
-          style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie B: CORS / nginx</button>
+          style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie A: Lokaal</button>
+        <button onclick="showModalTab('manual')" id="tab-manual" class="btn-secondary"
+          style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie B: Exporteren</button>
       </div>
 
       <!-- Tab A: Direct local access (recommended) -->
@@ -380,30 +397,18 @@
         </ol>
       </div>
 
-      <!-- Tab B: nginx CORS config -->
-      <div id="modal-tab-cors" style="display:none;">
+      <!-- Tab B: Manual export -->
+      <div id="modal-tab-manual" style="display:none;">
         <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:0.8rem; line-height:1.7;">
-          Gebruik je een nginx/Caddy/NPM reverse proxy? Dan moet je CORS-headers <em>in nginx</em> instellen — de
-          HA-instelling bereikt nginx niet.
+          Lukt het niet om rechtstreeks te verbinden? Exporteer je gegevens dan eenmalig handmatig als CSV uit Home Assistant en upload ze in deze tool.
         </p>
         <ol style="color:var(--text-muted); font-size:0.88rem; padding-left:1.2rem; line-height:2;">
-          <li>Zoek je nginx <code>location /</code> blok voor HA.</li>
-          <li>Voeg deze regels toe:</li>
-        </ol>
-        <div class="modal-code">add_header 'Access-Control-Allow-Origin' '<span
-            id="nginx-origin">http://localhost:8080</span>' always;
-          add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type' always;
-          add_header 'Access-Control-Allow-Methods' 'GET,OPTIONS' always;
-
-          # Handle preflight
-          if ($request_method = OPTIONS) {
-          add_header 'Access-Control-Allow-Origin' '<span id="nginx-origin2">http://localhost:8080</span>';
-          add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type';
-          add_header 'Access-Control-Max-Age' 3600;
-          return 204;
-          }</div>
-        <ol start="3" style="color:var(--text-muted); font-size:0.88rem; padding-left:1.2rem; line-height:2;">
-          <li><strong>Reload nginx</strong>: <code>nginx -s reload</code></li>
+          <li>Ga in Home Assistant naar <strong>Instellingen → Systeem → Statistieken</strong>.</li>
+          <li>Zoek je P1-metersensoren op (bijv. <code>sensor.p1_meter_energy_import_tariff_1</code>).</li>
+          <li>Klik uiterst rechts op het downloadicoon/exporteerknop (omcirkelde pijl naar beneden).</li>
+          <li>Kies de gewenste periode (bijv. afgelopen jaar) en download het <strong>CSV-bestand</strong>.</li>
+          <li>Herhaal dit eventueel voor de andere sensoren (Import T2, Export T1, Export T2, en optioneel zonneopwek, warmtepomp, EV-laadpaal of batterij-registers). <em>Tip: je kunt meerdere CSV's tegelijk selecteren en uploaden; ze worden automatisch samengevoegd, en eventuele extra sensoren (zon, EV, warmtepomp, accu) kun je na het uploaden eenvoudig koppelen.</em></li>
+          <li>Sleep de gedownloade CSV-bestanden in de <strong>Bestand uploaden</strong>-zone in de app.</li>
         </ol>
       </div>
 
@@ -411,6 +416,65 @@
         &#x1F510; <strong>Veilig:</strong> Jouw token wordt alleen lokaal in de browser opgeslagen en wordt nooit naar
         een server gestuurd.
       </p>
+    </div>
+  </div>
+
+  <!-- CSV Sensor Mapping Modal -->
+  <div id="csv-map-backdrop">
+    <div class="modal-box" style="max-width: 540px; max-height: 90vh; overflow-y: auto;">
+      <h2>&#x1F4CA; Koppel CSV Sensoren</h2>
+      <p style="font-size:0.86rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.6;">
+        We hebben sensoren in je CSV-bestand gevonden. Koppel de juiste sensoren uit het bestand aan de P1-meterrollen:
+      </p>
+      
+      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem;">
+        <h3 style="font-size: 0.85rem; color: var(--accent-blue); margin: 0 0 0.6rem 0; font-family: var(--font-display); text-transform: uppercase;">P1 Slimme Meter (Vereist)</h3>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Afname Tarief 1 (piek)</label>
+          <select id="csv-sel-imp1" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Afname Tarief 2 (dal)</label>
+          <select id="csv-sel-imp2" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Teruglevering Tarief 1</label>
+          <select id="csv-sel-exp1" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Teruglevering Tarief 2</label>
+          <select id="csv-sel-exp2" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+      </div>
+      
+      <div style="background: rgba(0,242,254,0.02); border: 1px solid rgba(0,242,254,0.06); border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem;">
+        <h3 style="font-size: 0.85rem; color: var(--accent-cyan); margin: 0 0 0.6rem 0; font-family: var(--font-display); text-transform: uppercase;">Zon &amp; Digital Twin (Optioneel)</h3>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">☀ Bruto Zonneopwek</label>
+          <select id="csv-sel-solar" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🚗 EV-laadpaal</label>
+          <select id="csv-sel-ev" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">♨ Warmtepomp</label>
+          <select id="csv-sel-hp" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🔋 Accu laden (in)</label>
+          <select id="csv-sel-batIn" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🔋 Accu ontladen (uit)</label>
+          <select id="csv-sel-batOut" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
+        </div>
+      </div>
+      
+      <div style="display:flex; gap:0.5rem; margin-top:1.2rem;">
+        <button id="csv-map-cancel" class="btn-secondary" style="flex:1; padding:0.55rem; font-size:0.82rem;">Annuleren</button>
+        <button id="csv-map-confirm" class="btn-primary" style="flex:1; padding:0.55rem; font-size:0.82rem;">Importeren</button>
+      </div>
     </div>
   </div>
 
@@ -1521,13 +1585,13 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=57"></script>
+  <script src="/energie/app.js?v=61"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
-      document.getElementById('modal-tab-cors').style.display = tab === 'cors' ? '' : 'none';
+      document.getElementById('modal-tab-manual').style.display = tab === 'manual' ? '' : 'none';
       document.getElementById('tab-direct').className = tab === 'direct' ? 'btn-primary' : 'btn-secondary';
-      document.getElementById('tab-cors').className = tab === 'cors' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('tab-manual').className = tab === 'manual' ? 'btn-primary' : 'btn-secondary';
     }
 
     // Global tooltip — rendered at body level to avoid overflow:hidden clipping inside panels

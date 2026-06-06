@@ -539,13 +539,23 @@ function showSetupModal(tab) {
   document.getElementById("modal-cors-snippet").textContent =
     `http:\n  cors_allowed_origins:\n    - ${origin}`;
 
-  // Fill nginx origin placeholders
-  document.querySelectorAll("#nginx-origin, #nginx-origin2").forEach(el => el.textContent = origin);
+  // Mixed Content Warning for HTTPS origins
+  const mixedWarning = document.getElementById("ha-mixed-content-warning");
+  if (mixedWarning) {
+    if (window.location.protocol === "https:") {
+      mixedWarning.style.display = "block";
+      const siteUrlEl = mixedWarning.querySelector(".site-url");
+      if (siteUrlEl) siteUrlEl.textContent = window.location.origin;
+    } else {
+      mixedWarning.style.display = "none";
+    }
+  }
 
   document.getElementById("modal-backdrop").style.display = "flex";
 
-  // Auto-open nginx tab if coming from a reverse-proxy error
-  if (typeof showModalTab === "function") showModalTab(tab || "direct");
+  // Open the direct tab by default, map old 'cors' to 'manual'
+  const targetTab = tab === 'cors' ? 'manual' : (tab || "direct");
+  if (typeof showModalTab === "function") showModalTab(targetTab);
 }
 
 function closeSetupModal() {
@@ -792,7 +802,6 @@ function updateBatModeHint() {
   el.innerHTML = hints[mode] || "";
   el.style.display = el.innerHTML ? "block" : "none";
 }
-
 function copySetupSnippet() {
   const origin = window.location.origin;
   const snippet = `http:\n  cors_allowed_origins:\n    - ${origin}`;
@@ -823,21 +832,20 @@ function processFile(file) {
     const reader = new FileReader();
     document.getElementById("data-status").textContent = "Bezig met verwerken…";
 
-    reader.onload = function (event) {
+    reader.onload = async function (event) {
       try {
         let parsed = [];
         if (file.name.endsWith(".json")) {
           const raw = JSON.parse(event.target.result);
-          // Support both our native format and HA's JSON statistics export
           if (Array.isArray(raw) && raw[0]?.timestamp !== undefined) {
-            parsed = raw; // native format
+            parsed = raw;
           } else if (Array.isArray(raw) && raw[0]?.entity_id !== undefined) {
             parsed = parseHAStatisticsJSON(raw);
           } else {
             throw new Error("Onbekend JSON-formaat. Gebruik een HA statistieken export of onze eigen export.");
           }
         } else if (file.name.endsWith(".csv")) {
-          parsed = parseAutoCSV(event.target.result);
+          parsed = await parseAutoCSVAsync(event.target.result);
         } else {
           throw new Error("Ongeldig bestandstype. Selecteer een .json of .csv bestand.");
         }
@@ -846,21 +854,27 @@ function processFile(file) {
           throw new Error("Geen geldige P1-stroomgegevens gevonden. Controleer of het bestand import/export sensor data bevat.");
         }
 
-        // Demo-data wordt door de eerste echte upload vervangen; daarna mergen we erbij.
         if (isDemoData) { energyData = []; isDemoData = false; }
 
-        // ── Merge + dedup op timestamp (nieuw overschrijft oud) + chronologisch ──
         const merged = new Map();
         for (const r of energyData) merged.set(r.timestamp, r);
         for (const r of parsed) merged.set(r.timestamp, r);
+        
+        const oldUntangle = energyData.untangle;
         energyData = Array.from(merged.values())
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        energyData.untangle = parsed.untangle || oldUntangle;
 
         const span = energyData.length > 0
           ? ` (${new Date(energyData[0].timestamp).toLocaleDateString("nl-NL")} t/m ${new Date(energyData[energyData.length - 1].timestamp).toLocaleDateString("nl-NL")})`
           : "";
         document.getElementById("data-status").textContent =
           `✓ ${file.name} — ${parsed.length} records · ${energyData.length} totaal${span}`;
+        
+        const untangle = energyData.untangle || { active: false };
+        updateDigitalTwinBanner(untangle);
+        
         runSimulation();
       } catch (error) {
         console.error("Parse error:", error);
@@ -876,7 +890,6 @@ function processFile(file) {
 
 function showUploadError(msg) {
   document.getElementById("data-status").textContent = "Upload mislukt";
-  // Show inline error below the dropzone instead of a blocking alert
   let errEl = document.getElementById("upload-error");
   if (!errEl) {
     errEl = document.createElement("p");
@@ -888,80 +901,173 @@ function showUploadError(msg) {
   setTimeout(() => { errEl.textContent = ""; }, 8000);
 }
 
-// ─── Auto-detect CSV format and dispatch to the right parser ────────────────
-function parseAutoCSV(text) {
+function showCsvMapModal(entities, guesses) {
+  return new Promise((resolve, reject) => {
+    const backdrop = document.getElementById("csv-map-backdrop");
+    const selectIds = [
+      "csv-sel-imp1", "csv-sel-imp2", "csv-sel-exp1", "csv-sel-exp2",
+      "csv-sel-solar", "csv-sel-ev", "csv-sel-hp", "csv-sel-batIn", "csv-sel-batOut"
+    ];
+    
+    selectIds.forEach(id => {
+      const select = document.getElementById(id);
+      if (!select) return;
+      select.innerHTML = "";
+      
+      const role = id.replace("csv-sel-", "");
+      const isOptional = ["solar", "ev", "hp", "batIn", "batOut"].includes(role);
+      
+      const emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = isOptional ? "— Niet koppelen (optioneel) —" : "— Selecteer sensor (vereist) —";
+      select.appendChild(emptyOpt);
+      
+      entities.forEach(ent => {
+        const opt = document.createElement("option");
+        opt.value = ent;
+        opt.textContent = ent;
+        select.appendChild(opt);
+      });
+      
+      if (guesses[role] && entities.includes(guesses[role])) {
+        select.value = guesses[role];
+      } else {
+        select.value = "";
+      }
+    });
+    
+    backdrop.style.display = "flex";
+    
+    const cleanup = () => {
+      backdrop.style.display = "none";
+      document.getElementById("csv-map-confirm").removeEventListener("click", onConfirm);
+      document.getElementById("csv-map-cancel").removeEventListener("click", onCancel);
+    };
+    
+    function onConfirm() {
+      const selection = {
+        imp1: document.getElementById("csv-sel-imp1").value,
+        imp2: document.getElementById("csv-sel-imp2").value,
+        exp1: document.getElementById("csv-sel-exp1").value,
+        exp2: document.getElementById("csv-sel-exp2").value,
+        solar: document.getElementById("csv-sel-solar").value,
+        ev: document.getElementById("csv-sel-ev").value,
+        hp: document.getElementById("csv-sel-hp").value,
+        batIn: document.getElementById("csv-sel-batIn").value,
+        batOut: document.getElementById("csv-sel-batOut").value
+      };
+      if (!selection.imp1 && !selection.imp2) {
+        alert("Selecteer minimaal één afname-sensor.");
+        return;
+      }
+      cleanup();
+      resolve(selection);
+    }
+    
+    function onCancel() {
+      cleanup();
+      reject(new Error("CSV-import geannuleerd door gebruiker."));
+    }
+    
+    document.getElementById("csv-map-confirm").addEventListener("click", onConfirm);
+    document.getElementById("csv-map-cancel").addEventListener("click", onCancel);
+  });
+}
+
+async function parseAutoCSVAsync(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
   if (lines.length < 2) throw new Error("CSV is leeg of heeft slechts één rij.");
 
   const sep = lines[0].includes(";") ? ";" : ",";
   const headers = lines[0].split(sep).map(h => h.trim());
 
-  // Detect HA Statistics Export: first three headers are entity_id, type, unit
   if (headers[0].toLowerCase() === "entity_id" &&
     headers[1].toLowerCase() === "type" &&
     headers[2].toLowerCase() === "unit") {
-    return parseHAStatisticsWideCSV(lines, sep, headers);
+    return await parseHAStatisticsWideCSVAsync(lines, sep, headers);
   }
 
-  // Detect long/tidy format (has a timestamp column)
   if (headers.some(h => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
     return parseLongCSV(lines, sep, headers);
   }
 
-  throw new Error(
-    "CSV-formaat niet herkend. Exporteer vanuit HA via Instellingen → Statistieken → Exporteer, " +
-    "of gebruik onze eigen .json export."
-  );
+  throw new Error("CSV-formaat niet herkend.");
 }
 
-// ─── Parser for HA Statistics Export (wide/pivoted format) ──────────────────
-// Format: entity_id | type | unit | 2025-01-01T00:00Z | 2025-01-01T01:00Z | …
-// Each value is the change (kWh) for that period.
-function parseHAStatisticsWideCSV(lines, sep, headers) {
-  // Date timestamps start at column index 3
+async function parseHAStatisticsWideCSVAsync(lines, sep, headers) {
   const timestamps = headers.slice(3).map(h => new Date(h.trim()));
   if (timestamps.some(d => isNaN(d.getTime()))) {
     throw new Error("Ongeldige tijdstempels in CSV-header. Controleer het bestand.");
   }
 
-  // Parse all sensor rows into a map: entity_id → [values]
   const sensorMap = {};
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(sep);
     if (cols.length < 4) continue;
     const entityId = cols[0].trim();
+    const unit = cols[2]?.trim() || "kWh";
     const values = cols.slice(3).map(v => {
       const n = parseFloat(v.trim());
       return isNaN(n) || n < 0 ? 0 : n;
     });
-    sensorMap[entityId] = values;
+    sensorMap[entityId] = { values, unit };
   }
 
-  // Flexible matching: find best match for each of the 4 P1 sensors
+  const entities = Object.keys(sensorMap);
+  if (entities.length === 0) {
+    throw new Error("Geen sensoren gevonden in het CSV-bestand.");
+  }
+
   function findSensor(patterns) {
     for (const p of patterns) {
-      const key = Object.keys(sensorMap).find(k => k.toLowerCase().includes(p));
-      if (key) return sensorMap[key];
+      const key = entities.find(k => k.toLowerCase().includes(p));
+      if (key) return { id: key, values: sensorMap[key].values };
     }
     return null;
   }
 
-  const imp1 = findSensor(["import_tariff_1", "import_t1", "afname_tarief_1", "delivery_tariff_1"]);
-  const imp2 = findSensor(["import_tariff_2", "import_t2", "afname_tarief_2", "delivery_tariff_2"]);
-  const exp1 = findSensor(["export_tariff_1", "export_t1", "return_tariff_1", "teruglevering_tariff_1"]);
-  const exp2 = findSensor(["export_tariff_2", "export_t2", "return_tariff_2", "teruglevering_tariff_2"]);
+  const imp1Match = findSensor(["import_tariff_1", "import_t1", "afname_tarief_1", "delivery_tariff_1"]);
+  const imp2Match = findSensor(["import_tariff_2", "import_t2", "afname_tarief_2", "delivery_tariff_2"]);
+  const exp1Match = findSensor(["export_tariff_1", "export_t1", "return_tariff_1", "teruglevering_tariff_1"]);
+  const exp2Match = findSensor(["export_tariff_2", "export_t2", "return_tariff_2", "teruglevering_tariff_2"]);
+  const solarMatch = findSensor(["solar", "sol", "zon", "opwek", "pv", "inverter"]);
+  const evMatch = findSensor(["ev", "charger", "laadpaal", "auto", "wallbox"]);
+  const hpMatch = findSensor(["hp", "heatpump", "warmtepomp", "nibe", "compressor"]);
+  const batInMatch = findSensor(["bat_in", "battery_charge", "batterij_laden", "powerwall_charge"]);
+  const batOutMatch = findSensor(["bat_out", "battery_discharge", "batterij_ontladen", "powerwall_discharge"]);
 
-  // Require at least import sensors
-  if (!imp1 && !imp2) {
-    const found = Object.keys(sensorMap).slice(0, 5).join(", ");
-    throw new Error(
-      `Geen P1 import sensoren gevonden in CSV. ` +
-      `Gevonden rijen: ${found}. ` +
-      `Zorg dat het bestand 'p1_meter_energy_import_tariff_1' en/of '_tariff_2' bevat.`
-    );
-  }
+  const selection = await showCsvMapModal(entities, {
+    imp1: imp1Match?.id || "",
+    imp2: imp2Match?.id || "",
+    exp1: exp1Match?.id || "",
+    exp2: exp2Match?.id || "",
+    solar: solarMatch?.id || "",
+    ev: evMatch?.id || "",
+    hp: hpMatch?.id || "",
+    batIn: batInMatch?.id || "",
+    batOut: batOutMatch?.id || ""
+  });
 
-  // Detect resolution from first timestamp gap
+  const getSensorValuesKwh = (entityId) => {
+    if (!entityId || !sensorMap[entityId]) return null;
+    const { values, unit } = sensorMap[entityId];
+    const isWattBased = unit.toLowerCase() === "wh" || unit.toLowerCase() === "w";
+    if (isWattBased) {
+      return values.map(v => v / 1000);
+    }
+    return values;
+  };
+
+  const imp1 = getSensorValuesKwh(selection.imp1);
+  const imp2 = getSensorValuesKwh(selection.imp2);
+  const exp1 = getSensorValuesKwh(selection.exp1);
+  const exp2 = getSensorValuesKwh(selection.exp2);
+  const solar = getSensorValuesKwh(selection.solar);
+  const ev = getSensorValuesKwh(selection.ev);
+  const hp = getSensorValuesKwh(selection.hp);
+  const batIn = getSensorValuesKwh(selection.batIn);
+  const batOut = getSensorValuesKwh(selection.batOut);
+
   let resolution = "day";
   if (timestamps.length > 1) {
     const gapMs = timestamps[1] - timestamps[0];
@@ -981,7 +1087,7 @@ function parseHAStatisticsWideCSV(lines, sep, headers) {
     });
   }
 
-  console.info(`HA Statistics CSV: ${resolution} resolution, ${records.length} records, sensors found:`,
+  console.info(`HA Statistics CSV: ${resolution} resolution, ${records.length} records, sensors selected/found:`,
     { imp1: !!imp1, imp2: !!imp2, exp1: !!exp1, exp2: !!exp2 });
 
   return records;
@@ -1084,11 +1190,33 @@ async function handleHAConnect() {
     return;
   }
 
+  let cleanUrl = urlInput.replace(/\/$/, "");
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    if (window.location.protocol === "https:") {
+      statusEl.innerHTML = `⚠ <strong>Ongeldige URL:</strong> Geef een volledig adres op dat begint met <code>https://</code> (bijv. <code>https://ha.mydomain.nl</code>).`;
+      statusEl.style.color = "var(--accent-orange)";
+      return;
+    } else {
+      cleanUrl = "http://" + cleanUrl;
+    }
+  }
+
+  // Mixed Content check: if hosted on HTTPS and HA URL starts with http://
+  if (window.location.protocol === "https:" && cleanUrl.toLowerCase().startsWith("http://")) {
+    statusEl.innerHTML =
+      `⚠ <strong>Mixed Content geblokkeerd!</strong><br>` +
+      `Je bezoekt deze site via HTTPS, maar probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.<br><br>` +
+      `<strong>Oplossingen:</strong><br>` +
+      `1. Gebruik een <code>https://</code> adres voor Home Assistant (bijv. via Nabu Casa of reverse proxy).<br>` +
+      `2. Start de app lokaal via HTTP (bijv. via <code>npm start</code> of Python server) en open <a href="http://localhost:3000/energie/" style="color:var(--accent-cyan); font-weight:600;">http://localhost:3000/energie/</a>.<br>` +
+      `3. Exporteer handmatig je data uit HA en upload het CSV/JSON bestand. <a href="#" onclick="showSetupModal('manual'); return false;" style="color:var(--accent-cyan); font-weight:600;">Gids →</a>`;
+    statusEl.style.color = "var(--accent-orange)";
+    return;
+  }
+
   statusEl.textContent = "Verbinding testen…";
   statusEl.style.color = "var(--accent-cyan)";
   document.getElementById("ha-sensor-picker").style.display = "none";
-
-  const cleanUrl = urlInput.replace(/\/$/, "");
 
   try {
     // Auth check
