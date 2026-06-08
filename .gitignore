@@ -3,8 +3,13 @@ energy-3.csv
 p1_sample.json
 *.csv
 *.json
-# Uitzondering: lokale-preview config (geen persoonlijke data)
+# Uitzonderingen: dit zijn build-/config-bestanden, GEEN persoonlijke data, en ze MOETEN
+# mee in de repo — anders kan een verse clone niet bouwen/testen. De brede *.json/*.csv-regel
+# hierboven is een privacy-vangnet voor energie-exports, maar ving per ongeluk deze essentiële
+# bestanden (package.json/-lock.json stonden daardoor NIET in de repo → `npm install` faalt).
 !serve.json
+!package.json
+!package-lock.json
 
 # Claude project bestanden
 .claude/

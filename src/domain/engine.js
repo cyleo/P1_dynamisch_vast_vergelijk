@@ -1,14 +1,22 @@
-// src/domain/engine.js
-// Extracted simulation engine.
+/**
+ * @module Engine
+ * @description Core simulation engine for energy calculations.
+ */
 import { appStore } from "./store.js";
 import {
-  rowMeta, epexKey, toConsumerPrice, seasonOf,
+  rowMeta, seasonOf,
   precomputeEVSchedules, precomputeBatterySchedule,
   applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming
 } from "./energyMath.js";
 import { EPEX_PROFILES, EB_REBATE_2026, NETBEHEER_2026 } from "./constants.js";
 
 let _dayRowsCache = null, _dayRowsSrc = null;
+
+/**
+ * Groups simulation data rows by dayKey. Uses a simple cache.
+ * @param {Array<Object>} simData - The raw telemetry data rows.
+ * @returns {Object<string, Array<Object>>} Grouped data mapping dayKey to rows.
+ */
 export function getDayRows(simData) {
   if (_dayRowsSrc === simData && _dayRowsCache) return _dayRowsCache;
   const dr = {};
@@ -17,6 +25,13 @@ export function getDayRows(simData) {
   return dr;
 }
 
+/**
+ * Retrieves the fallback spot market price for a given month and hour.
+ * Includes VAT (x1.21) on positive hours if using static profiles.
+ * @param {number} month - The month number (1-12).
+ * @param {number} hour - The hour of the day (0-23).
+ * @returns {number} The spot price in €/kWh.
+ */
 export function getFallbackSpot(month, hour) {
   const { calibratedProfile } = appStore.getState();
   const season = seasonOf(month);
@@ -29,6 +44,10 @@ export function getFallbackSpot(month, hour) {
   return raw >= 0 ? raw * 1.21 : raw;
 }
 
+/**
+ * Builds the runtime simulation context from the global appStore.
+ * @returns {Object} Context object containing simData, epexHistory, eb, yearScale.
+ */
 export function buildSimContext() {
   const { fullYearData, energyData, epexHistory, liveEnergyTax, yearScale } = appStore.getState();
   return {
@@ -39,6 +58,35 @@ export function buildSimContext() {
   };
 }
 
+/**
+ * Zero-init record voor de per-dag breakdown (`perDayTotals`). Eén plek voor de
+ * ~40 accumulator-velden zodat de vorm consistent blijft met `accumulateFull`.
+ * @returns {Object} dagrecord met alle tellers op 0.
+ */
+function makeDayTotal() {
+  return {
+    dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0,
+    rawImp: 0, rawExp: 0, solarYield: 0,
+    evKwh: 0, evCost: 0, evSavings: 0, evSolar: 0, evGrid: 0,
+    hpKwh: 0, hpCost: 0, hpSavings: 0, hpSolar: 0, hpGrid: 0,
+    batCharge: 0, batDischarge: 0, batCost: 0, batSavings: 0,
+    batChargeCost: 0, batDischargeValue: 0,
+    batChargeGrid: 0, batChargeGridCost: 0, batChargeSolar: 0,
+    batDischargeToHouse: 0, batDischargeToGrid: 0,
+    baseloadCost: 0, baseloadReturn: 0,
+    baseloadImportSavings: 0, baseloadExportSavings: 0
+  };
+}
+
+/**
+ * The core simulation engine that processes 8760 hours of data to evaluate
+ * fixed vs dynamic contract costs, battery arbitrage, EV charging, and solar dimming.
+ * 
+ * @param {Object} cfg - The simulation configuration containing all sliders and options.
+ * @param {boolean} [full=false] - Whether to generate detailed hourly/weekly profiles.
+ * @param {Object} [ctx=null] - Overrides the default store context (used for tests).
+ * @returns {Object} Total bill calculation and optional detailed profiles.
+ */
 export function _simulateCore(cfg, full = false, ctx = null) {
   ctx = ctx || buildSimContext();
   const {
@@ -93,6 +141,98 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   const dayTot = full ? {} : null;
   const dayHour = full ? {} : null;
 
+  // ── full=true breakdown-accumulator ──────────────────────────────────────────
+  // Uitgesplitst uit de hoofdloop om de cyclomatische complexiteit te verlagen.
+  // Closure over de constante contractparameters (eb, tarieven, opslag, hasHeatPump)
+  // en de profiel-accumulatoren; krijgt per uur alléén de variërende waarden mee.
+  // Gedrag is byte-identiek aan de oude inline-versie (geborgd door test15_snapshot).
+  const accumulateFull = (h) => {
+    const { hour, dow, dayKey, isPeak, spot, dynImp, dynExp, basePrice,
+      rawImp, rawExp, solarYield, hpLoad, hpFromSolar, hpFromGrid,
+      evRes, batRes, impFx, expFx } = h;
+
+    hourly[hour].imports.push(dynImp);
+    hourly[hour].exports.push(dynExp);
+    const allIn = basePrice + eb;
+    const returnPrice = (spot / 1.21) - exportMarkup;
+    const dynHrCost = dynImp * allIn - dynExp * returnPrice;   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
+    const tariff = isPeak ? fixedPeakRate : fixedDalRate;
+    const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
+
+    hourly[hour].dynCosts.push(dynHrCost);
+    hourly[hour].fixedCosts.push(fxHrCost);
+    weekly[dow].dynCosts.push(dynHrCost);
+    weekly[dow].fixedCosts.push(fxHrCost);
+
+    // Collect simulated hardware values for 24h profile
+    hourly[hour].solar.push(solarYield);
+    hourly[hour].ev.push(evRes.evVal);
+    hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
+    hourly[hour].batCharge.push(batRes.batChargeVal);
+    hourly[hour].batDischarge.push(batRes.batDischargeVal);
+
+    // Detailed hourly calculations for savings breakdown
+    const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
+
+    const evCostFx = evRes.evGridFx * tariff - evRes.evSolarFx * fixedReturnPrice;
+    const evCostDyn = evRes.evGridDyn * allIn - evRes.evSolarDyn * returnPrice;
+    const evSavings = evCostFx - evCostDyn;
+
+    const hpCostFx = hpFromGrid * tariff - hpFromSolar * fixedReturnPrice;
+    const hpCostDyn = hpFromGrid * allIn - hpFromSolar * returnPrice;
+    const hpSavings = hpCostFx - hpCostDyn;
+
+    const batCostFx = batRes.batChargeSolarFxVal * fixedReturnPrice - batRes.batDischargeToHouseFxVal * tariff;
+    const batCostDyn = (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice) - (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
+    const batSavings = batCostFx - batCostDyn;
+
+    const baseloadImportSavings = rawImp * (tariff - allIn);
+    const baseloadExportSavings = rawExp * (returnPrice - fixedReturnPrice);
+
+    const pd = (dayTot[dayKey] ||= makeDayTotal());
+    pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
+    pd.impKwh += dynImp; pd.expKwh += dynExp;
+    pd.impCost += dynImp * allIn;
+    pd.expRev += dynExp * returnPrice;
+    if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
+
+    pd.rawImp += rawImp;
+    pd.rawExp += rawExp;
+    pd.solarYield += solarYield;
+
+    pd.evKwh += (evRes.evGridDyn + evRes.evSolarDyn);
+    pd.evCost += evCostDyn;
+    pd.evSavings += evSavings;
+    pd.evSolar += evRes.evSolarDyn;
+    pd.evGrid += evRes.evGridDyn;
+
+    pd.hpKwh += hpLoad;
+    pd.hpCost += hpCostDyn;
+    pd.hpSavings += hpSavings;
+    pd.hpSolar += hpFromSolar;
+    pd.hpGrid += hpFromGrid;
+
+    pd.batCharge += (batRes.batChargeSolarVal + batRes.batChargeGridVal);
+    pd.batDischarge += (batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal);
+    pd.batCost += batCostDyn;
+    pd.batSavings += batSavings;
+    pd.batChargeCost += (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice);
+    pd.batDischargeValue += (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
+    pd.batChargeGrid += batRes.batChargeGridVal;
+    pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
+    pd.batChargeSolar += batRes.batChargeSolarVal;
+    pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
+    pd.batDischargeToGrid += batRes.batDischargeToGridVal;
+
+    pd.baseloadCost += rawImp * allIn;
+    pd.baseloadReturn += rawExp * returnPrice;
+    pd.baseloadImportSavings += baseloadImportSavings;
+    pd.baseloadExportSavings += baseloadExportSavings;
+
+    if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
+    dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
+  };
+
   // ── HOOFDLOOP (8760 UUR REEKS) ──
   simData.forEach(row => {
     const { hour, month, dow, dayKey, epexKey: tsKey } = rowMeta(row);
@@ -104,16 +244,6 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     let spot = epexHistory.has(tsKey) ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
     if (epexHistory.has(tsKey)) epexReal++; else epexFall++;
     if (spot > 0 && stressMultiplier !== 1.0) spot *= stressMultiplier;
-
-    let batChargeVal = 0;
-    let batDischargeVal = 0;
-    let batChargeSolarVal = 0;
-    let batChargeGridVal = 0;
-    let batDischargeToHouseVal = 0;
-    let batDischargeToGridVal = 0;
-
-    let batChargeSolarFxVal = 0;
-    let batDischargeToHouseFxVal = 0;
 
     if (full) {
       hourly[hour].spots.push(spot);
@@ -133,14 +263,14 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     impDyn = evRes.impDyn; expDyn = evRes.expDyn;
     impFx = evRes.impFx; expFx = evRes.expFx;
 
-    // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
-    const batRes = applyBatteryState(
+    // Thuisaccu processing (Volledig lineair, Vector 2 Fix) — context-object i.p.v. 18 args.
+    const batRes = applyBatteryState({
       cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
       dayKey, hour, spot,
       batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
-      batSoC, batSoCFx, batGridDrawn[dayKey] || 0,
-      impDyn, expDyn, impFx, expFx
-    );
+      batSoC, batSoCFx, batGridDrawnVal: batGridDrawn[dayKey] || 0,
+      impDyn, expDyn, impFx, expFx,
+    });
     impDyn = batRes.impDyn; expDyn = batRes.expDyn;
     impFx = batRes.impFx; expFx = batRes.expFx;
     batSoC = batRes.batSoC; batSoCFx = batRes.batSoCFx;
@@ -162,102 +292,11 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
-    if (full) {
-      hourly[hour].imports.push(dynImp);
-      hourly[hour].exports.push(dynExp);
-      const allIn = basePrice + eb;
-      const returnPrice = (spot / 1.21) - exportMarkup;
-      const dynHrCost = dynImp * allIn - dynExp * returnPrice;   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
-      const tariff = isPeak ? fixedPeakRate : fixedDalRate;
-      const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
-
-      hourly[hour].dynCosts.push(dynHrCost);
-      hourly[hour].fixedCosts.push(fxHrCost);
-      weekly[dow].dynCosts.push(dynHrCost);
-      weekly[dow].fixedCosts.push(fxHrCost);
-
-      // Collect simulated hardware values for 24h profile
-      hourly[hour].solar.push(row.solar_yield || 0);
-      hourly[hour].ev.push(evRes.evVal);
-      hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
-      hourly[hour].batCharge.push(batRes.batChargeVal);
-      hourly[hour].batDischarge.push(batRes.batDischargeVal);
-
-      // Detailed hourly calculations for savings breakdown
-      const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
-
-      const evCostFx = evRes.evGridFx * tariff - evRes.evSolarFx * fixedReturnPrice;
-      const evCostDyn = evRes.evGridDyn * allIn - evRes.evSolarDyn * returnPrice;
-      const evSavings = evCostFx - evCostDyn;
-
-      const hpCostFx = hpFromGrid * tariff - hpFromSolar * fixedReturnPrice;
-      const hpCostDyn = hpFromGrid * allIn - hpFromSolar * returnPrice;
-      const hpSavings = hpCostFx - hpCostDyn;
-
-      const batCostFx = batRes.batChargeSolarFxVal * fixedReturnPrice - batRes.batDischargeToHouseFxVal * tariff;
-      const batCostDyn = (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice) - (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
-      const batSavings = batCostFx - batCostDyn;
-
-      const baseloadImportSavings = rawImp * (tariff - allIn);
-      const baseloadExportSavings = rawExp * (returnPrice - fixedReturnPrice);
-
-      if (!dayTot[dayKey]) {
-        dayTot[dayKey] = {
-          dynCost: 0, fixedCost: 0, impKwh: 0, expKwh: 0, spotSum: 0, spotN: 0, impCost: 0, expRev: 0,
-          rawImp: 0, rawExp: 0, solarYield: 0,
-          evKwh: 0, evCost: 0, evSavings: 0, evSolar: 0, evGrid: 0,
-          hpKwh: 0, hpCost: 0, hpSavings: 0, hpSolar: 0, hpGrid: 0,
-          batCharge: 0, batDischarge: 0, batCost: 0, batSavings: 0,
-          batChargeCost: 0, batDischargeValue: 0,
-          batChargeGrid: 0, batChargeGridCost: 0, batChargeSolar: 0,
-          batDischargeToHouse: 0, batDischargeToGrid: 0,
-          baseloadCost: 0, baseloadReturn: 0,
-          baseloadImportSavings: 0, baseloadExportSavings: 0
-        };
-      }
-      const pd = dayTot[dayKey];
-      pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
-      pd.impKwh += dynImp; pd.expKwh += dynExp;
-      pd.impCost += dynImp * allIn;
-      pd.expRev += dynExp * returnPrice;
-      if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
-
-      pd.rawImp += rawImp;
-      pd.rawExp += rawExp;
-      pd.solarYield += (row.solar_yield || 0);
-      
-      pd.evKwh += (evRes.evGridDyn + evRes.evSolarDyn);
-      pd.evCost += evCostDyn;
-      pd.evSavings += evSavings;
-      pd.evSolar += evRes.evSolarDyn;
-      pd.evGrid += evRes.evGridDyn;
-      
-      pd.hpKwh += hpLoad;
-      pd.hpCost += hpCostDyn;
-      pd.hpSavings += hpSavings;
-      pd.hpSolar += hpFromSolar;
-      pd.hpGrid += hpFromGrid;
-      
-      pd.batCharge += (batRes.batChargeSolarVal + batRes.batChargeGridVal);
-      pd.batDischarge += (batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal);
-      pd.batCost += batCostDyn;
-      pd.batSavings += batSavings;
-      pd.batChargeCost += (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice);
-      pd.batDischargeValue += (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
-      pd.batChargeGrid += batRes.batChargeGridVal;
-      pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
-      pd.batChargeSolar += batRes.batChargeSolarVal;
-      pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
-      pd.batDischargeToGrid += batRes.batDischargeToGridVal;
-      
-      pd.baseloadCost += rawImp * allIn;
-      pd.baseloadReturn += rawExp * returnPrice;
-      pd.baseloadImportSavings += baseloadImportSavings;
-      pd.baseloadExportSavings += baseloadExportSavings;
-
-      if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
-      dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
-    }
+    if (full) accumulateFull({
+      hour, dow, dayKey, isPeak, spot, dynImp, dynExp, basePrice,
+      rawImp, rawExp, solarYield: row.solar_yield || 0,
+      hpLoad, hpFromSolar, hpFromGrid, evRes, batRes, impFx, expFx,
+    });
   });
 
   // Jaarnormalisatie-schaling (factor uit de context)

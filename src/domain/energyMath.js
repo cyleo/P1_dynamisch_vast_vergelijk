@@ -1,7 +1,9 @@
-import {
-  EV_MAX_CHARGE_KW, BATTERY_C_RATE, EVENING_PEAK_MULT, HEATPUMP_HDD_FACTOR,
-  ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES
-} from "./constants.js";
+import { EV_MAX_CHARGE_KW, HEATPUMP_HDD_FACTOR } from "./constants.js";
+// NB: de precompute-helpers hieronder roepen getFallbackSpot() aan, dat in engine.js leeft.
+// Bewust GEEN `import { getFallbackSpot } from "./engine.js"`: dat introduceert een cirkel-
+// import (engine importeert deze module) die esbuild's symbool-resolutie verstoort en
+// gelijknamige functies in andere modules (bv. _updateSimHeader in charts.js) laat sneuvelen.
+// In de gebundelde IIFE-scope is de gehoiste getFallbackSpot gewoon bereikbaar.
 
 /**
  * Lazily computes and caches local datetime metadata for a given row.
@@ -215,8 +217,13 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
     const solUsed = Math.min(evD.solar, expDyn);
     expDyn -= solUsed;
     impDyn += evD.solar - solUsed;
-    evGridDyn = evD.grid;
-    evSolarDyn = evD.solar;
+    // Attributie op ECHTE bron, niet op het plan: het EV-schema plant zonne-laden op het
+    // ruwe export-overschot, maar warmtepomp/accu kunnen datzelfde overschot al hebben
+    // opgegeten → het tekort (evD.solar − solUsed) komt dan van het net. Voorheen werd
+    // dit als "zon" geteld → overschatte zelfconsumptie in de breakdown (de rekening was
+    // al correct, want impDyn/expDyn kloppen). Nu telt alleen het écht gebruikte zon.
+    evSolarDyn = solUsed;
+    evGridDyn = evD.grid + (evD.solar - solUsed);
     evVal = evD.grid + evD.solar;
   }
 
@@ -226,8 +233,8 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
     const solUsedFx = Math.min(evF.solar, expFx);
     expFx -= solUsedFx;
     impFx += evF.solar - solUsedFx;
-    evGridFx = evF.grid;
-    evSolarFx = evF.solar;
+    evSolarFx = solUsedFx;
+    evGridFx = evF.grid + (evF.solar - solUsedFx);
   }
 
   return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
@@ -236,14 +243,41 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
 /**
  * Simulates battery charging/discharging logic for a specific hour.
  * Implements self-consumption, grid charging, and grid exporting constraints.
+ *
+ * Neemt één context-object (i.p.v. 18 positionele argumenten) om verwisseling van
+ * parameters onmogelijk te maken. De velden:
+ * @param {Object}  ctx
+ * @param {Object}  ctx.cfg            - simulatieconfig (batCapacity/batPower/batEfficiency/hasBattery)
+ * @param {number}  ctx.eb             - energiebelasting €/kWh
+ * @param {number}  ctx.markupBtw      - inkoop-opslag €/kWh (incl. BTW)
+ * @param {number}  ctx.exportMarkup   - teruglever-opslag €/kWh (incl. BTW)
+ * @param {boolean} ctx.gridCharge     - mag van het net laden (kosten/winst-modus)
+ * @param {boolean} ctx.gridExport     - mag aan het net verkopen (winst-modus)
+ * @param {string}  ctx.dayKey         - lokale dagsleutel YYYY-MM-DD
+ * @param {number}  ctx.hour           - uur 0–23
+ * @param {number}  ctx.spot           - spotprijs dit uur (incl. BTW, excl. EB)
+ * @param {Object}  ctx.batChargeHrs   - per dag: Set van laad-uren
+ * @param {Object}  ctx.batDischargeHrs- per dag: Set van net-ontlaad-uren (winst)
+ * @param {Object}  ctx.batDayMinAllin - per dag: laagste laad-all-in
+ * @param {Object}  ctx.batGridBudget  - per dag: max van het net te trekken kWh
+ * @param {Object}  ctx.batStoreCap    - per dag: SoC-cap (dag-behoefte [+ export-ruimte])
+ * @param {Object}  ctx.batSelfReserve - per dag: voor eigen verbruik gereserveerde SoC
+ * @param {number}  ctx.batSoC         - actuele SoC dynamische accu
+ * @param {number}  ctx.batSoCFx       - actuele SoC vaste-contract-accu
+ * @param {number}  ctx.batGridDrawnVal- reeds van het net getrokken kWh vandaag
+ * @param {number}  ctx.impDyn,expDyn,impFx,expFx - uur-volumes vóór accu
+ * @returns {Object} bijgewerkte volumes/SoC + per-stroom telmetrieken
  */
-export function applyBatteryState(
-  cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
-  dayKey, hour, spot, 
-  batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
-  batSoC, batSoCFx, batGridDrawnVal,
-  impDyn, expDyn, impFx, expFx
-) {
+export function applyBatteryState(ctx) {
+  const {
+    cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+    dayKey, hour, spot,
+    batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
+    batGridDrawnVal,
+  } = ctx;
+  // Gemuteerde waarden krijgen lokale let-bindings (SoC + uur-volumes lopen door de logica).
+  let { batSoC, batSoCFx, impDyn, expDyn, impFx, expFx } = ctx;
+
   let batChargeVal = 0, batDischargeVal = 0, batChargeSolarVal = 0, batChargeGridVal = 0;
   let batDischargeToHouseVal = 0, batDischargeToGridVal = 0;
   let batChargeSolarFxVal = 0, batDischargeToHouseFxVal = 0;
@@ -347,4 +381,18 @@ export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_
   }
   return { dynImp, dynExp };
 }
+
+/**
+ * ISO week number helper (ISO 8601)
+ */
+export function isoWeek(dateStr) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const diff = d - startOfWeek1;
+  const week = Math.floor(diff / (7 * 86400000)) + 1;
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
 

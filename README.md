@@ -14,7 +14,7 @@ Upload je P1-data (of koppel Home Assistant) en zie direct:
 - **Jaarkosten vast vs. dynamisch** — tarieven instelbaar, leverancier-presets ingebouwd
 - **2027-model** — energiebelasting over bruto afname, geen saldering, vermindering energiebelasting verwerkt
 - **Hardware-simulaties** — warmtepomp, elektrische auto, thuisbatterij, zonnepanelen dimmen
-- **Sweet Spot Finder** — optimaal accuformaat met terugverdientijd
+- **Sweet Spot Finder** — optimaal accuformaat met degradatie-gecorrigeerde terugverdientijd (~2%/jr, levensduur-check)
 - **Jaarprognose** — minder dan een jaar data? Een seizoensprofiel vult de rest aan
 
 ### Werking van de app (animatie)
@@ -165,12 +165,13 @@ De app start met een realistisch jaarprofiel (`demo-year.js`): een prosument met
 
 ## Technisch
 
-- Gebouwd met modulaire ES Modules, gebundeld met `esbuild` naar één compact bestand (`dist/app.bundle.js`).
+- Gebouwd met modulaire ES Modules, gebundeld met `esbuild` naar één compact bestand (`app.js` in de root; door CI gegenereerd uit `src/`).
 - Geen externe runtime JS-afhankelijkheden, geen externe charting-library — custom SVG-grafieken.
-- Simulatie-engine (`_simulateCore`): één pure domeinfunctie, geen DOM-reads in de loop.
+- Simulatie-engine (`_simulateCore`): één pure domeinfunctie, geen DOM-reads in de loop; context-gedreven (DOM-vrij, Web-Worker-klaar).
 - EPEX-prijzen via Frank Energie GraphQL + EnergyZero; seizoensprofiel als fallback.
+- Slider-invoer wordt gethrottled (max. ~12 zware hersimulaties/seconde) zodat het slepen vloeiend blijft.
 - Automatische CI/CD workflow via Gitea Actions.
-- Validatietests in `_validate/` (Node.js, `npm test`).
+- Validatietests in `_validate/` (Node.js, `npm test`) — incl. een end-to-end slider-test die borgt dat o.a. de energiebelastingschuif de rekening daadwerkelijk beïnvloedt.
 
 ```
 index.html      — UI

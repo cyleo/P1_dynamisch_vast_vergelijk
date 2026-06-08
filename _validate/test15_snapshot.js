@@ -5,6 +5,14 @@ const { RUN, sandbox } = require('./harness');
 const CSV_FILE = path.join(__dirname, '..', 'home_assistant_export.csv');
 const SNAPSHOT_FILE = path.join(__dirname, 'snapshot_golden.json');
 
+// home_assistant_export.csv + snapshot_golden.json zijn lokale privacy-fixtures (mogelijk
+// echte verbruiksdata) en staan daarom NIET in de repo. Op een verse clone ontbreken ze →
+// sla deze golden-master-test netjes over i.p.v. de hele suite te laten falen.
+if (!fs.existsSync(CSV_FILE)) {
+  console.log("SKIP  test15_snapshot (home_assistant_export.csv niet aanwezig — lokale privacy-fixture, niet in de repo)");
+  process.exit(0);
+}
+
 const lines = fs.readFileSync(CSV_FILE, 'utf8').trim().split('\n');
 const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
 const entityIdx = headers.indexOf('entity_id');

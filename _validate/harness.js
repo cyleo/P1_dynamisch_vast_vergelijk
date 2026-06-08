@@ -73,6 +73,8 @@ const driver = `
       fullYearData: st.fullYearData, epexHistory: st.epexHistory, liveEnergyTax: st.liveEnergyTax };
   };
   globalThis.processHAStatistics = window.processHAStatistics;
+  globalThis.parseHAHistoryExportCSV = window.parseHAHistoryExportCSV;
+  globalThis.DEMO_ROLEMAP = window.DEMO_ROLEMAP;
 })();
 `;
 

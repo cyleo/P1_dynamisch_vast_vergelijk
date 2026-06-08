@@ -1,5 +1,11 @@
 import { appStore } from "./domain/store.js";
 
+// Premium inline SVG icons to replace emojis
+const ICON_CHECK = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+const ICON_WARN = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+const ICON_STAR = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-yellow);fill:var(--accent-yellow);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+const ICON_LIGHTBULB = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-yellow);"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg>`;
+
 import { getFallbackSpot, buildSimContext, _simulateCore, getDayRows } from "./domain/engine.js";
 
 import {
@@ -22,17 +28,30 @@ import {
 
 import {
   EV_MAX_CHARGE_KW, BATTERY_C_RATE, EVENING_PEAK_MULT, HEATPUMP_HDD_FACTOR,
-  ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES
+  ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES, DEMO_ROLEMAP
 } from "./domain/constants.js";
 
 import {
   rowMeta, epexKey, toConsumerPrice, seasonOf,
   precomputeEVSchedules, precomputeBatterySchedule,
-  applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming
+  applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming,
+  isoWeek
 } from "./domain/energyMath.js";
 
 
-// Keep local let bindings for READS, but sync them via Pub/Sub to allow zero-risk refactoring
+// ── Store-mirror invariant (lees dit vóór je een van deze namen muteert) ──────────────
+// Deze lokale `let`-bindings zijn READ-ONLY spiegels van de appStore. Ze worden uitsluitend
+// bijgewerkt door de subscribe()-callback hieronder, telkens als iemand appStore.setState()
+// aanroept. De engine (buildSimContext in engine.js) leest ZIJN waarden rechtstreeks uit de
+// store — NIET uit deze mirrors. Daarom geldt keihard:
+//
+//   ▸ Schrijf NOOIT `liveEnergyTax = …` (of een andere mirror) met een bare assignment.
+//     Gebruik altijd `appStore.setState({ liveEnergyTax: … })`; de subscriber spiegelt 'm.
+//
+// Een bare assignment werkt de mirror wél bij (zodat app.js-reads kloppen) maar laat de
+// store stil → de engine rekent door met de oude waarde. Dat was bug B1 (de energie-
+// belastingschuif had geen effect op de rekening). De enige uitzondering is de test-harness
+// (__setTestState), die bewust mirror én store samen zet.
 let {
   energyData, overviewMode, overviewMetric, activeViewType, sankeyInterval,
   sankeyValue, simMode, simDrillDay, activeSimulation, profileVisibleLines,
@@ -180,16 +199,28 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Setup Events
-// Coalesceert zware hersimulaties tot max. één per animatieframe. Een slider-`input`
-// vuurt continu tijdens het slepen (elke pixel); zonder dit draait runSimulation()
-// (5× _simulateCore over 8760u + alle charts) tientallen keren per seconde → UI-jank.
-// De badge-update blijft synchroon (directe feedback); alleen de simulatie wordt uitgesteld.
-// Zelf-pacend: een nieuwe sim wordt pas gepland nadat de vorige (en de daarna afgehandelde
-// input-events) klaar zijn → de hoofdthread blijft responsief tussen frames.
-let _simRaf = 0;
+// Throttelt zware hersimulaties. Een slider-`input` vuurt continu tijdens het slepen
+// (~60×/s); zonder dit draait runSimulation() (5× _simulateCore over 8760u + 6 charts)
+// elke frame → hoofdthread-jank. We draaien hooguit één keer per SIM_MIN_INTERVAL_MS,
+// frame-uitgelijnd, met een gegarandeerde trailing run aan het eind van een sleep.
+// Een THROTTLE (niet een debounce): zo blijft de grafiek live meebewegen tijdens het
+// slepen (~12 fps voor de zware sim) i.p.v. pas te updaten ná het loslaten.
+// De badge-update blijft volledig synchroon (directe feedback; zie de input-listener).
+// Toekomst: verplaats _simulateCore naar een Web Worker (de engine is al ctx-puur /
+// DOM-vrij) → de hoofdthread blijft dan 60 fps ongeacht de datasetgrootte.
+const SIM_MIN_INTERVAL_MS = 80;
+let _simRaf = 0, _simTrailing = 0, _simLastRun = 0;
 function scheduleSim() {
-  if (_simRaf) return;
-  _simRaf = requestAnimationFrame(() => { _simRaf = 0; runSimulation(); });
+  const since = Date.now() - _simLastRun;
+  const fire = () => {
+    if (_simRaf) return;
+    _simRaf = requestAnimationFrame(() => { _simRaf = 0; _simLastRun = Date.now(); runSimulation(); });
+  };
+  if (since >= SIM_MIN_INTERVAL_MS) {
+    fire();                                  // genoeg tijd verstreken → meteen (frame-aligned)
+  } else if (!_simTrailing) {
+    _simTrailing = setTimeout(() => { _simTrailing = 0; fire(); }, SIM_MIN_INTERVAL_MS - since);
+  }
 }
 
 function setupEventListeners() {
@@ -239,14 +270,14 @@ function setupEventListeners() {
       if (!el) return;
       const hasSensor = (document.getElementById("sel-solar")?.value || "") !== "";
       const sensorNote = hasSensor
-        ? "✓ Omvormer-sensor gekoppeld — nauwkeurige berekening."
-        : "⚠ Geen omvormer-sensor — schatting op basis van P1-meterdata.";
+        ? `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);margin-right:0.25rem;"><polyline points="20 6 9 17 4 12"></polyline></svg> Omvormer-sensor gekoppeld — nauwkeurige berekening.`
+        : `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Geen omvormer-sensor — schatting op basis van P1-meterdata.`;
       if (v === "off") { el.style.display = "none"; return; }
       el.style.display = "block";
       if (v === "dim") {
         el.innerHTML = `<strong>Dimmen</strong>: de omvormer regelt automatisch af tot het momentele huisverbruik. Zonne-energie voedt nog steeds het huis — alleen het <em>overschot</em> dat naar het net zou gaan, wordt onderdrukt.<br>Effect op dynamisch: <strong>export = 0, import ≈ 0</strong> wanneer zonneopwek ≥ huisverbruik.<br><em>${sensorNote}</em>`;
       } else {
-        el.innerHTML = `<strong>Uitschakelen</strong>: omvormer compleet uit. Het huis trekt in die uren <em>alles</em> van het net, inclusief wat de panelen normaal zelf opwekten.<br>Effect op dynamisch: <strong>export = 0, import = volledig huisverbruik</strong> van het net.<br>${hasSensor ? `✓ Met sensor kan echt huisverbruik berekend worden.` : `⚠ Zonder omvormer-sensor is de berekening minder nauwkeurig (zelf-verbruik van zonne is onbekend).`}`;
+        el.innerHTML = `<strong>Uitschakelen</strong>: omvormer compleet uit. Het huis trekt in die uren <em>alles</em> van het net, inclusief wat de panelen normaal zelf opwekten.<br>Effect op dynamisch: <strong>export = 0, import = volledig huisverbruik</strong> van het net.<br>${hasSensor ? `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);margin-right:0.25rem;"><polyline points="20 6 9 17 4 12"></polyline></svg> Met sensor kan echt huisverbruik berekend worden.` : `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Zonder omvormer-sensor is de berekening minder nauwkeurig (zelf-verbruik van zonne is onbekend).`}`;
       }
     };
     solarModeEl.addEventListener("change", updateDimmingExplain);
@@ -300,6 +331,89 @@ function setupEventListeners() {
   document.getElementById("explain-backdrop")?.addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeHardwareExplainer();
   });
+
+  // --- Dynamic HTML bindings previously using inline onclick/onchange ---
+  document.getElementById('tab-direct')?.addEventListener('click', () => {
+    const fn = window.showModalTab || function(t) {
+      document.getElementById('modal-tab-direct').style.display = t === 'direct' ? '' : 'none';
+      document.getElementById('modal-tab-manual').style.display = t === 'manual' ? '' : 'none';
+      document.getElementById('tab-direct').className = t === 'direct' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('tab-manual').className = t === 'manual' ? 'btn-primary' : 'btn-secondary';
+    };
+    fn('direct');
+  });
+  document.getElementById('tab-manual')?.addEventListener('click', () => {
+    const fn = window.showModalTab || function(t) {
+      document.getElementById('modal-tab-direct').style.display = t === 'direct' ? '' : 'none';
+      document.getElementById('modal-tab-manual').style.display = t === 'manual' ? '' : 'none';
+      document.getElementById('tab-direct').className = t === 'direct' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('tab-manual').className = t === 'manual' ? 'btn-primary' : 'btn-secondary';
+    };
+    fn('manual');
+  });
+  document.getElementById('copy-snippet-btn')?.addEventListener('click', copySetupSnippet);
+  document.getElementById('btn-view-simple')?.addEventListener('click', () => setViewMode('simple'));
+  document.getElementById('btn-view-advanced')?.addEventListener('click', () => setViewMode('advanced'));
+  
+  document.querySelectorAll('h2.section-title').forEach(el => {
+    el.addEventListener('click', () => toggleCard(el));
+  });
+
+  document.getElementById('btn-load-demo')?.addEventListener('click', loadDemoData);
+  
+  document.getElementById('prognose-toggle')?.addEventListener('change', runSimulation);
+  document.getElementById('supplier-preset')?.addEventListener('change', (e) => applySupplierPreset(e.target.value));
+  document.getElementById('solar-dimming-mode')?.addEventListener('change', runSimulation);
+  
+  document.getElementById('btn-explain-ev')?.addEventListener('click', () => showHardwareExplainer('ev'));
+  document.getElementById('btn-explain-battery')?.addEventListener('click', () => showHardwareExplainer('battery'));
+  document.getElementById('btn-explain-heatpump')?.addEventListener('click', () => showHardwareExplainer('heatpump'));
+  
+  document.getElementById('dt-toggle-btn')?.addEventListener('click', () => {
+    // Note: digitalTwinEnabled is local to app.js
+    toggleDigitalTwin(!digitalTwinEnabled);
+  });
+
+  ['imp','exp','spot','solar','ev','hp','bat'].forEach(l => {
+    document.getElementById('legend-' + l)?.addEventListener('click', () => toggleProfileLine(l));
+  });
+
+  ['bars','sankey'].forEach(v => {
+    document.getElementById('ov-btn-view-' + v)?.addEventListener('click', () => setOverviewViewType(v));
+  });
+
+  ['day','week','month'].forEach(m => {
+    document.getElementById('ov-btn-' + m)?.addEventListener('click', () => setOverviewMode(m));
+    document.getElementById('sim-btn-' + m)?.addEventListener('click', () => setSimMode(m));
+  });
+
+  ['energy','cost','savings'].forEach(m => {
+    document.getElementById('ov-btn-' + m)?.addEventListener('click', () => setOverviewMetric(m));
+  });
+
+  ['year','month','week','day'].forEach(i => {
+    document.getElementById('sk-btn-' + i)?.addEventListener('click', () => setSankeyInterval(i));
+  });
+
+  document.getElementById('sk-nav-prev')?.addEventListener('click', () => navigateSankey(-1));
+  document.getElementById('sk-nav-next')?.addEventListener('click', () => navigateSankey(1));
+
+  document.getElementById('sim-back-btn')?.addEventListener('click', () => {
+    appStore.setState({simDrillDay: null});
+    renderSimChart();
+  });
+
+  document.getElementById('hdr-fixed-net-energy')?.addEventListener('click', () => toggleTableDetail('hdr-fixed-net-energy', 'fixed-net-detail'));
+  document.getElementById('hdr-fixed-vaste-lasten')?.addEventListener('click', () => toggleTableDetail('hdr-fixed-vaste-lasten', 'fixed-lasten-detail'));
+  document.getElementById('hdr-dyn-net-energy')?.addEventListener('click', () => toggleTableDetail('hdr-dyn-net-energy', 'dyn-net-detail'));
+  document.getElementById('tbl-dyn-afname-row')?.addEventListener('click', (e) => {
+    toggleAfnameDetail();
+    e.stopPropagation();
+  });
+  document.getElementById('hdr-dyn-vaste-lasten')?.addEventListener('click', () => toggleTableDetail('hdr-dyn-vaste-lasten', 'dyn-lasten-detail'));
+
+  document.getElementById('btn-download-csv')?.addEventListener('click', downloadDataWithPrices);
+  // --- End Dynamic Bindings ---
 
   // Wegklik-knoppen voor uitleg/waarschuwingen adviseren
   initDismissHandlers();
@@ -400,7 +514,7 @@ function updateBatModeHint() {
   const hints = {
     zelf: `Alléén zon opslaan en ontladen voor eigen verbruik — robuust en voorspelbaar.`,
     kosten: `Laadt óók goedkoop van het net, maar alleen voor eigen verbruik (geen teruglevering).`,
-    winst: `⚠️ Onder bruto-EB (2027) levert teruglevering minder op dan zelfverbruik, dus op normale prijzen komt dit vrijwel gelijk uit met "Kostenbewust". Echt voordeel pas bij flinke prijspieken.`,
+    winst: `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Onder bruto-EB (2027) levert teruglevering minder op dan zelfverbruik, dus op normale prijzen komt dit vrijwel gelijk uit met "Kostenbewust". Echt voordeel pas bij flinke prijspieken.`,
   };
   el.innerHTML = hints[mode] || "";
   el.style.display = el.innerHTML ? "block" : "none";
@@ -410,7 +524,7 @@ function copySetupSnippet() {
   const snippet = `http:\n  cors_allowed_origins:\n    - ${origin}`;
   navigator.clipboard.writeText(snippet).then(() => {
     const btn = document.getElementById("copy-snippet-btn");
-    btn.textContent = "Gekopieerd! ✓";
+    btn.textContent = "Gekopieerd!";
     setTimeout(() => btn.textContent = "Kopieer naar klembord", 2000);
   });
 }
@@ -464,24 +578,30 @@ function processFile(file) {
         for (const r of parsed) merged.set(r.timestamp, r);
         
         const oldUntangle = energyData.untangle;
-        appStore.setState({ energyData: Array.from(merged.values()) })
+        const sorted = Array.from(merged.values())
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        sorted.untangle = parsed.untangle || oldUntangle;
         
-        energyData.untangle = parsed.untangle || oldUntangle;
+        appStore.setState({ energyData: sorted });
 
         const span = energyData.length > 0
           ? ` (${new Date(energyData[0].timestamp).toLocaleDateString("nl-NL")} t/m ${new Date(energyData[energyData.length - 1].timestamp).toLocaleDateString("nl-NL")})`
           : "";
-        document.getElementById("data-status").textContent =
-          `✓ ${file.name} — ${parsed.length} records · ${energyData.length} totaal${span}`;
+        document.getElementById("data-status").innerHTML =
+          `${ICON_CHECK} <span>${file.name} — ${parsed.length} records · ${energyData.length} totaal${span}</span>`;
         
         const untangle = energyData.untangle || { active: false };
         updateDigitalTwinBanner(untangle);
         
         runSimulation();
       } catch (error) {
-        console.error("Parse error:", error);
-        showUploadError(error.message);
+        // Door de gebruiker geannuleerde koppelmodal is geen fout → stille, nette reset.
+        if (error && /geannuleerd/i.test(error.message || "")) {
+          document.getElementById("data-status").textContent = "Koppeling geannuleerd.";
+        } else {
+          console.error("Parse error:", error);
+          showUploadError(error.message);
+        }
       } finally {
         resolve();
       }
@@ -489,6 +609,26 @@ function processFile(file) {
     reader.onerror = () => { showUploadError("Bestand kon niet gelezen worden."); resolve(); };
     reader.readAsText(file);
   });
+}
+
+// Slimme eerste gok voor de sensor→rol-koppeling op basis van de entity_id-namen (NL+EN).
+// Alles is in de koppelmodal nog aanpasbaar; dit bespaart de gebruiker alleen handwerk.
+function guessRolesFromEntities(entities) {
+  const find = (...pats) => entities.find(e => {
+    const s = e.toLowerCase();
+    return pats.some(p => s.includes(p));
+  }) || "";
+  return {
+    imp1: find("import_tariff_1", "import_t1", "afname_tarief_1", "afname_t1", "verbruik_piek"),
+    imp2: find("import_tariff_2", "import_t2", "afname_tarief_2", "afname_t2", "verbruik_dal"),
+    exp1: find("export_tariff_1", "export_t1", "teruglevering_tariff_1", "teruglever_t1"),
+    exp2: find("export_tariff_2", "export_t2", "teruglevering_tariff_2", "teruglever_t2"),
+    solar: find("solar", "_pv", "zon", "opwek", "envoy", "inverter", "omvormer"),
+    ev: find("laadpaal", "wallbox", "charger", "myenergi", "zappi", "wallbox"),
+    hp: find("warmtepomp", "heatpump", "altherma", "nibe", "compressor"),
+    batIn: find("aggr_charge", "_charge", "laden", "bat_in", "battery_charge"),
+    batOut: find("aggr_discharge", "discharge", "ontladen", "bat_out", "battery_discharge"),
+  };
 }
 
 async function parseAutoCSVAsync(text) {
@@ -501,7 +641,7 @@ async function parseAutoCSVAsync(text) {
   if (headers[0].toLowerCase() === "entity_id" &&
     headers[1].toLowerCase() === "type" &&
     headers[2].toLowerCase() === "unit") {
-    return await parseHAStatisticsWideCSVAsync(lines, sep, headers);
+    return await parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal);
   }
 
   if (headers.some(h => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
@@ -511,7 +651,29 @@ async function parseAutoCSVAsync(text) {
   if (headers[0].toLowerCase() === "entity_id" &&
     headers[1].toLowerCase() === "state" &&
     headers[2].toLowerCase() === "last_changed") {
-    return parseHAHistoryExportCSV(lines, sep, headers, _lastRoleMap || DEMO_ROLEMAP, digitalTwinEnabled);
+    // Lange HA-historie-export (entity_id,state,last_changed): de kolommen dragen geen
+    // rol-info. Laat de gebruiker de sensoren handmatig koppelen — net als bij de
+    // HA-koppeling en de brede-CSV-import. Voorheen viel dit pad stil terug op DEMO_ROLEMAP
+    // (demo-sensornamen) → bij afwijkende sensornamen kwam er niets binnen.
+    const entities = [...new Set(lines.slice(1)
+      .map(l => l.split(sep)[0]?.trim()).filter(Boolean))];
+    if (entities.length === 0) throw new Error("Geen sensoren (entity_id) gevonden in de CSV.");
+
+    const guesses = guessRolesFromEntities(entities);
+    // Eerdere koppeling (bijv. van een HA-import) als startpunt, indien de sensoren matchen.
+    if (_lastRoleMap) for (const role of Object.keys(guesses)) {
+      if (_lastRoleMap[role] && entities.includes(_lastRoleMap[role])) guesses[role] = _lastRoleMap[role];
+    }
+
+    const selection = await showCsvMapModal(entities, guesses);
+    // selection = { imp1, imp2, exp1, exp2, solar, ev, hp, batIn, batOut } (rol → entity_id).
+    // Long-format CSV draagt geen eenheid → default kWh (gangbaar voor P1/energie-sensoren).
+    const roleMap = {
+      ...selection,
+      solarUnit: "kWh", evUnit: "kWh", hpUnit: "kWh", batInUnit: "kWh", batOutUnit: "kWh",
+    };
+    appStore.setState({ _lastRoleMap: roleMap });
+    return parseHAHistoryExportCSV(lines, sep, headers, roleMap, digitalTwinEnabled);
   }
 
   throw new Error("CSV-formaat niet herkend.");
@@ -574,7 +736,7 @@ async function handleHAConnect() {
   // file:// check
   if (window.location.protocol === "file:") {
     statusEl.innerHTML =
-      `⚠ Pagina geopend als bestand. Start een lokale server:<br>` +
+      `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Pagina geopend als bestand. Start een lokale server:<br>` +
       `<code style="display:block;margin:0.3rem 0;padding:0.3rem 0.5rem;background:rgba(0,0,0,0.4);border-radius:4px;">python3 -m http.server 8080</code>` +
       `Voeg <strong>http://localhost:8080</strong> toe aan <code>cors_allowed_origins</code> in HA.`;
     statusEl.style.color = "var(--accent-orange)";
@@ -584,7 +746,7 @@ async function handleHAConnect() {
   let cleanUrl = urlInput.replace(/\/$/, "");
   if (!/^https?:\/\//i.test(cleanUrl)) {
     if (window.location.protocol === "https:") {
-      statusEl.innerHTML = `⚠ <strong>Ongeldige URL:</strong> Geef een volledig adres op dat begint met <code>https://</code> (bijv. <code>https://ha.mydomain.nl</code>).`;
+      statusEl.innerHTML = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <strong>Ongeldige URL:</strong> Geef een volledig adres op dat begint met <code>https://</code> (bijv. <code>https://ha.mydomain.nl</code>).`;
       statusEl.style.color = "var(--accent-orange)";
       return;
     } else {
@@ -595,7 +757,7 @@ async function handleHAConnect() {
   // Mixed Content check: if hosted on HTTPS and HA URL starts with http://
   if (window.location.protocol === "https:" && cleanUrl.toLowerCase().startsWith("http://")) {
     statusEl.innerHTML =
-      `⚠ <strong>Mixed Content geblokkeerd!</strong><br>` +
+      `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <strong>Mixed Content geblokkeerd!</strong><br>` +
       `Je bezoekt deze site via HTTPS, maar probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.<br><br>` +
       `<strong>Oplossingen:</strong><br>` +
       `1. Gebruik een <code>https://</code> adres voor Home Assistant (bijv. via Nabu Casa of reverse proxy).<br>` +
@@ -618,7 +780,7 @@ async function handleHAConnect() {
       });
     } catch {
       statusEl.innerHTML =
-        `⚠ Verbinding mislukt (CORS preflight geweigerd).<br>` +
+        `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Verbinding mislukt (CORS preflight geweigerd).<br>` +
         `Voeg <code>${window.location.origin}</code> toe aan <code>cors_allowed_origins</code> in HA en herstart. ` +
         `<a href="#" onclick="showSetupModal('direct'); return false;" style="color:var(--accent-cyan);">Gids →</a>`;
       statusEl.style.color = "var(--accent-orange)";
@@ -722,7 +884,7 @@ async function handleHAConnect() {
         const label = isLive 
           ? `${s.id} [${s.unit} - live vermogen fallback]` 
           : (s.unit === "Wh" ? `${s.id} [Wh → kWh]` : s.id);
-        return `<option value="${s.id}" data-unit="${s.unit}"${s.id === selectedId ? " selected" : ""}>${label}${s.unavailable ? " ⚠ offline" : ""}</option>`;
+        return `<option value="${s.id}" data-unit="${s.unit}"${s.id === selectedId ? " selected" : ""}>${label}${s.unavailable ? " [offline]" : ""}</option>`;
       };
 
       const groupOpts = (arr) => {
@@ -741,7 +903,7 @@ async function handleHAConnect() {
 
       sel.innerHTML =
         `<option value="">${defaultLabel}</option>` +
-        (rec.length ? `<optgroup label="⭐ Aanbevolen (op basis van naam)">` + rec.map(opt).join("") + `</optgroup>` : "") +
+        (rec.length ? `<optgroup label="Aanbevolen (op basis van naam)">` + rec.map(opt).join("") + `</optgroup>` : "") +
         (other.length ? groupOpts(other) : "");
     };
 
@@ -772,7 +934,7 @@ async function handleHAConnect() {
     const offlineCount = kwhSensors.filter(s => s.unavailable).length;
     const offlineNote = offlineCount > 0 ? ` (${offlineCount} offline)` : "";
     const whNote = whSensors.length > 0 ? ` · ${whSensors.length} Wh-sensoren (omvormers) voor zonne-meting` : "";
-    statusEl.textContent = `✓ Verbonden — ${kwhSensors.length} kWh sensoren${offlineNote}${whNote}. Kies de juiste P1 sensoren hieronder.`;
+    statusEl.innerHTML = `${ICON_CHECK} <span>Verbonden — ${kwhSensors.length} kWh sensoren${offlineNote}${whNote}. Kies de juiste P1 sensoren hieronder.</span>`;
     statusEl.style.color = "var(--accent-green)";
     document.getElementById("ha-sensor-picker").style.display = "block";
     
@@ -791,7 +953,7 @@ function populateSensorSelect(selectId, options, selectedValue) {
   sel.innerHTML = `<option value="">— Niet gebruiken —</option>` +
     options.map(s =>
       `<option value="${s.id}"${s.id === selectedValue ? " selected" : ""}>` +
-      `${s.id}${s.unavailable ? " ⚠ offline" : ""}` +
+      `${s.id}${s.unavailable ? " [offline]" : ""}` +
       `</option>`
     ).join("");
 }
@@ -906,24 +1068,24 @@ async function handleHAImport() {
     const untangle = energyData.untangle || { active: false };
     updateDigitalTwinBanner(untangle);
 
-    statusEl.textContent = `✓ ${energyData.length} uurrecords geladen · EPEX prijzen ophalen…`;
+    statusEl.innerHTML = `${ICON_CHECK} <span>${energyData.length} uurrecords geladen · EPEX prijzen ophalen…</span>`;
     statusEl.style.color = "var(--accent-cyan)";
 
     // Fetch real EPEX prices for the loaded period in the background
     let successMsg = "";
     try {
       await fetchEPEXHistory(energyData[0].timestamp, energyData[energyData.length - 1].timestamp);
-      successMsg = `✓ ${energyData.length} uurrecords + ${epexHistory.size} echte EPEX-prijzen geladen (${days} dagen)`;
+      successMsg = `${ICON_CHECK} <span>${energyData.length} uurrecords + ${epexHistory.size} echte EPEX-prijzen geladen (${days} dagen)</span>`;
     } catch (_) {
-      successMsg = `✓ ${energyData.length} uurrecords geladen (EPEX-prijzen niet beschikbaar)`;
+      successMsg = `${ICON_CHECK} <span>${energyData.length} uurrecords geladen (EPEX-prijzen niet beschikbaar)</span>`;
     }
 
     if (untangle.batterySensorSuspect) {
       statusEl.innerHTML = `<strong>${successMsg}</strong><br>` +
-        `<span style="color:var(--accent-orange);font-size:0.78rem;">⚠ Batterij-sensoren controleren: ontladen > laden over de hele periode is fysiek onmogelijk. ` +
-        `Kies sensoren die beide aan de net-/AC-zijde meten (of verwissel in/uit).</span>`;
+        `<span style="color:var(--accent-orange);font-size:0.78rem;">${ICON_WARN} <span>Batterij-sensoren controleren: ontladen > laden over de hele periode is fysiek onmogelijk. ` +
+        `Kies sensoren die beide aan de net-/AC-zijde meten (of verwissel in/uit).</span></span>`;
     } else {
-      statusEl.textContent = successMsg;
+      statusEl.innerHTML = successMsg;
       statusEl.style.color = "var(--accent-green)";
     }
 
@@ -1141,16 +1303,16 @@ async function fetchTarieven() {
         epexHistory.set(epexKey(dt), marketInclBtw);
       });
 
-      status.textContent = `✓ Frank: EB = €${eb.toFixed(5)}/kWh · opslag = €${avgOpslag.toFixed(4)}/kWh · ${prices.length} uurprijzen geladen`;
+      status.innerHTML = `${ICON_CHECK} <span>Frank: EB = €${eb.toFixed(5)}/kWh · opslag = €${avgOpslag.toFixed(4)}/kWh · ${prices.length} uurprijzen geladen</span>`;
     }
 
     // ── 2. EnergyZero: historische EPEX voor geladen energieperiode ──────────
     if (energyData.length > 0) {
-      status.textContent += " · historische EPEX ophalen…";
+      status.innerHTML = status.innerHTML.replace("</span>", "") + " · historische EPEX ophalen…</span>";
       const fromISO = energyData[0].timestamp;
       const tillISO = energyData[energyData.length - 1].timestamp;
       await fetchEPEXHistory(fromISO, tillISO);
-      status.textContent += ` · ${epexHistory.size} uurprijzen totaal`;
+      status.innerHTML = `${ICON_CHECK} <span>Frank: EB = €${eb.toFixed(5)}/kWh · opslag = €${avgOpslag.toFixed(4)}/kWh · ${prices.length} uurprijzen geladen · ${epexHistory.size} uurprijzen totaal</span>`;
     }
 
     status.style.color = "var(--accent-green)";
@@ -1158,7 +1320,7 @@ async function fetchTarieven() {
 
   } catch (err) {
     console.error("fetchTarieven:", err);
-    status.textContent = "Ophalen mislukt: " + err.message;
+    status.innerHTML = `${ICON_WARN} <span>Ophalen mislukt: ${err.message}</span>`;
     status.style.color = "var(--accent-orange)";
   } finally {
     btn.disabled = false;
@@ -1616,6 +1778,15 @@ function downloadDataWithPrices() {
 
 const BATTERY_SWEEP_CAPS = [2, 5, 10, 15, 20];   // kWh
 const BATTERY_COST_PER_KWH = 450;                // €/kWh investering (industriestandaard)
+// ── ROI-realisme: degradatie + levensduur ────────────────────────────────────
+// Een LFP-thuisaccu degradeert ~2%/jaar (≈80% restcapaciteit na ~15 jaar). De
+// terugverdientijd op basis van het 1e-jaars-voordeel is daardoor te optimistisch:
+// over de levensduur levert de accu gemiddeld minder. We schalen het jaarvoordeel met
+// de gemiddelde bruikbare capaciteit over de levensduur (1 − degr×levensduur/2 ≈ 0,85)
+// en markeren paybacks die de levensduur overschrijden als "niet terugverdiend".
+const BATTERY_LIFETIME_YEARS = 15;
+const BATTERY_DEGRADATION_PER_YEAR = 0.02;
+const BATTERY_AVG_CAPACITY_FACTOR = 1 - (BATTERY_DEGRADATION_PER_YEAR * BATTERY_LIFETIME_YEARS) / 2;   // ≈ 0,85
 
 function optimizeBatterySize() {
   const resEl = document.getElementById("battery-optimization-result");
@@ -1627,8 +1798,10 @@ function optimizeBatterySize() {
   }
 
   // EB + jaarprojectie synchroon met de hoofdsimulatie (read-only voor activeSimulation).
+  // De engine leest de EB uit de appStore (buildSimContext) — dus via setState, niet via
+  // een bare mirror-assignment (zie B1-fix: anders haalt de schuif de engine nooit).
   const ebEl = document.getElementById("energy-tax");
-  if (ebEl) liveEnergyTax = parseFloat(ebEl.value);
+  if (ebEl) appStore.setState({ liveEnergyTax: parseFloat(ebEl.value) });
   ensureFullYearData();
 
   const baseCfg = readSimConfig();
@@ -1648,11 +1821,15 @@ function optimizeBatterySize() {
       batEfficiency: baseCfg.batEfficiency, // UI-instelling
       batMode: baseCfg.batMode,            // UI-instelling
     });
-    const extra = baselineDyn - r.dynBill;      // ROI dynamic
+    const extra = baselineDyn - r.dynBill;      // ROI dynamic (1e-jaars meerwaarde)
     const extraFix = baselineFix - r.fixedBill; // ROI fixed (zelfconsumptie)
     const cost = cap * baseCfg.batCost;
-    const payback = extra > 0 ? cost / extra : Infinity;
-    const paybackFix = extraFix > 0 ? cost / extraFix : Infinity;
+    // Degradatie-gecorrigeerde terugverdientijd: het jaarvoordeel daalt mee met de
+    // capaciteit, dus rekenen we met het levensduur-gemiddelde (~85% van jaar 1).
+    const effExtra = extra * BATTERY_AVG_CAPACITY_FACTOR;
+    const effExtraFix = extraFix * BATTERY_AVG_CAPACITY_FACTOR;
+    const payback = effExtra > 0 ? cost / effExtra : Infinity;
+    const paybackFix = effExtraFix > 0 ? cost / effExtraFix : Infinity;
     return { cap, power: cap * 0.5, dynBill: r.dynBill, fixedBill: r.fixedBill, extra, extraFix, cost, payback, paybackFix };
   });
 
@@ -1685,7 +1862,7 @@ function renderBatteryOptimization(rows, type, resEl) {
   const body = rows.map((r, i) => {
     const sweet = i === sweetIdx;
     const bg = sweet ? "background:rgba(56,239,125,0.14);" : "";
-    const star = sweet ? " ⭐" : "";
+    const star = sweet ? ` ${ICON_STAR}` : "";
     const extraVal = type === "dyn" ? r.extra : r.extraFix;
     const paybackVal = type === "dyn" ? r.payback : r.paybackFix;
     const perKwh = r.cap > 0 ? extraVal / r.cap : 0;
@@ -1702,8 +1879,12 @@ function renderBatteryOptimization(rows, type, resEl) {
   const sweetExtra = sweet ? (type === "dyn" ? sweet.extra : sweet.extraFix) : 0;
   const contractLabel = type === "dyn" ? "dynamisch" : "vast";
 
+  // Payback is degradatie-gecorrigeerd (≈85% capaciteit over de levensduur). Overschrijdt
+  // hij de verwachte levensduur, dan verdient de accu zichzelf realistisch gezien niet terug.
+  const beyondLife = Number.isFinite(sweetPayback) && sweetPayback > BATTERY_LIFETIME_YEARS;
   const verdict = sweet && Number.isFinite(sweetPayback)
     ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweetExtra)}/jaar, terugverdiend in ${yrs(sweetPayback)} (bij €${currentCostPerKwh}/kWh).`
+      + (beyondLife ? ` <span style="color:var(--accent-orange);">⚠ Dat is lánger dan de verwachte levensduur (~${BATTERY_LIFETIME_YEARS} jr) — de accu verdient zichzelf binnen z'n leven waarschijnlijk niet terug.</span>` : "")
     : `Binnen dit scenario verdient geen enkele accu zichzelf terug op een ${contractLabel} contract (meerwaarde ≤ €0/jaar).`;
 
   const tabDynActive = type === "dyn" ? "active" : "";
@@ -1728,13 +1909,15 @@ function renderBatteryOptimization(rows, type, resEl) {
       ${verdict}
     </div>
     <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.45rem;line-height:1.45;">
-      💡 <strong>Let op:</strong> De besparingen worden berekend ten opzichte van dezelfde opstelling zónder thuisbatterij.
+      ${ICON_LIGHTBULB} <strong>Let op:</strong> De besparingen worden berekend ten opzichte van dezelfde opstelling zónder thuisbatterij.
       ${type === "dyn" 
         ? "Bij een <strong>dynamisch contract</strong> laadt de batterij op bij zonnestroom en bij goedkope uren van het net, en levert/ontlaadt bij dure uren."
         : "Bij een <strong>vast contract</strong> doet de batterij uitsluitend aan zelfconsumptie (zonne-overschot opslaan en 's avonds/nachts gebruiken)."}
     </p>
     <p style="font-size:0.66rem;color:var(--text-muted);margin-top:0.25rem;line-height:1.45;">
       Investering €${currentCostPerKwh}/kWh (indicatief). Vermogen = 0,5× capaciteit.
+      Terugverdientijd is gecorrigeerd voor ~${(BATTERY_DEGRADATION_PER_YEAR * 100).toFixed(0)}%/jaar degradatie
+      (gemiddeld ~${(BATTERY_AVG_CAPACITY_FACTOR * 100).toFixed(0)}% capaciteit over ${BATTERY_LIFETIME_YEARS} jaar).
     </p>`;
 }
 
@@ -1753,8 +1936,10 @@ function runSimulation() {
   if (energyData.length === 0) return;
 
   // ── Energiebelasting uit de schuif lezen (live-fetch werkt deze schuif bij) ──
+  // Via appStore.setState: de engine (buildSimContext) leest EB uit de store, niet uit
+  // de lokale mirror. Een bare `liveEnergyTax = …` zou de store stil laten → schuif dood.
   const ebEl = document.getElementById("energy-tax");
-  if (ebEl) liveEnergyTax = parseFloat(ebEl.value);
+  if (ebEl) appStore.setState({ liveEnergyTax: parseFloat(ebEl.value) });
 
   // ── Importcheck: opschonen + gaten vullen (idempotent per geladen dataset) ──
   ensureCleanData();
@@ -1801,9 +1986,9 @@ function runSimulation() {
   const pct = sim.epexPct;
   const taxEl = document.getElementById("tbl-dyn-tax-vol");
   if (taxEl) {
-    taxEl.title = pct === 100 ? "✓ 100% echte EPEX uurprijzen"
+    taxEl.title = pct === 100 ? "100% echte EPEX uurprijzen"
       : pct > 0 ? `${pct}% echte EPEX, ${100 - pct}% seizoensprofiel`
-        : "⚠ Geen echte EPEX — klik 'Ophalen' voor actuele tarieven";
+        : "Geen echte EPEX — klik 'Ophalen' voor actuele tarieven";
   }
 
   updateUIElements();
@@ -1981,7 +2166,11 @@ function updateUIElements() {
   // Export revenue: negative = you pay during negative EPEX hours (solar glut)
   const expRev = sim.dynamicRawExportRevenue;
   const expEl = document.getElementById("tbl-dyn-raw-exp");
-  expEl.textContent = expRev >= 0 ? `− € ${expRev.toFixed(2)}` : `+ € ${Math.abs(expRev).toFixed(2)} ⚠`;
+  if (expRev >= 0) {
+    expEl.textContent = `− € ${expRev.toFixed(2)}`;
+  } else {
+    expEl.innerHTML = `+ € ${Math.abs(expRev).toFixed(2)} <svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-left:0.35rem;vertical-align:-0.12em;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+  }
   expEl.style.color = expRev >= 0 ? "var(--accent-green)" : "var(--accent-orange)";
   expEl.title = expRev < 0 ? "Negatief: export tijdens uren met negatieve EPEX-prijs kost geld" : "";
   document.getElementById("tbl-dyn-net-kwh").textContent = `${sim.netDynamicKwh.toFixed(1)} kWh`;
@@ -2013,200 +2202,19 @@ function setSimMode(mode) {
   document.getElementById("sim-btn-week").className = mode === "week" ? "btn-primary" : "btn-secondary";
   document.getElementById("sim-btn-day").style.cssText = "padding:0.3rem 0.7rem;font-size:0.75rem;";
   document.getElementById("sim-btn-week").style.cssText = "padding:0.3rem 0.7rem;font-size:0.75rem;";
-  _updateSimHeader();
   renderSimChart();
 }
 
-function _updateSimHeader() {
-  const modeLabel = document.getElementById("sim-chart-mode-label");
-  const subtitle = document.getElementById("sim-chart-subtitle");
-  const backBtn = document.getElementById("sim-back-btn");
-  const pct = activeSimulation?.epexPct ?? 0;
-  const epexNote = pct === 100 ? "" : ` · ${pct > 0 ? pct + "% echte EPEX" : "⚠ gesimuleerde prijzen"}`;
 
-  if (simDrillDay) {
-    const d = new Date(simDrillDay + "T12:00:00");
-    modeLabel.textContent = d.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
-    subtitle.textContent = `Kosten per uur · groen = dynamisch goedkoper · rood = duurder${epexNote}`;
-    if (backBtn) backBtn.style.display = "";
-  } else {
-    modeLabel.textContent = simMode === "week" ? "Week" : "Dag";
-    subtitle.textContent = simMode === "week"
-      ? `Totale kosten per week · klik op een balk voor uurdetail${epexNote}`
-      : `Totale kosten per dag · klik op een dag voor uurdetail${epexNote}`;
-    if (backBtn) backBtn.style.display = "none";
-  }
-}
-
-// ── Simulatiechart ────────────────────────────────────────────────────────────
-
-// ── Drill-down: uurkosten voor één specifieke dag ────────────────────────────
-function _renderSimDrill() {
-  const dayData = activeSimulation?.perDayHourly?.[simDrillDay];
-  if (!dayData) { simDrillDay = null; renderSimChart(); return; }
-
-  const fixedPeak = parseFloat(document.getElementById("fixed-peak")?.value) || 0.27;
-  const fixedDal = parseFloat(document.getElementById("fixed-dal")?.value) || 0.24;
-
-  const dynVals = dayData.map(h => h ? h.dynCost : 0);
-  const fixedVals = dayData.map(h => {
-    if (!h) return 0;
-    const dt = new Date(simDrillDay + "T00:00:00"); dt.setHours(h ? dayData.indexOf(h) : 0);
-    // Use stored fixedCost
-    return h.fixedCost;
-  });
-  const spots = dayData.map(h => h ? h.spot : null);
-
-  const container = document.getElementById("sim-svg-container");
-  const svg = document.getElementById("sim-svg");
-  const tooltip = document.getElementById("sim-tooltip");
-  const W = container.clientWidth, H = container.clientHeight;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.innerHTML = "";
-
-  const PAD_L = 42, PAD_R = 40, PAD_T = 14, PAD_B = 28;
-  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
-  const N = 24, barSlot = cW / N, barW = Math.max(2, barSlot * 0.38);
-  const maxCost = Math.max(...dynVals.map(Math.abs), ...fixedVals.map(Math.abs), 0.001) * 1.2;
-  const zero = PAD_T + cH / 2;
-
-  const mk = (tag, a) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); Object.entries(a).forEach(([k, v]) => el.setAttribute(k, v)); return el; };
-  const yOf = v => zero - (v / maxCost) * (cH / 2);
-  const xOf = h => PAD_L + h * barSlot + barSlot / 2;
-
-  // Zero line
-  svg.appendChild(mk("line", { x1: PAD_L, y1: zero, x2: W - PAD_R, y2: zero, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
-  [0.5, 1].forEach(r => [1, -1].forEach(s => {
-    const y = zero - s * r * (cH / 2);
-    svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(255,255,255,0.04)" }));
-  }));
-
-  // Y-axis labels (left)
-  ["1", "0", "-1"].forEach((_, i) => {
-    const val = (1 - i) * maxCost, y = zero - (1 - i) * (cH / 2);
-    const lbl = mk("text", { x: PAD_L - 5, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
-    const fmt = v => v >= 0.01 ? `€${v.toFixed(2)}` : `${(v * 100).toFixed(1)}¢`;
-    lbl.textContent = fmt(Math.abs(val)) + (val < 0 ? " +" : (val > 0 ? " −" : ""));
-    svg.appendChild(lbl);
-  });
-
-  // Bars + background shading
-  for (let h = 0; h < 24; h++) {
-    const dyn = dynVals[h], fx = fixedVals[h], diff = dyn - fx;
-    svg.appendChild(mk("rect", { x: PAD_L + h * barSlot, y: PAD_T, width: barSlot, height: cH, fill: diff < 0 ? "rgba(56,239,125,0.05)" : "rgba(255,100,100,0.05)" }));
-    [[dyn, "rgba(0,242,254,0.75)", -barW * 0.55], [fx, "rgba(102,126,234,0.75)", barW * 0.05]].forEach(([val, col, off]) => {
-      const y1 = yOf(0), y2 = yOf(val), top = Math.min(y1, y2), ht = Math.abs(y2 - y1);
-      if (ht < 0.5) return;
-      svg.appendChild(mk("rect", { x: xOf(h) + off, y: top, width: barW, height: ht, fill: col, rx: "1" }));
-    });
-  }
-
-  // Price line + right axis
-  const validSpots = spots.filter(s => s != null);
-  if (validSpots.length) {
-    const pricesList = validSpots.map(s => toConsumerPrice(s)).concat([fixedPeak, fixedDal]);
-    let priceMin = 0.0;
-    let priceMax = 0.10;
-    pricesList.forEach(p => {
-      if (p > priceMax) priceMax = p;
-      if (p < priceMin) priceMin = p;
-    });
-    priceMax *= 1.15;
-    if (priceMin < 0) {
-      priceMin *= 1.15;
-    }
-    const yP = v => PAD_T + cH - ((v - priceMin) / (priceMax - priceMin)) * cH;
-    const pRX = W - PAD_R + 4;
-    [0, 0.5, 1].forEach(r => {
-      const val = priceMin + r * (priceMax - priceMin), y = yP(val);
-      svg.appendChild(mk("line", { x1: W - PAD_R, y1: y, x2: W - PAD_R + 3, y2: y, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
-      const lbl = mk("text", { x: pRX + 1, y: y + 3, "text-anchor": "start", fill: "rgba(255,255,255,0.35)", "font-size": "7" });
-      lbl.textContent = `€${val.toFixed(2)}`; svg.appendChild(lbl);
-    });
-    // Add zero line if price is negative
-    if (priceMin < 0) {
-      svg.appendChild(mk("line", {
-        x1: PAD_L,
-        y1: yP(0),
-        x2: W - PAD_R,
-        y2: yP(0),
-        stroke: "rgba(0, 242, 254, 0.25)",
-        "stroke-dasharray": "2,2",
-        "stroke-width": "1"
-      }));
-    }
-    const axL = mk("text", { x: W - 2, y: PAD_T + cH / 2, "text-anchor": "middle", fill: "rgba(255,255,255,0.25)", "font-size": "7", transform: `rotate(-90,${W - 2},${PAD_T + cH / 2})` });
-    axL.textContent = "€/kWh"; svg.appendChild(axL);
-    // Fixed tariff lines
-    [[fixedPeak, "piek", 0.65], [fixedDal, "dal", 0.35]].forEach(([t, lbl2, xf]) => {
-      const y = yP(t);
-      svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(102,126,234,0.45)", "stroke-width": "1", "stroke-dasharray": "4,3" }));
-      const lt = mk("text", { x: PAD_L + cW * xf, y: y - 2, "text-anchor": "middle", fill: "rgba(102,126,234,0.75)", "font-size": "7" });
-      lt.textContent = `vast ${lbl2} €${t.toFixed(2)}`; svg.appendChild(lt);
-    });
-    // Dynamic price step line
-    const pts = [];
-    spots.forEach((s, h) => {
-      if (s == null) return;
-      const x1 = PAD_L + h * barSlot, x2 = x1 + barSlot, y = yP(toConsumerPrice(s));
-      pts.push(pts.length === 0 ? `M${x1},${y}` : `L${x1},${y}`);
-      pts.push(`L${x2},${y}`);
-    });
-    if (pts.length) svg.appendChild(mk("path", { d: pts.join(" "), fill: "none", stroke: "rgba(0,242,254,0.8)", "stroke-width": "1.5" }));
-  }
-
-  // X labels
-  [0, 4, 8, 12, 16, 20, 23].forEach(h => {
-    const lbl = mk("text", { x: xOf(h), y: H - 8, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": "9" });
-    lbl.textContent = `${String(h).padStart(2, "0")}:00`; svg.appendChild(lbl);
-  });
-
-  // Hover overlays
-  for (let h = 0; h < 24; h++) {
-    const ov = mk("rect", { x: PAD_L + h * barSlot, y: PAD_T, width: barSlot, height: cH, fill: "transparent", cursor: "crosshair" });
-    ov.addEventListener("mouseenter", () => {
-      const dyn = dynVals[h], fx = fixedVals[h], diff = dyn - fx;
-      document.getElementById("sim-tt-hour").textContent = `${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00`;
-      document.getElementById("sim-tt-dyn").textContent = `€ ${Math.abs(dyn).toFixed(4)}/uur${dyn < 0 ? " (opbrengst)" : ""}`;
-      document.getElementById("sim-tt-fixed").textContent = `€ ${Math.abs(fx).toFixed(4)}/uur${fx < 0 ? " (opbrengst)" : ""}`;
-      const de = document.getElementById("sim-tt-diff");
-      de.textContent = (diff < 0 ? "−" : "+") + ` € ${Math.abs(diff).toFixed(4)} (${diff < 0 ? "dyn goedkoper" : "dyn duurder"})`;
-      de.style.color = diff < 0 ? "var(--accent-green)" : "var(--accent-orange)";
-      const s = spots[h];
-      document.getElementById("sim-tt-spot").textContent = s != null ? `Consumentenprijs: € ${toConsumerPrice(s).toFixed(3)}/kWh` : "";
-      tooltip.style.display = "block";
-      let tx = xOf(h) + 12; if (tx + 200 > W) tx = xOf(h) - 210;
-      tooltip.style.left = tx + "px"; tooltip.style.top = (PAD_T + 10) + "px";
-      ov.setAttribute("fill", "rgba(255,255,255,0.04)");
-    });
-    ov.addEventListener("mouseleave", () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); });
-    svg.appendChild(ov);
-  }
-}
 
 // ── Hardware effect chart ─────────────────────────────────────────────────────
 // ── Afname detail toggle ──────────────────────────────────────────────────────
 let afnameDetailOpen = false;
 
-let afnameDetailView = "hour"; // "day" | "hour"
-
-function setAfnameView(v) { afnameDetailView = v; renderAfnameDetail(); }
-
 // Maandelijkse kostenvergelijking: aggregeert perDayTotals (energiekosten excl.
 // vastrecht) per kalendermaand en tekent 12 gegroepeerde staafparen (vast vs dynamisch).
 
-const hwOpenState = { hp: false, ev: false, bat: false };
 
-// ISO week number helper (ISO 8601)
-function isoWeek(dateStr) {
-  const d = new Date(dateStr + "T12:00:00Z");
-  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const startOfWeek1 = new Date(jan4);
-  startOfWeek1.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
-  const diff = d - startOfWeek1;
-  const week = Math.floor(diff / (7 * 86400000)) + 1;
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
 
 function setOverviewMode(mode) {
   appStore.setState({ overviewMode: mode });
@@ -2427,6 +2435,9 @@ if (typeof window !== "undefined") {
   window.processHAStatistics = processHAStatistics;
   window.computeBillForConfig = computeBillForConfig;
   window.runSimulation = runSimulation;
+  window.parseHAHistoryExportCSV = parseHAHistoryExportCSV;
+  window.guessRolesFromEntities = guessRolesFromEntities;
+  window.DEMO_ROLEMAP = DEMO_ROLEMAP;
 
   
   window.__setTestState = function(state) {
@@ -2440,8 +2451,13 @@ if (typeof window !== "undefined") {
     if ('calibratedProfile' in state) calibratedProfile = state.calibratedProfile;
     // Also sync into appStore so engine.js (buildSimContext) picks up test values
     const storeUpdates = {};
-    for (const key of ['energyData', 'fullYearData', 'epexHistory', 'liveEnergyTax', 'yearScale', 'calibratedProfile']) {
+    for (const key of ['energyData', 'fullYearData', 'epexHistory', 'liveEnergyTax', 'yearScale', 'calibratedProfile', 'fullYearStamp']) {
       if (key in state) storeUpdates[key] = state[key];
+    }
+    // When fullYearData is explicitly set to null, also invalidate the cache stamp
+    if ('fullYearData' in state && state.fullYearData === null) {
+      fullYearStamp = "";
+      storeUpdates.fullYearStamp = "";
     }
     if (Object.keys(storeUpdates).length) appStore.setState(storeUpdates);
   };
@@ -2449,7 +2465,8 @@ if (typeof window !== "undefined") {
   window.__getTestState = function() {
     return {
       energyData, fullYearData, epexHistory, liveEnergyTax, yearScale,
-      dataQuality, dataMeta, calibratedProfile, calibrationMeta, _cleanedRef
+      dataQuality, dataMeta, calibratedProfile, calibrationMeta, _cleanedRef,
+      activeSimulation
     };
   };
 }

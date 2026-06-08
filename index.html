@@ -13,12 +13,12 @@
   <meta property="og:locale" content="nl_NL">
   <meta property="og:title" content="P1 Energiecontracten Analysator — Dynamisch vs Vast">
   <meta property="og:description" content="Laad je eigen P1 smart meter data en bereken direct hoeveel je bespaart met een dynamisch energiecontract versus een vast tarief in 2027. Inclusief simulaties voor zonnepanelen, thuisbatterij, warmtepomp en elektrische auto.">
-  <meta property="og:image" content="https://raw.githubusercontent.com/peterjan/DynOfVast/main/assets/geavanceerd_view.png">
+  <meta property="og:image" content="https://raw.githubusercontent.com/cyleo/P1_dynamisch_vast_vergelijk/main/assets/geavanceerd_view.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
+  <meta property="og:url" content="https://cyleo.github.io/P1_dynamisch_vast_vergelijk/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=67">
+  <link rel="stylesheet" href="/energie/style.css?v=68">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -354,11 +354,11 @@
   <div id="modal-backdrop">
     <div class="modal-box">
       <button id="modal-close" title="Sluiten">&times;</button>
-      <h2>&#x1F527; Home Assistant Installatiegids</h2>
+      <h2><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>Home Assistant Installatiegids</h2>
 
       <!-- Dynamische Mixed Content waarschuwing -->
       <div id="ha-mixed-content-warning" style="display:none; background:rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.35); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; color:#ff8b8b; font-size:0.82rem; line-height:1.5;">
-        <strong>⚠ Let op: Mixed Content gedetecteerd</strong><br>
+        <strong><svg class="icon icon-inline" viewBox="0 0 24 24" style="color: #ff8b8b; margin-right: 0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Let op: Mixed Content gedetecteerd</strong><br>
         Je bezoekt deze site via een beveiligde verbinding (<code class="site-url">https://vibe.vulpini.nl</code>), maar je probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.
         <br><br>
         <strong>Oplossingen:</strong>
@@ -370,9 +370,9 @@
 
       <!-- Tab switcher -->
       <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
-        <button onclick="showModalTab('direct')" id="tab-direct" class="btn-primary"
+        <button  id="tab-direct" class="btn-primary"
           style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie A: Lokaal</button>
-        <button onclick="showModalTab('manual')" id="tab-manual" class="btn-secondary"
+        <button  id="tab-manual" class="btn-secondary"
           style="flex:1; font-size:0.8rem; padding:0.4rem;">Optie B: Exporteren</button>
       </div>
 
@@ -383,12 +383,12 @@
           omzeilt nginx/reverse proxy volledig. Vereist dat je browser op hetzelfde netwerk zit als HA.
         </p>
         <ol style="color:var(--text-muted); font-size:0.88rem; padding-left:1.2rem; line-height:2;">
-          <li>Vul als HA URL in: <strong>http://homeassistant.local:8123</strong><br>
-            &nbsp;&nbsp;&nbsp;&nbsp;of jouw HA lokaal IP, bijv. <strong>http://192.168.2.10:8123</strong></li>
+          <li>Vul als HA URL in: <strong>https://your.hass.domain</strong><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;of jouw HA lokaal adres, bijv. <strong>http://homeassistant.local:8123</strong> of IP <strong>http://192.168.2.10:8123</strong></li>
           <li>Voeg in <strong>configuration.yaml</strong> toe:</li>
         </ol>
         <div class="modal-code" id="modal-cors-snippet">Laden...</div>
-        <button id="copy-snippet-btn" class="btn-primary" onclick="copySetupSnippet()"
+        <button id="copy-snippet-btn" class="btn-primary" 
           style="width:100%; margin-bottom:1rem;">
           &#x1F4CB; Kopieer naar klembord
         </button>
@@ -450,23 +450,23 @@
       <div style="background: rgba(0,242,254,0.02); border: 1px solid rgba(0,242,254,0.06); border-radius: 8px; padding: 0.8rem; margin-bottom: 1rem;">
         <h3 style="font-size: 0.85rem; color: var(--accent-cyan); margin: 0 0 0.6rem 0; font-family: var(--font-display); text-transform: uppercase;">Zon &amp; Digital Twin (Optioneel)</h3>
         <div class="form-group" style="margin-bottom:0.6rem;">
-          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">☀ Bruto Zonneopwek</label>
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;"><svg class="icon icon-inline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M6.34 17.66l-1.41 1.41"></path><path d="M19.07 4.93l-1.41 1.41"></path></svg> Bruto Zonneopwek</label>
           <select id="csv-sel-solar" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
         </div>
         <div class="form-group" style="margin-bottom:0.6rem;">
-          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🚗 EV-laadpaal</label>
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg> EV-laadpaal</label>
           <select id="csv-sel-ev" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
         </div>
         <div class="form-group" style="margin-bottom:0.6rem;">
-          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">♨ Warmtepomp</label>
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;"><svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg> Warmtepomp</label>
           <select id="csv-sel-hp" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
         </div>
         <div class="form-group" style="margin-bottom:0.6rem;">
-          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🔋 Accu laden (in)</label>
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Accu laden (in)</label>
           <select id="csv-sel-batIn" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
         </div>
         <div class="form-group" style="margin-bottom:0;">
-          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">🔋 Accu ontladen (uit)</label>
+          <label style="font-size:0.76rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Accu ontladen (uit)</label>
           <select id="csv-sel-batOut" class="ha-select" style="width:100%; font-size:0.8rem; padding:0.35rem;"></select>
         </div>
       </div>
@@ -503,9 +503,9 @@
       </div>
       <div style="display:flex; align-items:center; gap:1.5rem;">
         <nav style="display:flex; gap:1rem; font-size:0.8rem;">
-          <a href="https://github.com/peterjan/DynOfVast/blob/main/blogpost.md" style="color:var(--text-muted); text-decoration:none; opacity:0.7;"
+          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk/blob/main/blogpost.md" style="color:var(--text-muted); text-decoration:none; opacity:0.7;"
              onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">Blog</a>
-          <a href="https://github.com/peterjan/DynOfVast" style="color:var(--text-muted); text-decoration:none; opacity:0.7; display:inline-flex; align-items:center; gap:4px;"
+          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk" style="color:var(--text-muted); text-decoration:none; opacity:0.7; display:inline-flex; align-items:center; gap:4px;"
              onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle;">
               <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.483 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
@@ -529,8 +529,8 @@
         <div class="view-toggle-container glass-panel">
           <span>Weergavemodus</span>
           <div class="view-toggle-buttons">
-            <button type="button" id="btn-view-simple" class="btn-toggle active" onclick="setViewMode('simple')">Eenvoudig</button>
-            <button type="button" id="btn-view-advanced" class="btn-toggle" onclick="setViewMode('advanced')">Geavanceerd</button>
+            <button type="button" id="btn-view-simple" class="btn-toggle active" >Eenvoudig</button>
+            <button type="button" id="btn-view-advanced" class="btn-toggle" >Geavanceerd</button>
           </div>
         </div>
 
@@ -540,7 +540,7 @@
 
           <!-- Methode A: bestand uploaden -->
           <section class="glass-panel upload-card collapsed" id="upload-panel">
-          <h2 class="section-title" onclick="toggleCard(this)">
+          <h2 class="section-title" >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -566,7 +566,7 @@
             <input type="file" id="file-input" style="display: none;" accept=".json,.csv" multiple>
           </div>
           <div style="margin-top: 0.8rem; display: flex; flex-direction: column; gap: 0.5rem;">
-            <button class="btn-secondary" onclick="loadDemoData()">Laad voorbeelddata (reset)</button>
+            <button id="btn-load-demo" class="btn-secondary">Laad voorbeelddata (reset)</button>
             <a class="download-link" href="p1_sample.json" download="p1_sample.json">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -580,7 +580,7 @@
 
         <!-- Home Assistant API Sync -->
         <section class="glass-panel ha-card collapsed" id="ha-card">
-          <h2 class="section-title" onclick="toggleCard(this)">
+          <h2 class="section-title" >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -601,8 +601,8 @@
 
           <!-- Step 1: credentials -->
           <div class="ha-inputs">
-            <input type="url" id="ha-url" placeholder="http://homeassistant.local:8123"
-              value="http://homeassistant.local:8123">
+            <input type="url" id="ha-url" placeholder="https://your.hass.domain"
+              value="https://your.hass.domain">
             <input type="password" id="ha-token" placeholder="Long-Lived Access Token">
             <button class="btn-primary" id="ha-connect-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -621,7 +621,7 @@
               Kies de juiste P1 sensoren. Automatisch herkende waarden zijn al ingevuld.
             </p>
             <p class="info-box" style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.8rem; line-height:1.5; background:rgba(255,255,255,0.03); padding:0.5rem 0.6rem; border-radius:6px; border-left:2px solid var(--accent-blue);">
-              💡 <strong>Welke sensor kiezen?</strong> Selecteer de <em>cumulatieve meterstand</em>-sensoren van je P1 slimme meter (eenheid: <strong>kWh</strong>). In Home Assistant herken je ze aan namen als <code>sensor.p1_meter_*</code>, <code>sensor.electricity_meter_*</code> of <code>sensor.dsmr_*</code>. Ze tonen een stijgend totaal — <em>niet</em> het actuele vermogen (W/kW).
+              <svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg> <strong>Welke sensor kiezen?</strong> Selecteer de <em>cumulatieve meterstand</em>-sensoren van je P1 slimme meter (eenheid: <strong>kWh</strong>). In Home Assistant herken je ze aan namen als <code>sensor.p1_meter_*</code>, <code>sensor.electricity_meter_*</code> of <code>sensor.dsmr_*</code>. Ze tonen een stijgend totaal — <em>niet</em> het actuele vermogen (W/kW).
             </p>
 
             <div class="form-group" style="margin-bottom:0.7rem;">
@@ -654,7 +654,7 @@
             <div class="form-group"
               style="margin-bottom:1rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.8rem;">
               <label style="font-size:0.78rem; color:var(--accent-yellow); margin-bottom:0.3rem; display:block;">
-                ☀ Bruto Zonneopwek (optioneel)
+                <svg class="icon icon-inline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M6.34 17.66l-1.41 1.41"></path><path d="M19.07 4.93l-1.41 1.41"></path></svg> Bruto Zonneopwek (optioneel)
                 <span class="info-icon" tabindex="0">i<span class="info-tooltip">Koppel je omvormer-sensor (kWh
                     yield/today of een cumulatieve productiesensor) om het <em>echte</em> huisverbruik te berekenen. Dit
                     maakt de solar-dimmingsimulatie nauwkeuriger: zonder sensor wordt export simpelweg op 0 gezet bij
@@ -669,7 +669,7 @@
             <div class="form-group"
               style="margin-bottom:1rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:0.8rem;">
               <label style="font-size:0.78rem; color:var(--accent-cyan); margin-bottom:0.5rem; display:block;">
-                ⚙️ Bestaande hardware koppelen (optioneel — Digital Twin)
+                <svg class="icon icon-inline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Bestaande hardware koppelen (optioneel — Digital Twin)
                 <span class="info-icon" tabindex="0">i<span class="info-tooltip">Heb je nu al een EV-lader, warmtepomp
                     of thuisbatterij? Koppel hun cumulatieve kWh-sensoren. We <em>strippen</em> dat verbruik uit je P1-historie
                     zodat de schuiven hieronder <strong>vervangende</strong> hardware modelleren i.p.v. extra apparaten.
@@ -677,19 +677,19 @@
                     net-/AC-zijde meten (laden én ontladen op hetzelfde meetpunt), anders klopt het rendementsverlies niet.</span></span>
               </label>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.4rem 0 0.2rem; display:block;">🚗 EV-lader</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.4rem 0 0.2rem; display:block;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg> EV-lader</label>
               <select id="sel-ev" class="ha-select"><option value="">— Niet koppelen —</option></select>
               <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">Kies de <strong>totaal-verbruik</strong> sensor van je laadpaal (cumulatief, kWh). Bijv. <code>sensor.wallbox_total_energy</code>. Heb je geen cumulatieve sensor? Een <strong>live vermogenssensor</strong> (W/kW) werkt ook — het gemiddelde per uur wordt dan automatisch omgezet naar kWh.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">♨️ Warmtepomp</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;"><svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg> Warmtepomp</label>
               <select id="sel-hp" class="ha-select"><option value="">— Niet koppelen —</option></select>
               <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">Kies de <strong>cumulatieve elektriciteitsverbruik</strong> sensor (kWh). Bijv. <code>sensor.heatpump_total_energy</code> of <code>sensor.nibe_compressor_energy</code>. Live vermogen (W/kW) wordt ook ondersteund.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — laden / in</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Batterij — laden / in</label>
               <select id="sel-bat-in" class="ha-select"><option value="">— Niet koppelen —</option></select>
               <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">De <strong>cumulatieve energie naar de batterij</strong> (kWh). Meet aan de <em>AC/net-zijde</em> (incl. omzettingsverlies). Bijv. <code>sensor.battery_grid_to_battery</code> of <code>sensor.powerwall_charge_energy</code>.</span>
 
-              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;">🔋 Batterij — ontladen / uit</label>
+              <label style="font-size:0.74rem; color:var(--text-muted); margin:0.5rem 0 0.2rem; display:block;"><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Batterij — ontladen / uit</label>
               <select id="sel-bat-out" class="ha-select"><option value="">— Niet koppelen —</option></select>
               <span style="font-size:0.64rem; color:var(--text-muted); display:block; margin-top:0.15rem; line-height:1.45;">De <strong>cumulatieve energie vanuit de batterij</strong> (kWh). Dezelfde meetbron als laden, maar de ontlaadrichting. Bijv. <code>sensor.battery_battery_to_grid</code> of <code>sensor.powerwall_discharge_energy</code>.</span>
             </div>
@@ -700,7 +700,7 @@
                 <span class="val-badge" id="ha-days-val">365 dagen</span>
               </label>
               <input type="range" id="ha-days" min="3" max="365" step="1" value="365" data-suffix=" dagen"
-                oninput="document.getElementById('ha-days-val').textContent=this.value+' dagen'">
+                >
             </div>
 
             <button class="btn-primary" id="ha-import-btn" style="width:100%;">
@@ -726,7 +726,7 @@
             <span>Geldt voor je upload én Home Assistant — vult een deel-jaar aan tot een vol jaar</span>
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" id="prognose-toggle" checked onchange="runSimulation()">
+            <input type="checkbox" id="prognose-toggle" checked>
             <span class="slider-round"></span>
           </label>
         </div>
@@ -735,7 +735,7 @@
 
         <!-- Tariffs Config Panel -->
         <section class="glass-panel collapsed" style="padding: 1.2rem;" id="tariffs-config">
-          <h2 class="section-title" onclick="toggleCard(this)">
+          <h2 class="section-title" >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="1" x2="12" y2="23"></line>
               <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
@@ -752,7 +752,7 @@
                   contract — controleer altijd je eigen overeenkomst. Na het kiezen kun je elke schuif handmatig
                   bijstellen.</span></span></label>
             <select id="supplier-preset" class="ha-select" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"
-              onchange="applySupplierPreset(this.value)">
+              >
               <option value="">— Kies een leverancier (optioneel) —</option>
               <option value="vattenfall">Vattenfall — vast + VTK</option>
               <option value="eneco">Eneco — vast + VTK</option>
@@ -858,21 +858,21 @@
                   afname.</span></span>
               <span class="val-badge" id="energy-tax-val">€ 0.111</span></label>
             <input type="range" id="energy-tax" min="0.00" max="0.20" step="0.001" value="0.11084" data-suffix="">
-            <p class="warning-note" style="font-size:0.68rem;color:var(--accent-orange);margin-top:0.35rem;">⚠ 2027-tarief nog niet bekend —
+            <p class="warning-note" style="font-size:0.68rem;color:var(--accent-orange);margin-top:0.35rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> 2027-tarief nog niet bekend —
               standaard = 2026-benadering.</p>
           </div>
           <div class="form-group advanced-only" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 1rem;">
-            <label for="stress-multiplier" style="color: var(--accent-orange);">🚨 Stresstest: Marktprijzen (x) <span
+            <label for="stress-multiplier" style="color: var(--accent-orange);"><svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Stresstest: Marktprijzen (x) <span
                   class="info-icon" tabindex="0">i<span class="info-tooltip">Simuleer een energiecrisis. Vermenigvuldigt
                   alle positieve beursprijzen met deze factor. Handig om te zien of dynamisch nog steeds rendabel is in
                   een slechte markt.</span></span> <span class="val-badge" id="stress-multiplier-val">1.0x</span></label>
             <input type="range" id="stress-multiplier" min="1.0" max="4.0" step="0.1" value="1.0" data-suffix="x">
           </div>
         </section>
-
+ 
         <!-- Hardware Smart Scenarios -->
         <section class="glass-panel advanced-only collapsed" style="padding: 1.2rem;" id="hardware-panel">
-          <h2 class="section-title" onclick="toggleCard(this)">
+          <h2 class="section-title" >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
               <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
@@ -882,25 +882,24 @@
             Stap 3 · Slimme hardware (optioneel)
             <span class="collapse-chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
           </h2>
-
+ 
           <!-- Uitleg: vinkjes simuleren het TOEVOEGEN van apparatuur -->
           <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.18);border-radius:8px;padding:0.6rem 0.75rem;margin-bottom:0.8rem;font-size:0.74rem;color:var(--text-muted);line-height:1.55;">
-            💡 Deze schakelaars simuleren het <strong>tóévoegen</strong> van apparatuur. Heb je een EV, accu of
+            <svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg> Deze schakelaars simuleren het <strong>tóévoegen</strong> van apparatuur. Heb je een EV, accu of
             warmtepomp <strong>al</strong> — en zit dat verbruik al in je geïmporteerde data — laat het vinkje dan
             <strong>uit</strong>, anders telt het dubbel. Zet een schakelaar alleen aan om te zien wat <em>aanschaf</em>
             zou opleveren.
           </div>
-
+ 
           <!-- Solar Dimming / Curtailment -->
           <div style="padding:0.6rem 0; border-bottom:1px solid rgba(255,255,255,0.06); margin-bottom:0.5rem;">
             <div style="font-size:0.82rem;font-weight:600;color:var(--text-main);margin-bottom:0.35rem;">
-              ☀ Omvormer bij negatieve EPEX-prijs
+              <svg class="icon icon-inline" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M6.34 17.66l-1.41 1.41"></path><path d="M19.07 4.93l-1.41 1.41"></path></svg> Omvormer bij negatieve EPEX-prijs
               <span class="info-icon" tabindex="0">i<span class="info-tooltip">Alleen relevant voor dynamische
                   contracten. Bij een vast contract betaal je een vaste prijs en heeft de EPEX-spotprijs geen invloed op
                   je keuze. De berekening voor het vaste contract gebruikt altijd je originele meetdata.</span></span>
             </div>
-            <select id="solar-dimming-mode" class="ha-select" style="font-size:0.78rem;padding:0.35rem 0.5rem;"
-              onchange="runSimulation()">
+            <select id="solar-dimming-mode" class="ha-select" style="font-size:0.78rem;padding:0.35rem 0.5rem;">
               <option value="off">Niets doen — export blijft doorlopen</option>
               <option value="dim">Dimmen — panelen regelen af tot huisverbruik (nul-export)</option>
               <option value="uit">Uitschakelen — panelen volledig uit (alles van het net)</option>
@@ -956,7 +955,7 @@
                 <span class="slider-round"></span>
               </label>
             </div>
-            <button type="button" class="btn-explain" onclick="showHardwareExplainer('ev')">❓ Hoe werkt het EV-model?</button>
+            <button type="button" class="btn-explain" id="btn-explain-ev"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Hoe werkt het EV-model?</button>
           </div>
 
           <!-- Home Battery Toggle -->
@@ -1008,23 +1007,23 @@
                     (echte arbitrage). Onder bruto-EB (2027) betaal je belasting over elke ingekochte kWh, dus dit
                     loont alleen bij grote prijsspreads.</span></span></label>
               <select id="bat-mode" class="ha-select" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;">
-                <option value="zelf" selected>🔋 Maximaal zelfverbruik (standaard)</option>
-                <option value="kosten">💡 Kostenbewust — ook goedkoop van net laden</option>
-                <option value="winst">📈 Maximale winst — handel met het net</option>
+                <option value="zelf" selected>Maximaal zelfverbruik (standaard)</option>
+                <option value="kosten">Kostenbewust — ook goedkoop van net laden</option>
+                <option value="winst">Maximale winst — handel met het net</option>
               </select>
               <p id="bat-mode-hint" style="display:none;font-size:0.72rem;color:var(--text-muted);line-height:1.5;margin-top:0.4rem;"></p>
             </div>
-            <button type="button" class="btn-explain" onclick="showHardwareExplainer('battery')">❓ Hoe werkt het thuisbatterij-model?</button>
+            <button type="button" class="btn-explain" id="btn-explain-battery"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Hoe werkt het thuisbatterij-model?</button>
           </div>
 
           <!-- Sweet Spot Finder: automatische accu-grootte optimalisatie (ROI) -->
           <div style="margin-top: 0.75rem; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 0.75rem;">
             <button class="btn-secondary" id="optimize-battery-btn"
               style="background: rgba(56, 239, 125, 0.08); border-color: var(--accent-green); color: #ffffff; width: 100%;">
-              📊 Bereken Ideale Accu Formaat (ROI)
+              <svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.35rem; stroke: currentColor;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> Bereken Ideale Accu Formaat (ROI)
             </button>
             <p style="font-size:0.68rem;color:var(--accent-green);margin-top:0.35rem;text-align:center;">
-              ℹ️ De terugverdientijd wordt berekend op basis van het dynamische contract scenario.
+              <svg class="icon icon-inline" viewBox="0 0 24 24" style="color: var(--accent-green); width: 12px; height: 12px; stroke-width: 2.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> De terugverdientijd wordt berekend op basis van het dynamische contract scenario.
             </p>
             <div id="battery-optimization-result"
               style="font-size: 0.75rem; margin-top: 0.6rem; color: var(--text-muted); line-height: 1.6; display: none; background: rgba(0,0,0,0.2); padding: 0.6rem; border-radius: 8px;">
@@ -1052,7 +1051,7 @@
                     voor warmtapwater.</span></span> <span class="val-badge" id="hp-baseload-val">0.0 kW</span></label>
               <input type="range" id="hp-baseload" min="0.0" max="4.0" step="0.1" value="0.0" data-suffix=" kW">
             </div>
-            <button type="button" class="btn-explain" onclick="showHardwareExplainer('heatpump')">❓ Hoe werkt het warmtepomp-model?</button>
+            <button type="button" class="btn-explain" id="btn-explain-heatpump"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Hoe werkt het warmtepomp-model?</button>
           </div>
 
         </section>
@@ -1067,9 +1066,9 @@
                  border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.08);">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem;">
             <div style="font-family:var(--font-display); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);">
-              ⚙️ Digital Twin Mode <span id="dt-status-label">actief</span>
+              <svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-cyan); margin-right: 0.35rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Digital Twin Mode <span id="dt-status-label">actief</span>
             </div>
-            <button type="button" id="dt-toggle-btn" onclick="toggleDigitalTwin(!digitalTwinEnabled)"
+            <button type="button" id="dt-toggle-btn" 
               style="font-size:0.78rem; padding:0.25rem 0.75rem; border-radius:6px; cursor:pointer;
                      border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.15);
                      color:var(--accent-cyan); white-space:nowrap;">
@@ -1082,38 +1081,7 @@
             geen toevoegingen. Zet een schuif op <strong>nul</strong> om je huis volledig zónder dat apparaat te zien.
           </div>
         </div>
-
-        <!-- Uitleg voor nieuwe gebruikers — inklapbaar, standaard open -->
-        <details class="glass-panel" id="intro-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
-          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
-            💡 Hoe werkt dit?
-            <button type="button" class="dismiss-x" data-dismiss="intro-explainer" data-persist title="Verberg deze uitleg">×</button>
-          </summary>
-          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
-            <p style="margin:0 0 0.6rem;">Deze tool vergelijkt voor <strong>jouw eigen stroomverbruik</strong> twee
-              soorten contracten:</p>
-            <ul style="margin:0 0 0.6rem 1.1rem;padding:0;">
-              <li><strong>Vast contract</strong> — een vaste prijs per kWh (piek &amp; dal), het hele jaar gelijk.</li>
-              <li><strong>Dynamisch contract</strong> — de prijs volgt elk uur de stroombeurs (EPEX): 's nachts en bij
-                veel zon/wind goedkoop, in de avondpiek duur.</li>
-            </ul>
-            <p style="margin:0 0 0.6rem;">⚠️ <strong>Dit is een 2027-model.</strong> Vanaf 1 januari 2027 vervalt de
-              <em>salderingsregeling</em> — je mag teruggeleverde zonnestroom niet meer wegstrepen tegen je afname.
-              Daarom rekenen we energiebelasting over je <em>bruto</em> afname en krijg je een aparte, lagere
-              terugleververgoeding. Met de regels van vandaag zou de uitkomst er anders uitzien.</p>
-            <p style="margin: 0.8rem 0 0.4rem; font-weight: 700; color: var(--text-main);">🌊 Prioriteit van zonnestroom-verdeling (De Zonne-waterval):</p>
-            <ol style="margin: 0 0 0.8rem 1.1rem; padding: 0; list-style-type: decimal;">
-              <li><strong>Huisverbruik:</strong> Zonnestroom gaat eerst naar de actieve apparaten in je woning.</li>
-              <li><strong>Elektrische auto (EV):</strong> Wat over is, gaat naar de EV (indien zonne-laden actief is).</li>
-              <li><strong>Thuisaccu:</strong> Wat daarna nog over is, laadt de thuisaccu op.</li>
-              <li><strong>Elektriciteitsnet:</strong> Het resterende overschot gaat naar het net (en kan gedimd worden bij negatieve prijzen).</li>
-            </ol>
-            <p style="margin:0;">📊 <strong>Let vooral op het <span style="color:var(--accent-green);">verschil</span>
-                tussen beide contracten</strong> — niet op de absolute bedragen (zie de toelichting bij de cijfers
-              hieronder).</p>
-          </div>
-        </details>
-
+ 
         <!-- Top Metrics Cards -->
         <div class="stats-row">
 
@@ -1155,19 +1123,50 @@
 
         <!-- Scope-toelichting bij de kerncijfers -->
         <div id="scope-note" style="position:relative;font-size:0.76rem;color:var(--text-muted);line-height:1.55;margin-bottom:1rem;display:flex;gap:0.45rem;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.8rem;">
-          <span style="flex-shrink:0;">ℹ️</span>
+          <svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--text-muted); flex-shrink: 0; width: 14px; height: 14px; stroke-width: 2.2;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
           <span>Deze bedragen zijn de <strong>complete stroomkosten</strong>, inclusief belastingen, de vermindering energiebelasting en de gemiddelde netbeheerkosten (~€480/jaar). Dit geeft een realistisch beeld van je totale jaarrekening. Omdat netbeheerkosten en de vermindering energiebelasting voor beide contracten gelijk zijn, vallen ze weg in het <strong>verschil</strong>.</span>
           <button type="button" class="dismiss-x" data-dismiss="scope-note" data-persist title="Verberg deze toelichting">×</button>
         </div>
 
+        <!-- Uitleg voor nieuwe gebruikers — inklapbaar, standaard open -->
+        <details class="glass-panel" id="intro-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;" open>
+          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
+            <svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg> Hoe werkt dit?
+            <button type="button" class="dismiss-x" data-dismiss="intro-explainer" data-persist title="Verberg deze uitleg">×</button>
+          </summary>
+          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
+            <p style="margin:0 0 0.6rem;">Deze tool vergelijkt voor <strong>jouw eigen stroomverbruik</strong> twee
+              soorten contracten:</p>
+            <ul style="margin:0 0 0.6rem 1.1rem;padding:0;">
+              <li><strong>Vast contract</strong> — een vaste prijs per kWh (piek &amp; dal), het hele jaar gelijk.</li>
+              <li><strong>Dynamisch contract</strong> — de prijs volgt elk uur de stroombeurs (EPEX): 's nachts en bij
+                veel zon/wind goedkoop, in de avondpiek duur.</li>
+            </ul>
+            <p style="margin:0 0 0.6rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange); margin-right: 0.35rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <strong>Dit is een 2027-model.</strong> Vanaf 1 januari 2027 vervalt de
+              <em>salderingsregeling</em> — je mag teruggeleverde zonnestroom niet meer wegstrepen tegen je afname.
+              Daarom rekenen we energiebelasting over je <em>bruto</em> afname en krijg je een aparte, lagere
+              terugleververgoeding. Met de regels van vandaag zou de uitkomst er anders uitzien.</p>
+            <p style="margin: 0.8rem 0 0.4rem; font-weight: 700; color: var(--text-main);"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><path d="M2 6c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 12c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 18c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path></svg> Prioriteit van zonnestroom-verdeling (De Zonne-waterval):</p>
+            <ol style="margin: 0 0 0.8rem 1.1rem; padding: 0; list-style-type: decimal;">
+              <li><strong>Huisverbruik:</strong> Zonnestroom gaan eerst naar de actieve apparaten in je woning.</li>
+              <li><strong>Elektrische auto (EV):</strong> Wat over is, gaat naar de EV (indien zonne-laden actief is).</li>
+              <li><strong>Thuisaccu:</strong> Wat daarna nog over is, laadt de thuisaccu op.</li>
+              <li><strong>Elektriciteitsnet:</strong> Het resterende overschot gaat naar het net (en kan gedimd worden bij negatieve prijzen).</li>
+            </ol>
+            <p style="margin:0;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> <strong>Let vooral op het <span style="color:var(--accent-green);">verschil</span>
+                tussen beide contracten</strong> — niet op de absolute bedragen (zie de toelichting bij de cijfers
+              hieronder).</p>
+          </div>
+        </details>
+ 
         <!-- Data-kwaliteit: importcheck-samenvatting (gaten/periodes ingevuld) -->
         <div id="data-quality-banner"
           style="display:none;position:relative;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.9rem;margin-bottom:1rem;font-size:0.78rem;color:var(--text-muted);line-height:1.55;"></div>
-
+ 
         <!-- Prognose-badge: getoond wanneer minder dan een jaar eigen data is aangevuld -->
         <div id="prognosis-badge"
           style="display:none;position:relative;background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.30);border-radius:8px;padding:0.6rem 1.9rem 0.6rem 0.9rem;margin-bottom:1rem;font-size:0.8rem;color:var(--accent-cyan);line-height:1.5;">
-          <strong>📊 Prognose geactiveerd:</strong> <span id="prognosis-text"></span>
+          <strong><svg class="icon icon-inline" viewBox="0 0 24 24" style="color: var(--accent-cyan); margin-right: 0.25rem;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> Prognose geactiveerd:</strong> <span id="prognosis-text"></span>
           <button type="button" class="dismiss-x" data-dismiss="prognosis-badge" title="Verberg deze melding">×</button>
         </div>
 
@@ -1178,26 +1177,26 @@
               24-uurs Gemiddeld Energieprofiel & Spotprijs
             </h2>
             <div class="chart-legends" id="profile-chart-legends">
-              <div class="legend-item" onclick="toggleProfileLine('imp')" style="cursor:pointer;" id="legend-imp">
+              <div class="legend-item"  style="cursor:pointer;" id="legend-imp">
                 <span class="legend-color import"></span> Import
               </div>
-              <div class="legend-item" onclick="toggleProfileLine('exp')" style="cursor:pointer;" id="legend-exp">
+              <div class="legend-item"  style="cursor:pointer;" id="legend-exp">
                 <span class="legend-color export"></span> Export
               </div>
-              <div class="legend-item" onclick="toggleProfileLine('spot')" style="cursor:pointer;" id="legend-spot">
+              <div class="legend-item"  style="cursor:pointer;" id="legend-spot">
                 <span class="legend-color price"></span> Consumentenprijs (incl. EB+BTW)
               </div>
               <!-- Digital Twin lines -->
-              <div class="legend-item dt-legend" onclick="toggleProfileLine('solar')" style="cursor:pointer; display:none;" id="legend-solar">
+              <div class="legend-item dt-legend"  style="cursor:pointer; display:none;" id="legend-solar">
                 <span class="legend-color" style="background:#eab308; box-shadow:0 0 5px rgba(234,179,8,0.5);"></span> Zonnepanelen
               </div>
-              <div class="legend-item dt-legend" onclick="toggleProfileLine('ev')" style="cursor:pointer; display:none;" id="legend-ev">
+              <div class="legend-item dt-legend"  style="cursor:pointer; display:none;" id="legend-ev">
                 <span class="legend-color" style="background:#667eea; box-shadow:0 0 5px rgba(102,126,234,0.5);"></span> Auto
               </div>
-              <div class="legend-item dt-legend" onclick="toggleProfileLine('hp')" style="cursor:pointer; display:none;" id="legend-hp">
+              <div class="legend-item dt-legend"  style="cursor:pointer; display:none;" id="legend-hp">
                 <span class="legend-color" style="background:#ff758c; box-shadow:0 0 5px rgba(255,117,140,0.5);"></span> Warmtepomp
               </div>
-              <div class="legend-item dt-legend" onclick="toggleProfileLine('bat')" style="cursor:pointer; display:none;" id="legend-bat">
+              <div class="legend-item dt-legend"  style="cursor:pointer; display:none;" id="legend-bat">
                 <span class="legend-color" style="background:#4facfe; box-shadow:0 0 5px rgba(79,172,254,0.5);"></span> Accu
               </div>
             </div>
@@ -1238,21 +1237,21 @@
             <div style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">
               <!-- View type: bars vs sankey -->
               <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
-                <button type="button" id="ov-btn-view-bars" class="btn-toggle active" onclick="setOverviewViewType('bars')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Grafiek</button>
-                <button type="button" id="ov-btn-view-sankey" class="btn-toggle" onclick="setOverviewViewType('sankey')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Sankey</button>
+                <button type="button" id="ov-btn-view-bars" class="btn-toggle active"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Grafiek</button>
+                <button type="button" id="ov-btn-view-sankey" class="btn-toggle"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Sankey</button>
               </div>
               
               <!-- Bar Chart controls -->
               <div id="bar-controls-row" style="display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap;">
                 <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
-                  <button type="button" id="ov-btn-day" class="btn-toggle active" onclick="setOverviewMode('day')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Dag</button>
-                  <button type="button" id="ov-btn-week" class="btn-toggle" onclick="setOverviewMode('week')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Week</button>
-                  <button type="button" id="ov-btn-month" class="btn-toggle" onclick="setOverviewMode('month')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Maand</button>
+                  <button type="button" id="ov-btn-day" class="btn-toggle active"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Dag</button>
+                  <button type="button" id="ov-btn-week" class="btn-toggle"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Week</button>
+                  <button type="button" id="ov-btn-month" class="btn-toggle"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Maand</button>
                 </div>
                 <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
-                  <button type="button" id="ov-btn-energy" class="btn-toggle active" onclick="setOverviewMetric('energy')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">kWh</button>
-                  <button type="button" id="ov-btn-cost" class="btn-toggle" onclick="setOverviewMetric('cost')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Kosten</button>
-                  <button type="button" id="ov-btn-savings" class="btn-toggle" onclick="setOverviewMetric('savings')" style="padding:0.3rem 0.6rem; font-size:0.72rem;">Besparing</button>
+                  <button type="button" id="ov-btn-energy" class="btn-toggle active"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">kWh</button>
+                  <button type="button" id="ov-btn-cost" class="btn-toggle"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Kosten</button>
+                  <button type="button" id="ov-btn-savings" class="btn-toggle"  style="padding:0.3rem 0.6rem; font-size:0.72rem;">Besparing</button>
                 </div>
               </div>
             </div>
@@ -1263,15 +1262,15 @@
             <div style="display:flex; align-items:center; gap:0.5rem;">
               <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">Periode:</span>
               <div class="view-toggle-buttons" style="border: 1px solid var(--border-color); display:flex; gap:2px;">
-                <button type="button" id="sk-btn-year" class="btn-toggle active" onclick="setSankeyInterval('year')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Jaar</button>
-                <button type="button" id="sk-btn-month" class="btn-toggle" onclick="setSankeyInterval('month')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Maand</button>
-                <button type="button" id="sk-btn-week" class="btn-toggle" onclick="setSankeyInterval('week')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Week</button>
-                <button type="button" id="sk-btn-day" class="btn-toggle" onclick="setSankeyInterval('day')" style="padding:0.25rem 0.5rem; font-size:0.7rem;">Dag</button>
+                <button type="button" id="sk-btn-year" class="btn-toggle active"  style="padding:0.25rem 0.5rem; font-size:0.7rem;">Jaar</button>
+                <button type="button" id="sk-btn-month" class="btn-toggle"  style="padding:0.25rem 0.5rem; font-size:0.7rem;">Maand</button>
+                <button type="button" id="sk-btn-week" class="btn-toggle"  style="padding:0.25rem 0.5rem; font-size:0.7rem;">Week</button>
+                <button type="button" id="sk-btn-day" class="btn-toggle"  style="padding:0.25rem 0.5rem; font-size:0.7rem;">Dag</button>
               </div>
             </div>
             
             <div style="display:flex; align-items:center; gap:0.6rem;">
-              <button type="button" class="btn-secondary" id="sk-nav-prev" onclick="navigateSankey(-1)" style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
+              <button type="button" class="btn-secondary" id="sk-nav-prev"  style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg> Vorige
               </button>
               
@@ -1279,7 +1278,7 @@
                 <!-- Dynamisch gevuld door JS -->
               </div>
               
-              <button type="button" class="btn-secondary" id="sk-nav-next" onclick="navigateSankey(1)" style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
+              <button type="button" class="btn-secondary" id="sk-nav-next"  style="padding:0.25rem 0.5rem; font-size:0.72rem; width:auto; display:inline-flex; align-items:center; gap:3px;">
                 Volgende <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
             </div>
@@ -1336,12 +1335,12 @@
             </div>
             <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
               <div style="display:flex;gap:0.3rem;align-items:center;">
-                <button id="sim-back-btn" onclick="simDrillDay=null;renderSimChart();"
+                <button id="sim-back-btn" 
                   style="display:none;padding:0.3rem 0.6rem;font-size:0.75rem;background:rgba(255,255,255,0.08);color:var(--text-muted);border:1px solid rgba(255,255,255,0.12);border-radius:6px;cursor:pointer;">←
                   Terug</button>
-                <button id="sim-btn-day" onclick="setSimMode('day')" class="btn-primary"
+                <button id="sim-btn-day"  class="btn-primary"
                   style="padding:0.3rem 0.7rem;font-size:0.75rem;">Dag</button>
-                <button id="sim-btn-week" onclick="setSimMode('week')" class="btn-secondary"
+                <button id="sim-btn-week"  class="btn-secondary"
                   style="padding:0.3rem 0.7rem;font-size:0.75rem;">Week</button>
               </div>
               <div class="chart-legends">
@@ -1384,51 +1383,15 @@
               </p>
             </div>
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:flex-start;">
-              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('battery')">❓ Accu</button>
-              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('heatpump')">❓ Warmtepomp</button>
-              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" onclick="showHardwareExplainer('ev')">❓ EV</button>
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" id="btn-explain-battery"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right:0.2rem;width:12px;height:12px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Accu</button>
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" id="btn-explain-heatpump"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right:0.2rem;width:12px;height:12px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Warmtepomp</button>
+              <button type="button" class="btn-explain" style="width:auto;margin-top:0;padding:0.35rem 0.6rem;font-size:0.74rem;" id="btn-explain-ev"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right:0.2rem;width:12px;height:12px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> EV</button>
             </div>
           </div>
           <div id="hw-chart-body" style="padding:0 0.25rem;"></div>
         </section>
 
-        <!-- Uitleg: hoe wordt de dynamische prijs berekend? -->
-        <details class="glass-panel" id="dynprice-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;">
-          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
-            💶 Hoe wordt de dynamische prijs per uur berekend?
-            <button type="button" class="dismiss-x" data-dismiss="dynprice-explainer" data-persist title="Verberg deze uitleg">×</button>
-          </summary>
-          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
-            <p style="margin:0 0 0.7rem;">Bij een dynamisch contract verandert je kale stroomprijs <strong>elk
-              uur</strong>. Wat je per kWh <em>afneemt</em> betaalt, is opgebouwd uit vier delen:</p>
-            <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.18);border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.7rem;font-size:0.8rem;">
-              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;line-height:2;">
-                <span style="background:rgba(0,242,254,0.18);padding:0.1rem 0.45rem;border-radius:5px;">EPEX-beursprijs<br><span style="font-size:0.68rem;color:var(--text-muted);">dat uur</span></span>
-                <span style="font-size:1.1rem;">+</span>
-                <span style="background:rgba(102,126,234,0.18);padding:0.1rem 0.45rem;border-radius:5px;">opslag<br><span style="font-size:0.68rem;color:var(--text-muted);">leverancier</span></span>
-                <span style="font-size:1.1rem;">+</span>
-                <span style="background:rgba(255,165,0,0.18);padding:0.1rem 0.45rem;border-radius:5px;">21% BTW<br><span style="font-size:0.68rem;color:var(--text-muted);">over die twee</span></span>
-                <span style="font-size:1.1rem;">+</span>
-                <span style="background:rgba(56,239,125,0.18);padding:0.1rem 0.45rem;border-radius:5px;">energiebelasting<br><span style="font-size:0.68rem;color:var(--text-muted);">vast per kWh</span></span>
-                <span style="font-size:1.1rem;">=</span>
-                <span style="background:var(--accent-cyan);color:#000;font-weight:700;padding:0.1rem 0.45rem;border-radius:5px;">all-in prijs</span>
-              </div>
-            </div>
-            <p style="margin:0 0 0.5rem;"><strong>Rekenvoorbeeld</strong> (één uur, met de huidige instellingen):</p>
-            <div id="dynprice-example" style="font-family:var(--font-display);font-size:0.82rem;background:rgba(255,255,255,0.03);border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;line-height:1.9;">
-              <em style="color:var(--text-muted);font-family:var(--font-body);">Voorbeeld verschijnt zodra een simulatie is gedraaid…</em>
-            </div>
-            <ul style="margin:0 0 0.4rem 1.1rem;padding:0;">
-              <li><strong>Teruglevering</strong> wordt vergoed tegen de <em>kale</em> EPEX-prijs van dat uur (zonder
-                opslag/EB). Bij een negatieve prijs betaal je juist bíj om terug te leveren.</li>
-              <li><strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle
-                afgenomen kWh — je teruglevering wordt er niet meer van afgetrokken.</li>
-            </ul>
-            <p style="margin:0;font-size:0.78rem;">📋 De volledige uur-voor-uur-uitwerking staat in de tabel
-              <strong>Dynamisch Contract Specificatie</strong> hieronder — klik daar op <em>“Afname (EPEX + opslag +
-                BTW)”</em> voor de tabel per uur of per dag.</p>
-          </div>
-        </details>
+
 
         <!-- Detailed side-by-side comparison tables -->
         <div class="comparison-grid">
@@ -1449,7 +1412,7 @@
               </thead>
               <tbody>
                 <!-- Netto energiekosten (Header) -->
-                <tr id="hdr-fixed-net-energy" onclick="toggleTableDetail('hdr-fixed-net-energy', 'fixed-net-detail')" style="cursor:pointer; font-weight:600;">
+                <tr id="hdr-fixed-net-energy"  style="cursor:pointer; font-weight:600;">
                   <td>Netto energiekosten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
                   <td style="font-size:0.75rem;color:var(--text-muted);">afname − vergoeding + VTK</td>
                   <td id="tbl-fixed-net-energy">-</td>
@@ -1477,7 +1440,7 @@
                 </tr>
 
                 <!-- Vaste lasten (Header) -->
-                <tr id="hdr-fixed-vaste-lasten" onclick="toggleTableDetail('hdr-fixed-vaste-lasten', 'fixed-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
+                <tr id="hdr-fixed-vaste-lasten"  style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
                   <td>Vaste lasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
                   <td style="font-size:0.75rem;color:var(--text-muted);">vastrecht − vermindering EB + netbeheer</td>
                   <td id="tbl-fixed-vaste-lasten">-</td>
@@ -1524,13 +1487,13 @@
               </thead>
               <tbody>
                 <!-- Netto energiekosten (Header) -->
-                <tr id="hdr-dyn-net-energy" onclick="toggleTableDetail('hdr-dyn-net-energy', 'dyn-net-detail')" style="cursor:pointer; font-weight:600;">
+                <tr id="hdr-dyn-net-energy"  style="cursor:pointer; font-weight:600;">
                   <td>Netto energiekosten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
                   <td style="font-size:0.75rem;color:var(--text-muted);">afname − teruglevering</td>
                   <td id="tbl-dyn-net-cost-header">-</td>
                 </tr>
                 <!-- Sub-rows under Netto energiekosten -->
-                <tr id="tbl-dyn-afname-row" class="dyn-net-detail sub-row" onclick="toggleAfnameDetail(); event.stopPropagation();" style="display:none; cursor:pointer; background:rgba(255,255,255,0.015);" title="Klik voor dagelijkse uitwerking">
+                <tr id="tbl-dyn-afname-row" class="dyn-net-detail sub-row"  style="display:none; cursor:pointer; background:rgba(255,255,255,0.015);" title="Klik voor dagelijkse uitwerking">
                   <td style="display:flex;align-items:center;gap:0.4rem;">
                     Afname (EPEX + opslag + BTW)
                     <span id="afname-toggle-icon" style="font-size:0.7rem;opacity:0.5;transition:transform 0.2s;">▼</span>
@@ -1560,7 +1523,7 @@
                 </tr>
 
                 <!-- Vaste lasten (Header) -->
-                <tr id="hdr-dyn-vaste-lasten" onclick="toggleTableDetail('hdr-dyn-vaste-lasten', 'dyn-lasten-detail')" style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
+                <tr id="hdr-dyn-vaste-lasten"  style="cursor:pointer; font-weight:600; border-top:1px solid rgba(255,255,255,0.05);">
                   <td>Vaste lasten <span class="toggle-chevron" style="transform:rotate(-90deg);">▼</span></td>
                   <td style="font-size:0.75rem;color:var(--text-muted);">vastrecht − korting + netbeheer</td>
                   <td id="tbl-dyn-vaste-lasten">-</td>
@@ -1593,9 +1556,46 @@
 
         </div>
 
+        <!-- Uitleg: hoe wordt de dynamische prijs berekend? -->
+        <details class="glass-panel" id="dynprice-explainer" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;">
+          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
+            <svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.35rem; color: var(--accent-green);"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="3"></circle><line x1="6" y1="12" x2="6.01" y2="12"></line><line x1="18" y1="12" x2="18.01" y2="12"></line></svg> Hoe wordt de dynamische prijs per uur berekend?
+            <button type="button" class="dismiss-x" data-dismiss="dynprice-explainer" data-persist title="Verberg deze uitleg">×</button>
+          </summary>
+          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
+            <p style="margin:0 0 0.7rem;">Bij een dynamisch contract verandert je kale stroomprijs <strong>elk
+              uur</strong>. Wat je per kWh <em>afneemt</em> betaalt, is opgebouwd uit vier delen:</p>
+            <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.18);border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:0.7rem;font-size:0.8rem;">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;line-height:2;">
+                <span style="background:rgba(0,242,254,0.18);padding:0.1rem 0.45rem;border-radius:5px;">EPEX-beursprijs<br><span style="font-size:0.68rem;color:var(--text-muted);">dat uur</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(102,126,234,0.18);padding:0.1rem 0.45rem;border-radius:5px;">opslag<br><span style="font-size:0.68rem;color:var(--text-muted);">leverancier</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(255,165,0,0.18);padding:0.1rem 0.45rem;border-radius:5px;">21% BTW<br><span style="font-size:0.68rem;color:var(--text-muted);">over die twee</span></span>
+                <span style="font-size:1.1rem;">+</span>
+                <span style="background:rgba(56,239,125,0.18);padding:0.1rem 0.45rem;border-radius:5px;">energiebelasting<br><span style="font-size:0.68rem;color:var(--text-muted);">vast per kWh</span></span>
+                <span style="font-size:1.1rem;">=</span>
+                <span style="background:var(--accent-cyan);color:#000;font-weight:700;padding:0.1rem 0.45rem;border-radius:5px;">all-in prijs</span>
+              </div>
+            </div>
+            <p style="margin:0 0 0.5rem;"><strong>Rekenvoorbeeld</strong> (één uur, met de huidige instellingen):</p>
+            <div id="dynprice-example" style="font-family:var(--font-display);font-size:0.82rem;background:rgba(255,255,255,0.03);border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.7rem;line-height:1.9;">
+              <em style="color:var(--text-muted);font-family:var(--font-body);">Voorbeeld verschijnt zodra een simulatie is gedraaid…</em>
+            </div>
+            <ul style="margin:0 0 0.4rem 1.1rem;padding:0;">
+              <li><strong>Teruglevering</strong> wordt vergoed tegen de <em>kale</em> EPEX-prijs van dat uur (zonder
+                opslag/EB). Bij een negatieve prijs betaal je juist bíj om terug te leveren.</li>
+              <li><strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle
+                afgenomen kWh — je teruglevering wordt er niet meer van afgetrokken.</li>
+            </ul>
+            <p style="margin:0;font-size:0.78rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.35rem; color: var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg> De volledige uur-voor-uur-uitwerking staat in de tabel
+              <strong>Specificatie dynamisch contract</strong> hierboven — klik daar op <em>“Netto energiekosten”</em> voor de tabel per uur of per dag.</p>
+          </div>
+        </details>
+
         <!-- Download: eigen data met gematchte EPEX-prijzen -->
         <div style="display:flex;flex-direction:column;align-items:center;gap:0.4rem;margin-top:0.5rem;">
-          <button class="btn-secondary" onclick="downloadDataWithPrices()" style="display:inline-flex;align-items:center;gap:0.5rem;">
+          <button id="btn-download-csv" class="btn-secondary" style="display:inline-flex;align-items:center;gap:0.5rem;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
@@ -1616,7 +1616,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=67"></script>
+  <script src="/energie/app.js?v=68"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

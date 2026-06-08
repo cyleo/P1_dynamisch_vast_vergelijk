@@ -1,3 +1,6 @@
+import { appStore } from "../domain/store.js";
+import { renderChart } from "./charts.js";
+
 /**
  * Displays the setup modal dialog.
  */
@@ -51,8 +54,8 @@ export function closeHardwareExplainer() {
 export function hardwareExplainerContent(kind) {
   const watervalBlock = `
     <div class="explain-block" style="border-left-color: var(--accent-yellow);">
-      <h4>🌊 De Zonne-waterval (Volgorde van stroomverdeling)</h4>
-      <p>Opgewekte zonnestroom stroomt in deze vaste prioriteitsvolgorde door je woning:</p>
+      <h4><svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 12c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 18c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path></svg> De Zonne-waterval (Volgorde van stroomverdeling)</h4>
+      <p style="margin-top:0.4rem;">Opgewekte zonnestroom stroomt in deze vaste prioriteitsvolgorde door je woning:</p>
       <ol style="margin-left: 1.2rem; padding: 0; line-height: 1.6;">
         <li><strong>Huisverbruik:</strong> Eerst worden je actieve apparaten in huis gevoed.</li>
         <li><strong>Elektrische auto (EV):</strong> Wat over is gaat naar de EV (indien zonne-laden actief is en de auto is gekoppeld).</li>
@@ -66,7 +69,7 @@ export function hardwareExplainerContent(kind) {
     const activeMode = document.getElementById("bat-mode")?.value || "zelf";
     const tag = (m) => activeMode === m ? ` <span style="color:var(--accent-green);font-size:0.75rem;">(nu actief)</span>` : "";
     return {
-      title: "🔋 Hoe werkt het thuisbatterij-model?",
+      title: `<svg class="icon icon-inline" viewBox="0 0 24 24" style="font-size: 1.2rem; color: var(--accent-cyan);"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Hoe werkt het thuisbatterij-model?`,
       body: `
         <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
           De accu wordt <strong>per uur</strong> doorgerekend, en apart voor het dynamische en het vaste
@@ -76,7 +79,7 @@ export function hardwareExplainerContent(kind) {
         </p>
         ${watervalBlock}
         <div class="explain-block">
-          <h4>🔋 Maximaal zelfverbruik (standaard)${tag("zelf")}</h4>
+          <h4><svg class="icon icon-inline" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg> Maximaal zelfverbruik (standaard)${tag("zelf")}</h4>
           <ul>
             <li><strong>Opslaan:</strong> zonne-overschot dat je anders zou exporteren gaat in de accu —
               maar niet méér dan je die dag zelf nog kunt verbruiken. De rest wordt gewoon geëxporteerd
@@ -89,7 +92,7 @@ export function hardwareExplainerContent(kind) {
 ontladen: dekt eigen import (bespaart all-in)</code>
         </div>
         <div class="explain-block">
-          <h4>💡 Kostenbewust${tag("kosten")}</h4>
+          <h4><svg class="icon icon-inline" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg> Kostenbewust${tag("kosten")}</h4>
           <ul>
             <li>Als zelfverbruik, plus: in de <strong>goedkoopste uren van de dag</strong> laadt de accu
               bij van het net — maar <strong>alléén het stukje dat de zon niet dekt</strong> en dat je
@@ -103,7 +106,7 @@ ontladen: dekt eigen import (bespaart all-in)</code>
   laad_budget = max(0, maximale_eigen_behoefte − zonne_overschot × rendements_factor) / rendements_factor</code>
         </div>
         <div class="explain-block">
-          <h4>📈 Maximale winst${tag("winst")}</h4>
+          <h4><svg class="icon icon-inline" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Maximale winst${tag("winst")}</h4>
           <ul>
             <li>Als kostenbewust, plus: in de duurste uren <strong>verkoopt de accu het overschot terug aan het net</strong>.</li>
             <li>Dit gebeurt alleen als de opbrengst — de <strong>kale spotprijs</strong> (zónder BTW en
@@ -119,7 +122,7 @@ ontladen: dekt eigen import (bespaart all-in)</code>
   export = max(0, opgeslagen_stroom − maximale_eigen_behoefte)</code>
         </div>
         <p class="explain-note">
-          ⓘ De knop "Bereken Ideale Accu Formaat" veegt verschillende groottes door met de gekozen modus en
+          <svg class="icon icon-inline" viewBox="0 0 24 24" style="width: 12px; height: 12px; stroke-width: 2.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> De knop "Bereken Ideale Accu Formaat" veegt verschillende groottes door met de gekozen modus en
           toont de terugverdientijd (bij €450/kWh) — zo zie je dat een grotere accu niet automatisch beter is.
         </p>
         <details class="explain-formula">
@@ -169,7 +172,7 @@ export_stroom = maximale_waarde van (0 OF opgeslagen_stroom − maximale_eigen_b
   }
   if (kind === "heatpump") {
     return {
-      title: "♨️ Hoe werkt het warmtepomp-model?",
+      title: `<svg class="icon icon-inline" viewBox="0 0 24 24" style="font-size: 1.2rem; color: var(--accent-purple);"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg> Hoe werkt het warmtepomp-model?`,
       body: `
         <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
           De warmtepomp voegt een <strong>elektrische stooklast</strong> toe (de schuif = gemiddeld
@@ -217,7 +220,7 @@ sep: 0.29  ·  okt: 0.66  ·  nov: 1.02  ·  dec: 1.31</code>
   }
   // EV
   return {
-    title: "🚗 Hoe werkt het EV-model?",
+    title: `<svg class="icon icon-inline" viewBox="0 0 24 24" style="font-size: 1.2rem; color: var(--accent-blue);"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg> Hoe werkt het EV-model?`,
     body: `
       <p style="font-size:0.86rem;color:var(--text-muted);line-height:1.7;">
         Uit <strong>wekelijkse afstand × verbruik per 100 km</strong> volgt de jaarlijkse laadvraag.
@@ -298,11 +301,13 @@ export function toggleCard(titleEl) {
  * Toggles the visibility of a specific line in the simulation profile chart.
  */
 export function toggleProfileLine(key) {
-  profileVisibleLines[key] = !profileVisibleLines[key];
+  const current = appStore.getState().profileVisibleLines;
+  const nextLines = { ...current, [key]: !current[key] };
+  appStore.setState({ profileVisibleLines: nextLines });
   const legendEl = document.getElementById(`legend-${key}`);
   if (legendEl) {
-    legendEl.style.opacity = profileVisibleLines[key] ? "1" : "0.35";
-    legendEl.style.textDecoration = profileVisibleLines[key] ? "none" : "line-through";
+    legendEl.style.opacity = nextLines[key] ? "1" : "0.35";
+    legendEl.style.textDecoration = nextLines[key] ? "none" : "line-through";
   }
   renderChart();
 }
@@ -392,8 +397,8 @@ export function showUploadError(msg) {
     errEl.style.cssText = "color:var(--accent-orange);font-size:0.8rem;margin-top:0.6rem;";
     document.getElementById("dropzone").after(errEl);
   }
-  errEl.textContent = "⚠ " + msg;
-  setTimeout(() => { errEl.textContent = ""; }, 8000);
+  errEl.innerHTML = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> ` + msg;
+  setTimeout(() => { errEl.innerHTML = ""; }, 8000);
 }
 
 export function toggleAfnameDetail() {
@@ -424,6 +429,7 @@ export function updateDigitalTwinBanner(meta) {
   const devEl = document.getElementById("digital-twin-devices");
   if (devEl) devEl.textContent = human || "hardware";
 
+  const { digitalTwinEnabled } = appStore.getState();
   const on = digitalTwinEnabled;
   banner.style.border = `1px solid ${on ? "var(--accent-cyan)" : "var(--accent-orange)"}`;
   banner.style.background = on ? "rgba(56,189,248,0.08)" : "rgba(251,146,60,0.08)";

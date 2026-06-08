@@ -984,6 +984,25 @@ body.mode-simple #dynprice-explainer {
   }
 }
 
+/* Premium SVG Icon styling */
+.icon {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.15em;
+  display: inline-block;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  margin-right: 0.45rem;
+}
+.icon-inline {
+  margin-right: 0;
+  vertical-align: middle;
+}
+
+
 /* Very Small Mobile Screen Adjustments (Screens <= 400px) */
 @media (max-width: 400px) {
   /* Stack the stats-row vertically as 2 columns becomes too narrow */

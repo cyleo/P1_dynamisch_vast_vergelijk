@@ -1,33 +1,61 @@
-// ── Simulatie-constanten (voorheen verspreide magic numbers) ─────────────────
-export const EV_MAX_CHARGE_KW = 11.0;   // max laadvermogen EV per uur (kWh)
-export const BATTERY_C_RATE = 0.5;    // laad/ontlaadvermogen = capaciteit × C-rate
-export const EVENING_PEAK_MULT = 3.0;    // koken/verlichting: synthetische avond × baseload (17–21u)
+/**
+ * @module Constants
+ * @description Application-wide constants for simulation math, hardware defaults, and tax rates.
+ */
 
-// Maandelijkse warmtepomp-belastingfactor o.b.v. NL klimaat-graaddagen (HDD, basis 18°C,
-// De Bilt-normaal 1991–2020), genormaliseerd op de wintermaanden (dec–feb gem. ≈ 1,3 =
-// de "winter stooklast"-schuif). Zomer houdt een vloer (~0,15) voor warmtapwater.
-// Realistischere seizoensvorm dan de oude 3-staps 1,3/0,7/0,15: koudste maand (jan) piekt
-// en de schouderseizoenen lopen geleidelijk. NB: dit lijnt nog NIET per dag uit met de
-// EPEX-koudepieken — daarvoor zijn KNMI-daggegevens (graaddagen per dag) nodig.
+/**
+ * Maximum EV charging power per hour in kW.
+ * @constant {number}
+ */
+export const EV_MAX_CHARGE_KW = 11.0;
+
+/**
+ * Battery charge/discharge C-rate. Max power = capacity * C-rate.
+ * @constant {number}
+ */
+export const BATTERY_C_RATE = 0.5;
+
+/**
+ * Evening peak multiplier for synthetic baseload (17:00-21:00).
+ * @constant {number}
+ */
+export const EVENING_PEAK_MULT = 3.0;
+
+/**
+ * Monthly heat pump load factors based on NL climate degree days (HDD).
+ * Normalized to winter months. Summer months hold a floor for hot tap water.
+ * @constant {Object<number, number>}
+ */
 export const HEATPUMP_HDD_FACTOR = {
   1: 1.38, 2: 1.21, 3: 1.10, 4: 0.77, 5: 0.44, 6: 0.17,
   7: 0.15, 8: 0.15, 9: 0.29, 10: 0.66, 11: 1.02, 12: 1.31,
 };
 
-// Constant market prices & taxes (fallback if live fetch fails)
-export const ENERGY_TAX_2026 = 0.11084; // €/kWh (including VAT)
-// Vermindering energiebelasting (heffingskorting) — vaste jaarlijkse korting per
-// elektriciteitsaansluiting. 2026: €628,96 incl. BTW (bron: Milieu Centraal / Belastingdienst).
-// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar zonder
-// deze post liggen de absolute jaartotalen ~€629 te hoog t.o.v. de echte jaarrekening.
-export const EB_REBATE_2026 = 628.96; // €/jaar incl. BTW
-// Netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) — gemiddeld over grote netbeheerders
-// (Enexis/Liander/Stedin) voor 2026: ca €480,- per jaar incl. BTW.
-// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar nodig
-// voor een realistisch en compleet totaalbedrag op de jaarrekening.
-export const NETBEHEER_2026 = 480.00; // €/jaar incl. BTW
+/**
+ * Energy tax per kWh for 2026 (including VAT).
+ * @constant {number}
+ */
+export const ENERGY_TAX_2026 = 0.11084;
 
-// Seizoensgebonden EPEX-fallbackprofielen (ruwe beursprijzen €/kWh, excl. BTW, excl. EB, excl. opslag)
+/**
+ * Energy tax reduction (heffingskorting) per connection per year for 2026.
+ * Applies equally to both contract types.
+ * @constant {number}
+ */
+export const EB_REBATE_2026 = 628.96;
+
+/**
+ * Average annual grid management fees (netbeheerkosten) for <= 3x25A in 2026.
+ * Applies equally to both contract types.
+ * @constant {number}
+ */
+export const NETBEHEER_2026 = 480.00;
+
+/**
+ * Seasonal fallback EPEX profiles (raw market prices €/kWh, excl VAT/taxes/markup).
+ * Used when live fetching fails or is unavailable.
+ * @constant {Object<string, Object<number, number>>}
+ */
 // Gebaseerd op typische Nederlandse EPEX-patronen per seizoen.
 // getFallbackSpot() past automatisch BTW toe (×1.21) op positieve uren.
 //
@@ -68,3 +96,26 @@ export const EPEX_PROFILES = {
     18: 0.15, 19: 0.13, 20: 0.11, 21: 0.09, 22: 0.08, 23: 0.07
   }
 };
+
+/**
+ * Default Home Assistant entity mapping used when no custom mapping exists.
+ * Maps simulation roles to entity IDs found in the demo history export.
+ * @constant {Object}
+ */
+export const DEMO_ROLEMAP = {
+  imp1: "sensor.p1_meter_energy_import_tariff_1",
+  imp2: "sensor.p1_meter_energy_import_tariff_2",
+  exp1: "sensor.p1_meter_energy_export_tariff_1",
+  exp2: "sensor.p1_meter_energy_export_tariff_2",
+  solar: "sensor.solar_inverter_lifetime_energy_production",
+  solarUnit: "kWh",
+  ev: "sensor.ev_charger_charge_added_session",
+  evUnit: "kWh",
+  hp: "sensor.heat_pump_energy_consumption",
+  hpUnit: "kWh",
+  batIn: "sensor.home_battery_ac_aggr_charge",
+  batInUnit: "kWh",
+  batOut: "sensor.home_battery_ac_aggr_discharge",
+  batOutUnit: "kWh",
+};
+

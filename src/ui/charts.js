@@ -1,6 +1,45 @@
 
+import { appStore } from "../domain/store.js";
+import { toConsumerPrice, isoWeek } from "../domain/energyMath.js";
+
+let afnameDetailView = "hour"; // "day" | "hour"
+export function setAfnameView(v) {
+  afnameDetailView = v;
+  renderAfnameDetail();
+}
+window.setAfnameView = setAfnameView;
+
 export const fmtMoney = v => "€ " + (v || 0).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const fmtKwh = v => (v || 0).toLocaleString("nl-NL", { maximumFractionDigits: 0 }) + " kWh";
+
+// Premium inline SVG icons to replace emojis
+const ICON_CHECK = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+const ICON_WARN = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+const ICON_INFO = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-blue);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+const ICON_BATTERY = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-cyan);"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg>`;
+
+// Bind store variables locally for the charts
+let {
+  activeViewType, overviewMode, overviewMetric, sankeyInterval,
+  sankeyValue, simMode, simDrillDay, profileVisibleLines, activeSimulation,
+  epexWarnDismissed, calibratedProfile, calibrationMeta, liveEnergyTax
+} = appStore.getState();
+
+appStore.subscribe(state => {
+  activeViewType = state.activeViewType;
+  overviewMode = state.overviewMode;
+  overviewMetric = state.overviewMetric;
+  sankeyInterval = state.sankeyInterval;
+  sankeyValue = state.sankeyValue;
+  simMode = state.simMode;
+  simDrillDay = state.simDrillDay;
+  profileVisibleLines = state.profileVisibleLines;
+  activeSimulation = state.activeSimulation;
+  epexWarnDismissed = state.epexWarnDismissed;
+  calibratedProfile = state.calibratedProfile;
+  calibrationMeta = state.calibrationMeta;
+  liveEnergyTax = state.liveEnergyTax;
+});
 
 // Placeholder voor de globals totdat we state management toevoegen
 export let __chartsDependencies = {
@@ -13,6 +52,9 @@ export let __chartsDependencies = {
 export function setChartsDependencies(deps) {
   __chartsDependencies = { ...__chartsDependencies, ...deps };
 }
+
+// Local UI state for hardware detail expand/collapse
+const hwOpenState = { hp: false, ev: false, bat: false };
 
 
 /**
@@ -381,6 +423,171 @@ export function renderChart() {
   });
 }
 
+function _updateSimHeader() {
+  const modeLabel = document.getElementById("sim-chart-mode-label");
+  const subtitle = document.getElementById("sim-chart-subtitle");
+  const backBtn = document.getElementById("sim-back-btn");
+  const pct = activeSimulation?.epexPct ?? 0;
+  const epexNote = pct === 100 ? "" : ` · ${pct > 0 ? pct + "% echte EPEX" : `${ICON_WARN} gesimuleerde prijzen`}`;
+
+  if (simDrillDay) {
+    const d = new Date(simDrillDay + "T12:00:00");
+    modeLabel.textContent = d.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
+    subtitle.innerHTML = `Kosten per uur · groen = dynamisch goedkoper · rood = duurder${epexNote}`;
+    if (backBtn) backBtn.style.display = "";
+  } else {
+    modeLabel.textContent = simMode === "week" ? "Week" : "Dag";
+    subtitle.innerHTML = simMode === "week"
+      ? `Totale kosten per week · klik op een balk voor uurdetail${epexNote}`
+      : `Totale kosten per dag · klik op een dag voor uurdetail${epexNote}`;
+    if (backBtn) backBtn.style.display = "none";
+  }
+}
+
+// ── Drill-down: uurkosten voor één specifieke dag ────────────────────────────
+function _renderSimDrill() {
+  const dayData = activeSimulation?.perDayHourly?.[simDrillDay];
+  if (!dayData) { appStore.setState({ simDrillDay: null }); renderSimChart(); return; }
+
+  const fixedPeak = parseFloat(document.getElementById("fixed-peak")?.value) || 0.27;
+  const fixedDal = parseFloat(document.getElementById("fixed-dal")?.value) || 0.24;
+
+  const dynVals = dayData.map(h => h ? h.dynCost : 0);
+  const fixedVals = dayData.map(h => {
+    if (!h) return 0;
+    const dt = new Date(simDrillDay + "T00:00:00"); dt.setHours(h ? dayData.indexOf(h) : 0);
+    // Use stored fixedCost
+    return h.fixedCost;
+  });
+  const spots = dayData.map(h => h ? h.spot : null);
+
+  const container = document.getElementById("sim-svg-container");
+  const svg = document.getElementById("sim-svg");
+  const tooltip = document.getElementById("sim-tooltip");
+  const W = container.clientWidth, H = container.clientHeight;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+
+  const PAD_L = 42, PAD_R = 40, PAD_T = 14, PAD_B = 28;
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+  const N = 24, barSlot = cW / N, barW = Math.max(2, barSlot * 0.38);
+  const maxCost = Math.max(...dynVals.map(Math.abs), ...fixedVals.map(Math.abs), 0.001) * 1.2;
+  const zero = PAD_T + cH / 2;
+
+  const mk = (tag, a) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); Object.entries(a).forEach(([k, v]) => el.setAttribute(k, v)); return el; };
+  const yOf = v => zero - (v / maxCost) * (cH / 2);
+  const xOf = h => PAD_L + h * barSlot + barSlot / 2;
+
+  // Zero line
+  svg.appendChild(mk("line", { x1: PAD_L, y1: zero, x2: W - PAD_R, y2: zero, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
+  [0.5, 1].forEach(r => [1, -1].forEach(s => {
+    const y = zero - s * r * (cH / 2);
+    svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(255,255,255,0.04)" }));
+  }));
+
+  // Y-axis labels (left)
+  ["1", "0", "-1"].forEach((_, i) => {
+    const val = (1 - i) * maxCost, y = zero - (1 - i) * (cH / 2);
+    const lbl = mk("text", { x: PAD_L - 5, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)", "font-size": "8" });
+    const fmt = v => v >= 0.01 ? `€${v.toFixed(2)}` : `${(v * 100).toFixed(1)}¢`;
+    lbl.textContent = fmt(Math.abs(val)) + (val < 0 ? " +" : (val > 0 ? " −" : ""));
+    svg.appendChild(lbl);
+  });
+
+  // Bars + background shading
+  for (let h = 0; h < 24; h++) {
+    const dyn = dynVals[h], fx = fixedVals[h], diff = dyn - fx;
+    svg.appendChild(mk("rect", { x: PAD_L + h * barSlot, y: PAD_T, width: barSlot, height: cH, fill: diff < 0 ? "rgba(56,239,125,0.05)" : "rgba(255,100,100,0.05)" }));
+    [[dyn, "rgba(0,242,254,0.75)", -barW * 0.55], [fx, "rgba(102,126,234,0.75)", barW * 0.05]].forEach(([val, col, off]) => {
+      const y1 = yOf(0), y2 = yOf(val), top = Math.min(y1, y2), ht = Math.abs(y2 - y1);
+      if (ht < 0.5) return;
+      svg.appendChild(mk("rect", { x: xOf(h) + off, y: top, width: barW, height: ht, fill: col, rx: "1" }));
+    });
+  }
+
+  // Price line + right axis
+  const validSpots = spots.filter(s => s != null);
+  if (validSpots.length) {
+    const pricesList = validSpots.map(s => toConsumerPrice(s)).concat([fixedPeak, fixedDal]);
+    let priceMin = 0.0;
+    let priceMax = 0.10;
+    pricesList.forEach(p => {
+      if (p > priceMax) priceMax = p;
+      if (p < priceMin) priceMin = p;
+    });
+    priceMax *= 1.15;
+    if (priceMin < 0) {
+      priceMin *= 1.15;
+    }
+    const yP = v => PAD_T + cH - ((v - priceMin) / (priceMax - priceMin)) * cH;
+    const pRX = W - PAD_R + 4;
+    [0, 0.5, 1].forEach(r => {
+      const val = priceMin + r * (priceMax - priceMin), y = yP(val);
+      svg.appendChild(mk("line", { x1: W - PAD_R, y1: y, x2: W - PAD_R + 3, y2: y, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
+      const lbl = mk("text", { x: pRX + 1, y: y + 3, "text-anchor": "start", fill: "rgba(255,255,255,0.35)", "font-size": "7" });
+      lbl.textContent = `€${val.toFixed(2)}`; svg.appendChild(lbl);
+    });
+    // Add zero line if price is negative
+    if (priceMin < 0) {
+      svg.appendChild(mk("line", {
+        x1: PAD_L,
+        y1: yP(0),
+        x2: W - PAD_R,
+        y2: yP(0),
+        stroke: "rgba(0, 242, 254, 0.25)",
+        "stroke-dasharray": "2,2",
+        "stroke-width": "1"
+      }));
+    }
+    const axL = mk("text", { x: W - 2, y: PAD_T + cH / 2, "text-anchor": "middle", fill: "rgba(255,255,255,0.25)", "font-size": "7", transform: `rotate(-90,${W - 2},${PAD_T + cH / 2})` });
+    axL.textContent = "€/kWh"; svg.appendChild(axL);
+    // Fixed tariff lines
+    [[fixedPeak, "piek", 0.65], [fixedDal, "dal", 0.35]].forEach(([t, lbl2, xf]) => {
+      const y = yP(t);
+      svg.appendChild(mk("line", { x1: PAD_L, y1: y, x2: W - PAD_R, y2: y, stroke: "rgba(102,126,234,0.45)", "stroke-width": "1", "stroke-dasharray": "4,3" }));
+      const lt = mk("text", { x: PAD_L + cW * xf, y: y - 2, "text-anchor": "middle", fill: "rgba(102,126,234,0.75)", "font-size": "7" });
+      lt.textContent = `vast ${lbl2} €${t.toFixed(2)}`; svg.appendChild(lt);
+    });
+    // Dynamic price step line
+    const pts = [];
+    spots.forEach((s, h) => {
+      if (s == null) return;
+      const x1 = PAD_L + h * barSlot, x2 = x1 + barSlot, y = yP(toConsumerPrice(s));
+      pts.push(pts.length === 0 ? `M${x1},${y}` : `L${x1},${y}`);
+      pts.push(`L${x2},${y}`);
+    });
+    if (pts.length) svg.appendChild(mk("path", { d: pts.join(" "), fill: "none", stroke: "rgba(0,242,254,0.8)", "stroke-width": "1.5" }));
+  }
+
+  // X labels
+  [0, 4, 8, 12, 16, 20, 23].forEach(h => {
+    const lbl = mk("text", { x: xOf(h), y: H - 8, "text-anchor": "middle", fill: "var(--text-muted)", "font-size": "9" });
+    lbl.textContent = `${String(h).padStart(2, "0")}:00`; svg.appendChild(lbl);
+  });
+
+  // Hover overlays
+  for (let h = 0; h < 24; h++) {
+    const ov = mk("rect", { x: PAD_L + h * barSlot, y: PAD_T, width: barSlot, height: cH, fill: "transparent", cursor: "crosshair" });
+    ov.addEventListener("mouseenter", () => {
+      const dyn = dynVals[h], fx = fixedVals[h], diff = dyn - fx;
+      document.getElementById("sim-tt-hour").textContent = `${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00`;
+      document.getElementById("sim-tt-dyn").textContent = `€ ${Math.abs(dyn).toFixed(4)}/uur${dyn < 0 ? " (opbrengst)" : ""}`;
+      document.getElementById("sim-tt-fixed").textContent = `€ ${Math.abs(fx).toFixed(4)}/uur${fx < 0 ? " (opbrengst)" : ""}`;
+      const de = document.getElementById("sim-tt-diff");
+      de.textContent = (diff < 0 ? "−" : "+") + ` € ${Math.abs(diff).toFixed(4)} (${diff < 0 ? "dyn goedkoper" : "dyn duurder"})`;
+      de.style.color = diff < 0 ? "var(--accent-green)" : "var(--accent-orange)";
+      const s = spots[h];
+      document.getElementById("sim-tt-spot").textContent = s != null ? `Consumentenprijs: € ${toConsumerPrice(s).toFixed(3)}/kWh` : "";
+      tooltip.style.display = "block";
+      let tx = xOf(h) + 12; if (tx + 200 > W) tx = xOf(h) - 210;
+      tooltip.style.left = tx + "px"; tooltip.style.top = (PAD_T + 10) + "px";
+      ov.setAttribute("fill", "rgba(255,255,255,0.04)");
+    });
+    ov.addEventListener("mouseleave", () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); });
+    svg.appendChild(ov);
+  }
+}
+
 /**
  * Renders the detailed 24-hour simulation breakdown chart (hardware effects).
  */
@@ -500,9 +707,9 @@ export function renderSimChart() {
     // Drill-down on click (day mode only — week mode drills to the first day of that week)
     ov.addEventListener("click", () => {
       if (!isWeekMode) {
-        simDrillDay = keys[i];
+        appStore.setState({ simDrillDay: keys[i] });
       } else {
-        simDrillDay = buckets.get(keys[i]).firstDate;
+        appStore.setState({ simDrillDay: buckets.get(keys[i]).firstDate });
       }
       tooltip.style.display = "none";
       renderSimChart();
@@ -530,7 +737,7 @@ export function renderAfnameDetail() {
           background:${afnameDetailView === 'day' ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.08)'};
           color:${afnameDetailView === 'day' ? '#000' : 'var(--text-muted)'};">Per dag</button>
       <span style="font-size:0.68rem;color:var(--text-muted);margin-left:0.5rem;align-self:center;">
-        ${__chartsDependencies.activeSimulation.epexPct === 100 ? "✓ echte EPEX uurprijzen" : __chartsDependencies.activeSimulation.epexPct > 0 ? `${__chartsDependencies.activeSimulation.epexPct}% echt` : "⚠ gesimuleerde prijzen (klik Ophalen)"}
+        ${__chartsDependencies.activeSimulation.epexPct === 100 ? `${ICON_CHECK} <span>echte EPEX uurprijzen</span>` : __chartsDependencies.activeSimulation.epexPct > 0 ? `${__chartsDependencies.activeSimulation.epexPct}% echt` : `${ICON_WARN} <span>gesimuleerde prijzen (klik Ophalen)</span>`}
       </span>
     </div>`;
 
@@ -603,7 +810,7 @@ export function renderAfnameDetailHour(body, viewToggle) {
     </table>
     <p style="font-size:0.68rem;color:var(--text-muted);padding:0.4rem 0.5rem;">
       Mediaan verbruik per uur over alle dagen × mediaan consumentenprijs. Rode uren = dynamisch duurder dan vast.
-      ${__chartsDependencies.activeSimulation.epexPct < 100 ? "<br>⚠ Gesimuleerde prijzen — met echte EPEX-data (Ophalen) worden winterpieken zichtbaar." : ""}
+      ${__chartsDependencies.activeSimulation.epexPct < 100 ? `<br>${ICON_WARN} <span>Gesimuleerde prijzen — met echte EPEX-data (Ophalen) worden winterpieken zichtbaar.</span>` : ""}
     </p>`;
 }
 
@@ -773,7 +980,7 @@ export function renderHwChart() {
 
   const deviceDefs = [
     {
-      key: "hp", icon: "🌡", label: "Warmtepomp", data: fx.hp,
+      key: "hp", icon: `<svg class="icon" viewBox="0 0 24 24" style="color:var(--accent-purple);"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>`, label: "Warmtepomp", data: fx.hp,
       explanation: (d) => {
         const bl = d.cfg?.hpWinterBaseload ?? 0;
         return `<strong>Aanname:</strong> Extra baseload van <strong>${bl} kW</strong> voor de warmtepomp.
@@ -785,7 +992,7 @@ export function renderHwChart() {
       }
     },
     {
-      key: "ev", icon: "🚗", label: "Auto (EV)", data: fx.ev,
+      key: "ev", icon: `<svg class="icon" viewBox="0 0 24 24" style="color:var(--accent-blue);"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>`, label: "Auto (EV)", data: fx.ev,
       explanation: (d) => {
         const { evDist, evCons, evSolar } = d.cfg ?? {};
         const dailyKwh = ((evDist ?? 0) * (evCons ?? 0) / 7).toFixed(2);
@@ -800,7 +1007,7 @@ export function renderHwChart() {
       }
     },
     {
-      key: "bat", icon: "🔋", label: "Thuisaccu", data: fx.bat,
+      key: "bat", icon: `<svg class="icon" viewBox="0 0 24 24" style="color:var(--accent-orange);"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg>`, label: "Thuisaccu", data: fx.bat,
       explanation: (d) => {
         const { batCapacity, batPower, batEfficiency, batMode } = d.cfg ?? {};
         const modeText = {
@@ -832,20 +1039,20 @@ export function renderHwChart() {
     const calibrated = calibratedProfile && calibrationMeta.buckets > 0;
     if (epexPct === 0 && !calibrated) {
       // Niets live, geen kalibratie → generiek noodprofiel (grote waarschuwing).
-      warn.innerHTML = `⚠ <strong>Let op: geen echte EPEX-uurprijzen.</strong> De simulatie gebruikt generieke
+      warn.innerHTML = `${ICON_WARN} <strong>Let op: geen echte EPEX-uurprijzen.</strong> De simulatie gebruikt generieke
          <em>seizoensprofielen</em> als noodoplossing (geijkt op NL-marktpatronen: zon-export ≈ 50% van het
          jaargemiddelde) — een redelijke schatting, maar zonder de echte piek- en negatieve dagen.
          Klik <strong>Ophalen</strong> of laad HA-data om actuele historische EPEX-prijzen te gebruiken.`;
     } else if (epexPct === 0 && calibrated) {
       // Gemeten periode valt buiten de loop, maar projectie draait op eigen prijsprofiel.
-      warn.innerHTML = `ℹ De jaarprognose is gevuld met een <strong>prijsprofiel uit je eigen EPEX-historie</strong>
-         (${calibrationMeta.samples} echte uurprijzen, ${calibrationMeta.buckets} seizoen×uur-buckets) i.p.v. de generieke profielen.`;
+      warn.innerHTML = `${ICON_INFO} <span>De jaarprognose is gevuld met een <strong>prijsprofiel uit je eigen EPEX-historie</strong>
+         (${calibrationMeta.samples} echte uurprijzen, ${calibrationMeta.buckets} seizoen×uur-buckets) i.p.v. de generieke profielen.</span>`;
     } else {
       // Deels live, rest gevuld via kalibratie of generiek.
-      warn.innerHTML = `⚠ ${epexPct}% echte EPEX-prijzen geladen; de overige ${100 - epexPct}% is `
+      warn.innerHTML = `${ICON_WARN} <span>${epexPct}% echte EPEX-prijzen geladen; de overige ${100 - epexPct}% is `
         + (calibrated
             ? `gevuld met je <strong>eigen gekalibreerde prijsprofiel</strong> (${calibrationMeta.samples} echte uurprijzen).`
-            : `geschat via het generieke seizoensprofiel.`);
+            : `geschat via het generieke seizoensprofiel.</span>`);
     }
     const x = document.createElement("button");
     x.type = "button"; x.className = "dismiss-x"; x.textContent = "×";
@@ -1512,9 +1719,9 @@ export function renderSankeyDiagram() {
   if (highlightEl) {
     if (hasBat && batChargeGrid > 0) {
       const avgPrice = batChargeGridCost / batChargeGrid;
-      highlightEl.innerHTML = `🔋 Gekocht: <span style="color:#ffffff;">${batChargeGrid.toFixed(1)} kWh</span> voor gem. <span style="color:var(--accent-yellow);">€ ${avgPrice.toFixed(3)}/kWh</span>`;
+      highlightEl.innerHTML = `${ICON_BATTERY} <span>Gekocht: <span style="color:#ffffff;">${batChargeGrid.toFixed(1)} kWh</span> voor gem. <span style="color:var(--accent-yellow);">€ ${avgPrice.toFixed(3)}/kWh</span></span>`;
     } else if (hasBat) {
-      highlightEl.innerHTML = `🔋 Geen net-laadstroom ingekocht in deze periode.`;
+      highlightEl.innerHTML = `${ICON_BATTERY} <span>Geen net-laadstroom ingekocht in deze periode.</span>`;
     } else {
       highlightEl.innerHTML = "";
     }
