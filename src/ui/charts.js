@@ -54,7 +54,7 @@ export function setChartsDependencies(deps) {
 }
 
 // Local UI state for hardware detail expand/collapse
-const hwOpenState = { hp: false, ev: false, bat: false };
+const hwOpenState = { hp: false, ev: false, bat: false, sol: false };
 
 
 /**
@@ -1035,6 +1035,26 @@ export function renderHwChart() {
       }
     },
   ];
+
+  // Zonnepanelen: alleen tonen als er echte solar_yield data gemeten is.
+  if (fx.sol?.enabled) {
+    deviceDefs.push({
+      key: "sol",
+      icon: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#f59e0b;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
+      label: "Zonnepanelen",
+      data: fx.sol,
+      explanation: (d) => {
+        const kWh = d.cfg?.solarKwh ?? 0;
+        return `<strong>Opbrengst:</strong> ${kWh.toLocaleString("nl-NL")} kWh/jaar gemeten via de solar-sensor.
+          <br><br>
+          <strong>Werking (2027-model, geen saldering):</strong> Elk zonne-uur vermindert de bruto import van het net — en daarmee ook de energiebelasting (EB wordt geheven over elke geïmporteerde kWh). Zonne-overschot wordt teruggeleverd aan het net.
+          <br><br>
+          <strong>Vast contract:</strong> exportoverschot levert het vaste teruglevertarief op (minus eventuele VTK).
+          <br><br>
+          <strong>Dynamisch contract:</strong> exportopbrengst = kale marktprijs (<em>spot/1,21 − opslag</em>). Op zon-uren kan de spotprijs laag zijn — maar zelfconsumptie bespaart dan alsnog de volledige all-in prijs inclusief energiebelasting.`;
+      },
+    });
+  }
 
   const container = document.getElementById("hw-chart-body");
   container.innerHTML = "";

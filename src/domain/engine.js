@@ -97,6 +97,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile = "home",
     hasBattery, batCapacity, batPower, batEfficiency, batArbitrage, batGridExport = false,
     batMode,
+    noSolar = false,
   } = cfg;
 
   // ── Accu-modus (v=38) ──
@@ -238,8 +239,16 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     const { hour, month, dow, dayKey, epexKey: tsKey } = rowMeta(row);
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
 
-    const rawImp = row.import_t1 + row.import_t2;
-    const rawExp = row.export_t1 + row.export_t2;
+    const _rawImp0 = row.import_t1 + row.import_t2;
+    const _rawExp0 = row.export_t1 + row.export_t2;
+    const solarYieldRaw = row.solar_yield || 0;
+    // noSolar-run: reconstrueer huis-last zonder zon (alles van net, geen teruglevering).
+    // Energie-behoud: houseLoad = rawImp − rawExp + solar_yield.
+    const rawImp = (noSolar && solarYieldRaw > 0)
+      ? Math.max(0, _rawImp0 - _rawExp0 + solarYieldRaw)
+      : _rawImp0;
+    const rawExp = (noSolar && solarYieldRaw > 0) ? 0 : _rawExp0;
+    const solarYield = noSolar ? 0 : solarYieldRaw;
 
     let spot = epexHistory.has(tsKey) ? epexHistory.get(tsKey) : getFallbackSpot(month, hour);
     if (epexHistory.has(tsKey)) epexReal++; else epexFall++;
@@ -281,7 +290,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     else { fxDalImp += impFx; fxDalExp += expFx; }
 
     // ── Slimme Omvormer Interventie bij Negatieve Spot (Vector 1 Fix) ──
-    const dimRes = applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, row.solar_yield);
+    const dimRes = applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solarYield);
     const dynImp = dimRes.dynImp;
     const dynExp = dimRes.dynExp;
 
@@ -294,7 +303,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
 
     if (full) accumulateFull({
       hour, dow, dayKey, isPeak, spot, dynImp, dynExp, basePrice,
-      rawImp, rawExp, solarYield: row.solar_yield || 0,
+      rawImp, rawExp, solarYield,
       hpLoad, hpFromSolar, hpFromGrid, evRes, batRes, impFx, expFx,
     });
   });

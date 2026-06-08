@@ -2010,6 +2010,15 @@ function runSimulation() {
   const withEv = _simulateCore({ ...base0, hasEv: true, evWeeklyDist: cfg.evWeeklyDist, evConsumption: cfg.evConsumption, evSolarMatch: cfg.evSolarMatch }, false, ctx);
   const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batMode: cfg.batMode }, false, ctx);
 
+  // Zon-delta: verschil tussen huidige data (met zon) en een run waarbij solar_yield
+  // uit de P1-rijen gestripped is (import/export gereconstrueerd naar huis-last zonder zon).
+  // Geeft de geïsoleerde waarde van de zonnepanelen op jaarbasis.
+  const totalSolarKwh = ctx.simData.reduce((s, r) => s + (r.solar_yield || 0), 0) * ctx.yearScale;
+  const hasSolarData = totalSolarKwh > 0;
+  const noSolar = hasSolarData
+    ? _simulateCore({ ...base0, noSolar: true, solarDimmingMode: "off" }, false, ctx)
+    : null;
+
   // ── activeSimulation bijwerken ────────────────────────────────────────────
   appStore.setState({ activeSimulation: {
     ...sim,
@@ -2018,6 +2027,12 @@ function runSimulation() {
       hp: { fixed: withHp.fixedBill - base.fixedBill, dyn: withHp.dynBill - base.dynBill, enabled: cfg.hasHeatPump, cfg: { hpWinterBaseload: cfg.hpWinterBaseload } },
       ev: { fixed: withEv.fixedBill - base.fixedBill, dyn: withEv.dynBill - base.dynBill, enabled: cfg.hasEv, cfg: { evDist: cfg.evWeeklyDist, evCons: cfg.evConsumption, evSolar: cfg.evSolarMatch } },
       bat: { fixed: withBat.fixedBill - base.fixedBill, dyn: withBat.dynBill - base.dynBill, enabled: cfg.hasBattery, cfg: { batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency * 100, batMode: cfg.batMode } },
+      sol: {
+        fixed: hasSolarData ? base.fixedBill - noSolar.fixedBill : 0,
+        dyn:   hasSolarData ? base.dynBill   - noSolar.dynBill   : 0,
+        enabled: hasSolarData,
+        cfg: { solarKwh: Math.round(totalSolarKwh) },
+      },
     }
   } });
 
