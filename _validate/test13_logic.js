@@ -135,6 +135,17 @@ function buildDay(perHour, spotInclBtw) {
      `B2 export-opbrengst = spot/1.21 (€${res.dynamicRawExportRevenue.toFixed(3)} ≈ €2.40 voor 24 kWh)`);
 }
 
+// B2b. Terugleveropbrengst met opslag: bij vlakke spot 0.121 incl. BTW en dynamicExportMarkup = 0.0242,
+//      is de opslag excl. BTW 0.0242/1.21 = €0.020/kWh.
+//      De opbrengst per kWh is (0.121 - 0.0242)/1.21 = €0.080/kWh.
+{
+  const { rows, epex } = buildDay({ exp: 1, solar: 1 }, 0.121);
+  const res = RUN({ rows, epex, cfg: { ...cfgBase, dynamicExportMarkup: 0.0242 }, eb: EB, yearScale: 1.0 });
+  ok(near(res.dynamicRawExportRevenue, 24 * 1 * 0.080, 0.01),
+     `B2b export-opbrengst met opslag = (spot - markup)/1.21 (€${res.dynamicRawExportRevenue.toFixed(3)} ≈ €1.92 voor 24 kWh)`);
+}
+
+
 // B3. Vast contract is invariant voor de EB-schuif (EB raakt alléén dynamisch).
 {
   const rowsPV = buildYear(3500, 3500);

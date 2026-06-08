@@ -2318,7 +2318,7 @@ function _simulateCore(cfg, full = false) {
   const gridExport = mode === "winst";                        // aan het net mogen verkopen
 
   const markupBtw = dynamicMarkup * 1.21;
-  const exportMarkupBtw = dynamicExportMarkup * 1.21;
+  const exportMarkupExclBtw = dynamicExportMarkup / 1.21;
   const eb = liveEnergyTax;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
   const simData = fullYearData || energyData;
@@ -2461,8 +2461,8 @@ function _simulateCore(cfg, full = false) {
 
       if (gridExport) {
         // Maximale winst: óók aan het net verkopen. Een verkochte kWh levert kale spot
-        // (spot/1.21, we trekken hier de terugleveropslag incl. BTW vanaf) op.
-        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkupBtw) * batEfficiency > loAllin);
+        // (spot/1.21, we trekken hier de terugleveropslag excl. BTW vanaf) op.
+        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkupExclBtw) * batEfficiency > loAllin);
         // Ruimte om voor de winstgevende export-uren te laden — exact wat die uren kunnen
         // ontladen (vermogen × #uren), begrensd door de capaciteit bóven de zelf-voorraad.
         // Alléén als er zúlke vrije ruimte is verkopen we: anders is de capaciteit volledig
@@ -2608,7 +2608,7 @@ function _simulateCore(cfg, full = false) {
         // minus terugleveropslag > laadkosten loAllin/rendement) én (b) het écht overschot is:
         // we houden de resterende eigen import van vandaag in de accu.
         const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
-        const minExportSpot = ((loAllin / batEfficiency) + exportMarkupBtw) * 1.21;
+        const minExportSpot = ((loAllin / batEfficiency) + exportMarkupExclBtw) * 1.21;
         const reserve = batSelfReserve[dayKey] ?? 0;                 // bewaar de eigen-verbruik-voorraad
         const exportable = Math.min(d, Math.max(0, batSoC - reserve));
         if (gridExport && exportable > 0 && spot > minExportSpot) {
@@ -2662,7 +2662,7 @@ function _simulateCore(cfg, full = false) {
     // Accumuleer Dynamische Resultaten
     const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
-    dynExpRev += dynExp * ((spot / 1.21) - exportMarkupBtw);
+    dynExpRev += dynExp * ((spot / 1.21) - exportMarkupExclBtw);
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
@@ -2670,7 +2670,7 @@ function _simulateCore(cfg, full = false) {
       hourly[hour].imports.push(dynImp);
       hourly[hour].exports.push(dynExp);
       const allIn = basePrice + eb;
-      const returnPrice = (spot / 1.21) - exportMarkupBtw;
+      const returnPrice = (spot / 1.21) - exportMarkupExclBtw;
       const dynHrCost = dynImp * allIn - dynExp * returnPrice;   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
@@ -2871,7 +2871,7 @@ function downloadDataWithPrices() {
   const cfg = readSimConfig();
   const eb = liveEnergyTax;
   const markupBtw = cfg.dynamicMarkup * 1.21;
-  const exportMarkupBtw = (cfg.dynamicExportMarkup ?? 0.0) * 1.21;
+  const exportMarkupExclBtw = (cfg.dynamicExportMarkup ?? 0.0) / 1.21;
 
   const header = [
     "tijdstip", "afname_kWh", "teruglevering_kWh", "opwek_kWh",
@@ -2889,7 +2889,7 @@ function downloadDataWithPrices() {
     const real = epexHistory.has(key);
     const spot = real ? epexHistory.get(key) : getFallbackSpot(month, hour);
     const allIn = spot + markupBtw + eb;                       // all-in consumentenprijs dynamisch
-    const dynCost = imp * allIn - exp * ((spot / 1.21) - exportMarkupBtw);                  // netto kosten dat uur (dynamisch)
+    const dynCost = imp * allIn - exp * ((spot / 1.21) - exportMarkupExclBtw);                  // netto kosten dat uur (dynamisch)
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
     const tariff = isPeak ? cfg.fixedPeakRate : cfg.fixedDalRate;
     const vastCost = imp * tariff - exp * cfg.fixedFeedInRate + exp * cfg.fixedFeedInFee;
