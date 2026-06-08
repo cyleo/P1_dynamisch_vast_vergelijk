@@ -1,0 +1,314 @@
+import {
+  EV_MAX_CHARGE_KW, BATTERY_C_RATE, EVENING_PEAK_MULT, HEATPUMP_HDD_FACTOR,
+  ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES
+} from "./constants.js";
+
+export function rowMeta(row) {
+  if (row._meta) return row._meta;
+  const dt = new Date(row.timestamp);
+  const p2 = n => (n < 10 ? "0" + n : "" + n);
+  const mo = dt.getMonth() + 1, da = dt.getDate(), h = dt.getHours();
+  const dayKey = `${dt.getFullYear()}-${p2(mo)}-${p2(da)}`;
+  const meta = { hour: h, date: da, month: mo, dow: dt.getDay(), dayKey, epexKey: `${dayKey}T${p2(h)}` };
+  Object.defineProperty(row, "_meta", { value: meta, enumerable: false, configurable: true });
+  return meta;
+}
+
+export function epexKey(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}`;
+}
+
+export function toConsumerPrice(spot, tax) {
+  const markup = typeof document !== "undefined" ? (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024) : 0.024;
+  const currentTax = tax !== undefined ? tax : (typeof window !== "undefined" && window.liveEnergyTax !== undefined ? window.liveEnergyTax : 0.11084);
+  return spot + markup + currentTax;
+}
+
+export function seasonOf(month) {
+  if (month >= 3 && month <= 5) return 'spring';
+  if (month >= 6 && month <= 8) return 'summer';
+  if (month >= 9 && month <= 11) return 'autumn';
+  return 'winter';
+}
+
+export function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
+  const { hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile, stressMultiplier = 1.0, fixedPeakRate, fixedDalRate } = cfg;
+  const { epexHistory, eb } = ctx;
+  const evScheduleCacheDyn = {};
+  const evScheduleCacheFx = {};
+
+  if (!hasEv) return { evScheduleCacheDyn, evScheduleCacheFx };
+  const evDailyKwh = (evWeeklyDist * evConsumption) / 7.0;
+  if (evDailyKwh <= 0) return { evScheduleCacheDyn, evScheduleCacheFx };
+
+  Object.keys(dayRows).forEach(dk => {
+    const rowsOfDay = dayRows[dk];
+
+    const unavailable = r => {
+      if (evProfile !== "commuter") return false;
+      const { dow, hour } = rowMeta(r);
+      return dow > 0 && dow < 6 && hour >= 8 && hour <= 17;
+    };
+
+    const baseSched = () => {
+      const s = Array.from({ length: 24 }, () => ({ grid: 0, solar: 0 }));
+      let remNeed = evDailyKwh;
+      if (evSolarMatch) {
+        for (const r of rowsOfDay) {
+          if (remNeed <= 0) break;
+          if (unavailable(r)) continue;
+          const h = rowMeta(r).hour;
+          if (h < 10 || h > 16) continue;
+          const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
+          const charge = Math.min(rawExpH, EV_MAX_CHARGE_KW, remNeed);
+          if (charge > 0) { s[h].solar += charge; remNeed -= charge; }
+        }
+      }
+      return { s, remNeed };
+    };
+
+    const dynTarget = baseSched();
+    if (dynTarget.remNeed > 0) {
+      const sortedDyn = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+        const { hour, month, epexKey: k } = rowMeta(r);
+        let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+        if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+        return { h: hour, cost: sp + markupBtw + eb };
+      }).sort((a, b) => a.cost - b.cost);
+
+      for (const { h } of sortedDyn) {
+        if (dynTarget.remNeed <= 0) break;
+        const room = EV_MAX_CHARGE_KW - (dynTarget.s[h].solar + dynTarget.s[h].grid);
+        const charge = Math.min(dynTarget.remNeed, room);
+        if (charge > 0) { dynTarget.s[h].grid += charge; dynTarget.remNeed -= charge; }
+      }
+    }
+    evScheduleCacheDyn[dk] = dynTarget.s;
+
+    const fxTarget = baseSched();
+    if (fxTarget.remNeed > 0) {
+      const sortedFx = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+        const { hour, dow } = rowMeta(r);
+        const isPeakHour = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
+        return { h: hour, cost: isPeakHour ? fixedPeakRate : fixedDalRate };
+      }).sort((a, b) => a.cost - b.cost);
+
+      for (const { h } of sortedFx) {
+        if (fxTarget.remNeed <= 0) break;
+        const room = EV_MAX_CHARGE_KW - (fxTarget.s[h].solar + fxTarget.s[h].grid);
+        const charge = Math.min(fxTarget.remNeed, room);
+        if (charge > 0) { fxTarget.s[h].grid += charge; fxTarget.remNeed -= charge; }
+      }
+    }
+    evScheduleCacheFx[dk] = fxTarget.s;
+  });
+
+  return { evScheduleCacheDyn, evScheduleCacheFx };
+}
+
+export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport) {
+  const { hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0 } = cfg;
+  const { epexHistory, eb } = ctx;
+  const batChargeHrs = {};
+  const batDischargeHrs = {};
+  const batDayMinAllin = {};
+  const batGridBudget = {};
+  const batStoreCap = {};
+  const batSelfReserve = {};
+
+  if (!hasBattery || batCapacity <= 0 || batPower <= 0) {
+    return { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve };
+  }
+
+  const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));
+  Object.keys(dayRows).forEach(dk => {
+    const dayRowsArr = dayRows[dk];
+    const loadDay = dayRowsArr.reduce((s, r) => s + r.import_t1 + r.import_t2, 0);
+    const solarDay = dayRowsArr.reduce((s, r) => s + r.export_t1 + r.export_t2, 0);
+
+    const selfNeed = Math.min(batCapacity, loadDay);
+    batStoreCap[dk] = selfNeed;
+    batSelfReserve[dk] = selfNeed;
+    if (!gridCharge) return;
+
+    const priced = dayRowsArr.map(r => {
+      const { hour, month, epexKey: k } = rowMeta(r);
+      let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+      if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+      return { hour, spot: sp, allin: sp + markupBtw + eb };
+    });
+    if (priced.length < 3) return;
+    const asc = [...priced].sort((a, b) => a.allin - b.allin);
+    const cheap = asc.slice(0, K), expensive = asc.slice(-K);
+    const hiAllin = expensive[expensive.length - 1].allin;
+    const chargeHrs = cheap.filter(c => hiAllin * batEfficiency > c.allin);
+    if (chargeHrs.length === 0) return;
+    const loAllin = chargeHrs[0].allin;
+    batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
+    batDayMinAllin[dk] = loAllin;
+
+    const fromSolar = Math.min(solarDay * batEfficiency, selfNeed);
+    let drawnBudget = Math.max(0, selfNeed - fromSolar) / batEfficiency;
+
+    if (gridExport) {
+      const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkup) * batEfficiency > loAllin);
+      const exportRoom = Math.min(expHrs.length * batPower, Math.max(0, batCapacity - selfNeed));
+      if (exportRoom > 0) {
+        batDischargeHrs[dk] = new Set(expHrs.map(e => e.hour));
+        batStoreCap[dk] = selfNeed + exportRoom;
+        drawnBudget += exportRoom / batEfficiency;
+      } else {
+        batDischargeHrs[dk] = new Set();
+      }
+    } else {
+      batDischargeHrs[dk] = new Set();
+    }
+    batGridBudget[dk] = drawnBudget;
+  });
+
+  return { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve };
+}
+
+export function applyHeatPumpLoad(hasHeatPump, hpWinterBaseload, month, hour) {
+  if (!hasHeatPump) return 0;
+  const sf = HEATPUMP_HDD_FACTOR[month] || 0.15;
+  const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;
+  return hpWinterBaseload * sf * tf;
+}
+
+export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey, hour, impDyn, expDyn, impFx, expFx) {
+  let evGridDyn = 0, evSolarDyn = 0, evGridFx = 0, evSolarFx = 0, evVal = 0;
+  if (!hasEv) return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
+
+  const evD = evScheduleCacheDyn[dayKey]?.[hour];
+  if (evD) {
+    impDyn += evD.grid;
+    const solUsed = Math.min(evD.solar, expDyn);
+    expDyn -= solUsed;
+    impDyn += evD.solar - solUsed;
+    evGridDyn = evD.grid;
+    evSolarDyn = evD.solar;
+    evVal = evD.grid + evD.solar;
+  }
+
+  const evF = evScheduleCacheFx[dayKey]?.[hour];
+  if (evF) {
+    impFx += evF.grid;
+    const solUsedFx = Math.min(evF.solar, expFx);
+    expFx -= solUsedFx;
+    impFx += evF.solar - solUsedFx;
+    evGridFx = evF.grid;
+    evSolarFx = evF.solar;
+  }
+
+  return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
+}
+
+export function applyBatteryState(
+  cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+  dayKey, hour, spot, 
+  batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
+  batSoC, batSoCFx, batGridDrawnVal,
+  impDyn, expDyn, impFx, expFx
+) {
+  let batChargeVal = 0, batDischargeVal = 0, batChargeSolarVal = 0, batChargeGridVal = 0;
+  let batDischargeToHouseVal = 0, batDischargeToGridVal = 0;
+  let batChargeSolarFxVal = 0, batDischargeToHouseFxVal = 0;
+  let drawnGrid = 0;
+
+  if (cfg.hasBattery) {
+    const isChargeHour = gridCharge && batChargeHrs[dayKey]?.has(hour);
+    let currentPowerLimit = cfg.batPower;
+
+    const socCap = Math.min(cfg.batCapacity, batStoreCap[dayKey] ?? cfg.batCapacity);
+    const socRoom = Math.max(0, socCap - batSoC) / cfg.batEfficiency;
+
+    if (expDyn > 0 && socRoom > 0) {
+      const c = Math.min(expDyn, currentPowerLimit, socRoom);
+      batSoC += c * cfg.batEfficiency;
+      expDyn = Math.max(0, expDyn - c);
+      currentPowerLimit -= c;
+      batChargeVal += c;
+      batChargeSolarVal += c;
+    }
+
+    if (isChargeHour && expDyn === 0 && currentPowerLimit > 0) {
+      const drawnRoom = Math.max(0, (batGridBudget[dayKey] || 0) - batGridDrawnVal);
+      const room = Math.max(0, socCap - batSoC) / cfg.batEfficiency;
+      const c = Math.min(currentPowerLimit, room, drawnRoom);
+      if (c > 0) {
+        batSoC += c * cfg.batEfficiency;
+        impDyn += c;
+        currentPowerLimit -= c;
+        drawnGrid += c;
+        batChargeVal += c;
+        batChargeGridVal += c;
+      }
+    }
+
+    const wantDischarge = !isChargeHour && (impDyn > 0 || (gridExport && batDischargeHrs[dayKey]?.has(hour)));
+    if (wantDischarge && batSoC > 0 && expDyn === 0) {
+      let d = Math.min(cfg.batPower, batSoC);
+      const toHouse = Math.min(impDyn, d);
+      impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
+      batDischargeVal += toHouse;
+      batDischargeToHouseVal += toHouse;
+
+      const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
+      const minExportSpot = ((loAllin / cfg.batEfficiency) + exportMarkup) * 1.21;
+      const reserve = batSelfReserve[dayKey] ?? 0;
+      const exportable = Math.min(d, Math.max(0, batSoC - reserve));
+      if (gridExport && exportable > 0 && spot > minExportSpot) {
+        expDyn += exportable; batSoC -= exportable;
+        batDischargeVal += exportable;
+        batDischargeToGridVal += exportable;
+      }
+    }
+
+    if (expFx > 0 && batSoCFx < cfg.batCapacity) {
+      const c = Math.min(expFx, cfg.batPower, (cfg.batCapacity - batSoCFx) / cfg.batEfficiency);
+      batSoCFx += c * cfg.batEfficiency; expFx = Math.max(0, expFx - c);
+      batChargeSolarFxVal += c;
+    }
+    if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
+      const d = Math.min(impFx, cfg.batPower, batSoCFx);
+      batSoCFx -= d; impFx = Math.max(0, impFx - d);
+      batDischargeToHouseFxVal += d;
+    }
+  }
+
+  return {
+    impDyn, expDyn, impFx, expFx,
+    batSoC, batSoCFx, drawnGrid,
+    batChargeVal, batDischargeVal, batChargeSolarVal, batChargeGridVal,
+    batDischargeToHouseVal, batDischargeToGridVal, batChargeSolarFxVal, batDischargeToHouseFxVal
+  };
+}
+
+export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_yield) {
+  let dynImp = impDyn;
+  let dynExp = expDyn;
+  const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
+
+  if (dimmingActive && spot < 0) {
+    const solar = solar_yield ?? null;
+    if (solar !== null) {
+      const localSolarConsumed = Math.max(0, solar - expDyn);
+      const currentHouseLoad = impDyn + localSolarConsumed;
+      const brutoOverschot = solar - currentHouseLoad;
+
+      if (solarDimmingMode === "dim") {
+        dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
+        dynExp = 0;
+      } else if (solarDimmingMode === "uit") {
+        dynImp = currentHouseLoad;
+        dynExp = 0;
+      }
+    } else {
+      dynExp = 0;
+      if (solarDimmingMode === "uit") dynImp = impDyn;
+    }
+  }
+  return { dynImp, dynExp };
+}
+

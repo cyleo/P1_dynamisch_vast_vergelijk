@@ -79,4 +79,6 @@ const driver = `
 vm.createContext(sandbox);
 vm.runInContext(appSrc + driver, sandbox, { filename: "app.js" });
 
+sandbox.computeBillForConfig = sandbox.window.computeBillForConfig;
+
 module.exports = { RUN: sandbox.RUN, sandbox };
