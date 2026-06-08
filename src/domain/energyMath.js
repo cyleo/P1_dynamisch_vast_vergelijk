@@ -3,6 +3,10 @@ import {
   ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES
 } from "./constants.js";
 
+/**
+ * Lazily computes and caches local datetime metadata for a given row.
+ * Essential to avoid repetitive Date parsing in 8760-hour loops.
+ */
 export function rowMeta(row) {
   if (row._meta) return row._meta;
   const dt = new Date(row.timestamp);
@@ -14,16 +18,26 @@ export function rowMeta(row) {
   return meta;
 }
 
+/**
+ * Formats a Date object into a reliable ISO-hour string for EPEX lookup.
+ */
 export function epexKey(dt) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}`;
 }
 
+/**
+ * Calculates the all-in consumer price (including tax, markup, and VAT)
+ * for a given raw wholesale EPEX spot price.
+ */
 export function toConsumerPrice(spot, tax) {
   const markup = typeof document !== "undefined" ? (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024) : 0.024;
   const currentTax = tax !== undefined ? tax : (typeof window !== "undefined" && window.liveEnergyTax !== undefined ? window.liveEnergyTax : 0.11084);
   return spot + markup + currentTax;
 }
 
+/**
+ * Maps a given month (1-12) to its meteorological season.
+ */
 export function seasonOf(month) {
   if (month >= 3 && month <= 5) return 'spring';
   if (month >= 6 && month <= 8) return 'summer';
@@ -31,6 +45,10 @@ export function seasonOf(month) {
   return 'winter';
 }
 
+/**
+ * Pre-computes EV charging schedules per day for both dynamic and fixed contracts.
+ * Matches solar excess first, then sorts remaining load into cheapest hours.
+ */
 export function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
   const { hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile, stressMultiplier = 1.0, fixedPeakRate, fixedDalRate } = cfg;
   const { epexHistory, eb } = ctx;
@@ -106,6 +124,10 @@ export function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
   return { evScheduleCacheDyn, evScheduleCacheFx };
 }
 
+/**
+ * Pre-computes battery boundary values (store capacity, reserve) per day.
+ * Determines when to charge from the grid vs discharge based on daily EPEX spreads.
+ */
 export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport) {
   const { hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0 } = cfg;
   const { epexHistory, eb } = ctx;
@@ -169,6 +191,10 @@ export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMa
   return { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve };
 }
 
+/**
+ * Simulates Heat Pump (HP) energy consumption for a specific hour.
+ * Calculates baseload based on degree-day (HDD) seasonality.
+ */
 export function applyHeatPumpLoad(hasHeatPump, hpWinterBaseload, month, hour) {
   if (!hasHeatPump) return 0;
   const sf = HEATPUMP_HDD_FACTOR[month] || 0.15;
@@ -176,6 +202,9 @@ export function applyHeatPumpLoad(hasHeatPump, hpWinterBaseload, month, hour) {
   return hpWinterBaseload * sf * tf;
 }
 
+/**
+ * Simulates Electric Vehicle (EV) load for a specific hour based on the precomputed schedule.
+ */
 export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey, hour, impDyn, expDyn, impFx, expFx) {
   let evGridDyn = 0, evSolarDyn = 0, evGridFx = 0, evSolarFx = 0, evVal = 0;
   if (!hasEv) return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
@@ -204,6 +233,10 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
   return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
 }
 
+/**
+ * Simulates battery charging/discharging logic for a specific hour.
+ * Implements self-consumption, grid charging, and grid exporting constraints.
+ */
 export function applyBatteryState(
   cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
   dayKey, hour, spot, 
@@ -285,6 +318,9 @@ export function applyBatteryState(
   };
 }
 
+/**
+ * Simulates solar smart dimming (curtailment) when spot prices fall below a certain threshold.
+ */
 export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_yield) {
   let dynImp = impDyn;
   let dynExp = expDyn;

@@ -1,4 +1,8 @@
 
+/**
+ * Parses a Home Assistant CSV history export (long format).
+ * Returns processed hourly records for the digital twin simulation.
+ */
 export function parseHAHistoryExportCSV(lines, sep, headers, roleMap, dtEnabled) {
   const entityIdx = 0;
   const stateIdx = 1;
@@ -38,6 +42,10 @@ export function parseHAHistoryExportCSV(lines, sep, headers, roleMap, dtEnabled)
   return processHAStatistics(stats, roleMap, dtEnabled);
 }
 
+/**
+ * Parses a wide-format CSV (each entity is a column).
+ * Asks the user via modal to map columns to simulation roles, then processes it.
+ */
 export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal) {
   const timestamps = headers.slice(3).map(h => new Date(h.trim()));
   if (timestamps.some(d => isNaN(d.getTime()))) {
@@ -137,6 +145,10 @@ export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsv
   return records;
 }
 
+/**
+ * Parses a standard P1 smart meter CSV with cumulative or delta totals per hour.
+ * Creates an initial array of hourly records.
+ */
 export function parseLongCSV(lines, sep, headers) {
   const idx = (names) => {
     for (const n of names) {
@@ -171,6 +183,11 @@ export function parseLongCSV(lines, sep, headers) {
   return records;
 }
 
+/**
+ * Core transformer for Home Assistant statistics. 
+ * Converts cumulative (or mean) entity data into strict hourly delta records
+ * and resolves net/gross overlap using the digital twin mapping.
+ */
 export function processHAStatistics(stats, roleMap, dtEnabled = true) {
   // stats: { entity_id: [ { start: epochMs, sum: float, mean: float }, ... ] }
   const hourlySum = {};

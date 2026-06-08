@@ -15,6 +15,9 @@ export function setChartsDependencies(deps) {
 }
 
 
+/**
+ * Renders the main P1 daily profile chart (import/export and dynamic prices).
+ */
 export function renderChart() {
   if (!__chartsDependencies.activeSimulation?.hourlyProfile) return;
 
@@ -378,6 +381,9 @@ export function renderChart() {
   });
 }
 
+/**
+ * Renders the detailed 24-hour simulation breakdown chart (hardware effects).
+ */
 export function renderSimChart() {
   const card = document.getElementById("sim-chart-card");
   if (!__chartsDependencies.energyData || __chartsDependencies.energyData.length === 0) { card.style.display = "none"; return; }
@@ -505,6 +511,9 @@ export function renderSimChart() {
   }
 }
 
+/**
+ * Renders the main cost breakdown table (Vast vs Dynamisch).
+ */
 export function renderAfnameDetail() {
   const body = document.getElementById("afname-detail-body");
   if (!body) return;
@@ -649,6 +658,9 @@ export function renderAfnameDetailDay(body, viewToggle) {
     </table>`;
 }
 
+/**
+ * Renders the monthly cost comparison bar chart.
+ */
 export function renderMonthlyChart() {
   const card = document.getElementById("monthly-chart-card");
   const perDay = __chartsDependencies.activeSimulation?.perDayTotals;
@@ -928,6 +940,9 @@ export function renderHwChart() {
   }
 }
 
+/**
+ * Renders the main overview timeline chart (Day/Week/Month).
+ */
 export function renderOverviewChart() {
   if (activeViewType === "sankey") {
     renderSankeyDiagram();
@@ -1415,6 +1430,9 @@ export function renderOverviewChart() {
   });
 }
 
+/**
+ * Renders the Sankey energy flow diagram for a specific period.
+ */
 export function renderSankeyDiagram() {
   const card = document.getElementById("overview-chart-card");
   if (!__chartsDependencies.energyData || __chartsDependencies.energyData.length === 0) { card.style.display = "none"; return; }

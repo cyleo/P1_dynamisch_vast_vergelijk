@@ -1,3 +1,6 @@
+/**
+ * Displays the setup modal dialog.
+ */
 export function showSetupModal(tab) {
   const isFile = window.location.protocol === "file:";
   const origin = isFile ? "http://localhost:8080" : window.location.origin;
@@ -24,10 +27,16 @@ export function showSetupModal(tab) {
   if (typeof showModalTab === "function") showModalTab(targetTab);
 }
 
+/**
+ * Closes the setup modal dialog.
+ */
 export function closeSetupModal() {
   document.getElementById("modal-backdrop").style.display = "none";
 }
 
+/**
+ * Opens a modal explaining the specific simulation logic for a hardware component.
+ */
 export function showHardwareExplainer(kind) {
   const { title, body } = hardwareExplainerContent(kind);
   document.getElementById("explain-title").innerHTML = title;
@@ -252,6 +261,9 @@ gemiddelde_dagvraag  = (wekelijkse_afstand × verbruik_per_100km / 100) / 7 dage
   };
 }
 
+/**
+ * Toggles the visibility of detail rows within the calculation tables.
+ */
 export function toggleTableDetail(headerId, subRowClass) {
   const header = document.getElementById(headerId);
   if (!header) return;
@@ -274,11 +286,17 @@ export function toggleTableDetail(headerId, subRowClass) {
   }
 }
 
+/**
+ * Toggles the expanded/collapsed state of a UI card panel.
+ */
 export function toggleCard(titleEl) {
   const card = titleEl.closest(".glass-panel");
   if (card) card.classList.toggle("collapsed");
 }
 
+/**
+ * Toggles the visibility of a specific line in the simulation profile chart.
+ */
 export function toggleProfileLine(key) {
   profileVisibleLines[key] = !profileVisibleLines[key];
   const legendEl = document.getElementById(`legend-${key}`);
@@ -289,6 +307,9 @@ export function toggleProfileLine(key) {
   renderChart();
 }
 
+/**
+ * Displays a modal asking the user to map CSV columns to simulation roles.
+ */
 export function showCsvMapModal(entities, guesses) {
   return new Promise((resolve, reject) => {
     const backdrop = document.getElementById("csv-map-backdrop");
@@ -382,6 +403,9 @@ export function toggleAfnameDetail() {
   if (afnameDetailOpen) renderAfnameDetail();
 }
 
+/**
+ * Updates the Digital Twin banner text indicating active hardware simulations.
+ */
 export function updateDigitalTwinBanner(meta) {
   const banner = document.getElementById("digital-twin-banner");
   if (!banner) return;
