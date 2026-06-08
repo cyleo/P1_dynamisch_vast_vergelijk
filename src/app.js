@@ -217,8 +217,11 @@ document.addEventListener("DOMContentLoaded", () => {
 // Een THROTTLE (niet een debounce): zo blijft de grafiek live meebewegen tijdens het
 // slepen (~12 fps voor de zware sim) i.p.v. pas te updaten ná het loslaten.
 // De badge-update blijft volledig synchroon (directe feedback; zie de input-listener).
-// Toekomst: verplaats _simulateCore naar een Web Worker (de engine is al ctx-puur /
-// DOM-vrij) → de hoofdthread blijft dan 60 fps ongeacht de datasetgrootte.
+// NB (gemeten, v=69): een runSimulation() kost ~19 ms, waarvan ~14 ms (74%) SVG-rendering
+// en maar ~5 ms de engine-compute (5× _simulateCore over 8760u). Een Web Worker zou dus
+// alleen die ~5 ms kunnen offloaden — en het per-tick serialiseren van de 8760-rijen-dataset
+// (~1–2 MB structuredClone) kost waarschijnlijk méér dan dat. De échte bottleneck is het
+// tekenen (hoofdthread, niet offloadbaar). Daarom is de throttle de juiste fix, niet een worker.
 const SIM_MIN_INTERVAL_MS = 80;
 let _simRaf = 0, _simTrailing = 0, _simLastRun = 0;
 function scheduleSim() {
