@@ -100,39 +100,6 @@ import {
 // en de schouderseizoenen lopen geleidelijk. NB: dit lijnt nog NIET per dag uit met de
 // EPEX-koudepieken — daarvoor zijn KNMI-daggegevens (graaddagen per dag) nodig.
 
-// Cacht per rij de afgeleide lokale tijdvelden (één Date-parse i.p.v. tig in de 8760-loops).
-// Lokale dayKey houdt de daggroepering consistent met getHours()/getDay() (geen UTC-drift).
-
-// Constant market prices & taxes (fallback if live fetch fails)
-
-// Vermindering energiebelasting (heffingskorting) — vaste jaarlijkse korting per
-// elektriciteitsaansluiting. 2026: €628,96 incl. BTW (bron: Milieu Centraal / Belastingdienst).
-// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar zonder
-// deze post liggen de absolute jaartotalen ~€629 te hoog t.o.v. de echte jaarrekening.
-
-// Netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) — gemiddeld over grote netbeheerders
-// (Enexis/Liander/Stedin) voor 2026: ca €480,- per jaar incl. BTW.
-// Geldt identiek voor béide contracten (één aansluiting) → comparison-neutraal, maar nodig
-// voor een realistisch en compleet totaalbedrag op de jaarrekening.
-
-// Lokale datum+uur sleutel voor epexHistory (vermijdt UTC/lokaal-tijdzone verwarring)
-
-// CORRECTIE: Consumentenprijs berekening
-
-// Seizoensgebonden EPEX-fallbackprofielen (ruwe beursprijzen €/kWh, excl. BTW, excl. EB, excl. opslag)
-// Gebaseerd op typische Nederlandse EPEX-patronen per seizoen.
-// getFallbackSpot() past automatisch BTW toe (×1.21) op positieve uren.
-//
-// HERIJKT (v=23): de oude profielen maakten de lente/zomer-middag te diep negatief,
-// waardoor de export-gewogen "capture price" van zonnestroom ≈ €0,00/kWh werd. Empirisch
-// (NL 2024-2025 kwartierdata) is teruggeleverde zonnestroom ~52% van het jaargemiddelde
-// waard. Deze set is geijkt op: vlak jaargemiddelde €0,091, solar-capture €0,048 (53%),
-// verbruik-gewogen €0,109, ~3% negatieve uren — gevalideerd via _validate/tune_profiles.js.
-// NB: dit is de NOODOPLOSSING; met live/gekalibreerde EPEX-data (buildCalibratedProfile)
-// worden deze waarden overschreven door echte marktprijzen.
-
-// Seizoen-helper (gedeeld door getFallbackSpot + buildCalibratedProfile).
-
 // ── Zelf-kalibrerende fallback ──────────────────────────────────────────────
 // Wanneer er echte EPEX-historie is opgehaald (epexHistory), leiden we hieruit een
 // (seizoen × uur)-prijsprofiel af en gebruiken dat om de geprojecteerde/synthetische
@@ -1300,14 +1267,6 @@ function setSlider(id, value) {
   }
 }
 
-// =============================================================================
-// SMART SEASON FILLER — synthese van een volledig kalenderjaar (8760 uur)
-// Vult ontbrekende maanden/uren aan met een slim seizoensprofiel zodat de
-// jaarrekening klopt i.p.v. een naïeve pro-rata-extrapolatie. Cfg-onafhankelijk:
-// alleen ruwe baseload + synthetische zon; hardware (WP/EV/accu) wordt door de
-// loop bovenop elke rij toegepast — net als bij echte data, zonder dubbeltelling.
-// =============================================================================
-
 // Mediaan-helper (robuuster dan gemiddelde voor uitschieters).
 function _median(arr) {
   if (!arr.length) return 0;
@@ -1592,12 +1551,6 @@ function ensureFullYearData() {
   const synthPct = (realHours + synthHours) > 0 ? synthHours / (realHours + synthHours) : 0;
   dataMeta = { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 };
 }
-
-// =============================================================================
-// UNIFORME SIMULATIE-ENGINE
-// Eén pure kernfunctie — geen DOM-reads inside de loop.
-// Aangeroepen door zowel runSimulation() (full=true) als computeBillForConfig() (full=false).
-// =============================================================================
 
 /**
  * Voert de simulatie uit over `energyData` met de gegeven configuratie.
@@ -1997,11 +1950,6 @@ function downloadDataWithPrices() {
   URL.revokeObjectURL(url);
 }
 
-// =============================================================================
-// SWEET SPOT FINDER — automatische accu-grootte optimalisatie (ROI)
-// Veegt een reeks capaciteiten door, berekent de jaarbesparing en terugverdientijd,
-// en markeert de "sweet spot". Raakt activeSimulation NIET aan (pure achtergrond-runs).
-// =============================================================================
 const BATTERY_SWEEP_CAPS = [2, 5, 10, 15, 20];   // kWh
 const BATTERY_COST_PER_KWH = 450;                // €/kWh investering (industriestandaard)
 
