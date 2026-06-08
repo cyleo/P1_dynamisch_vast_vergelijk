@@ -12,23 +12,34 @@ const tests = fs.readdirSync(dir)
 
 let passed = 0, failed = 0;
 
+// Een test FAALT als: (a) hij een niet-nul exitcode geeft (assert-tests zetten
+// process.exitCode=1), of (b) de output een FAIL/GEFAALD/❌-regel bevat — ook als de
+// exitcode per ongeluk 0 bleef. Anders geslaagd (assert-test met PASS, óf diagnostisch).
+const FAIL_RE = /^(FAIL\b|❌)|GEFAALD/m;
+
 for (const t of tests) {
   const file = path.join(dir, t);
+  let out = "", code = 0, err = "";
   try {
-    const out = execFileSync(process.execPath, [file], { encoding: "utf8", stderr: "pipe" });
-    const ok = out.includes("PASS") || out.includes("geslaagd");
-    if (ok) {
-      console.log(`✅ ${t}`);
-      passed++;
-    } else {
-      // Diagnostische tests geven geen expliciete PASS maar falen ook niet
-      console.log(`ℹ️  ${t}  (geen PASS-marker — diagnostisch)`);
-      passed++;
-    }
+    out = execFileSync(process.execPath, [file], { encoding: "utf8" });
   } catch (e) {
-    console.error(`❌ ${t}\n${e.stdout || ""}\n${e.stderr || ""}`);
-    failed++;
+    code = e.status ?? 1;
+    out = e.stdout || "";
+    err = e.stderr || "";
   }
+
+  if (code !== 0 || FAIL_RE.test(out)) {
+    console.error(`❌ ${t}\n${out}\n${err}`);
+    failed++;
+    continue;
+  }
+
+  if (/\bPASS\b|geslaagd/.test(out)) {
+    console.log(`✅ ${t}`);
+  } else {
+    console.log(`ℹ️  ${t}  (geen PASS-marker — diagnostisch)`);
+  }
+  passed++;
 }
 
 console.log(`\n${passed} geslaagd, ${failed} mislukt`);

@@ -124,10 +124,10 @@ function epexKey(dt) {
 
 // CORRECTIE: Consumentenprijs berekening
 function toConsumerPrice(spot) {
-  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.02;
-  // spot is bij Frank/EnergyZero vaak al incl. BTW op de kale energie.
-  // We zorgen hier dat de opslag + BTW en de energiebelasting er zuiver bij komen.
-  return spot + (markup * 1.21) + liveEnergyTax;
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
+  // spot is incl. BTW op de kale energie; de opslag-schuif is óók incl. BTW (Pad 1) en
+  // de energiebelasting (liveEnergyTax) eveneens → alles rechtstreeks optellen.
+  return spot + markup + liveEnergyTax;
 }
 
 // Seizoensgebonden EPEX-fallbackprofielen (ruwe beursprijzen €/kWh, excl. BTW, excl. EB, excl. opslag)
@@ -338,6 +338,18 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Setup Events
+// Coalesceert zware hersimulaties tot max. één per animatieframe. Een slider-`input`
+// vuurt continu tijdens het slepen (elke pixel); zonder dit draait runSimulation()
+// (5× _simulateCore over 8760u + alle charts) tientallen keren per seconde → UI-jank.
+// De badge-update blijft synchroon (directe feedback); alleen de simulatie wordt uitgesteld.
+// Zelf-pacend: een nieuwe sim wordt pas gepland nadat de vorige (en de daarna afgehandelde
+// input-events) klaar zijn → de hoofdthread blijft responsief tussen frames.
+let _simRaf = 0;
+function scheduleSim() {
+  if (_simRaf) return;
+  _simRaf = requestAnimationFrame(() => { _simRaf = 0; runSimulation(); });
+}
+
 function setupEventListeners() {
   // Slider input reactive badges
   const sliders = document.querySelectorAll('input[type="range"]');
@@ -349,7 +361,7 @@ function setupEventListeners() {
         let suffix = e.target.dataset.suffix || "";
         badge.textContent = `${prefix}${e.target.value}${suffix}`;
       }
-      runSimulation();
+      scheduleSim();
     });
   });
 
@@ -2317,8 +2329,8 @@ function _simulateCore(cfg, full = false) {
   const gridCharge = mode === "kosten" || mode === "winst";   // van het net mogen laden
   const gridExport = mode === "winst";                        // aan het net mogen verkopen
 
-  const markupBtw = dynamicMarkup * 1.21;
-  const exportMarkupExclBtw = dynamicExportMarkup / 1.21;
+  const markupBtw = dynamicMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks gebruiken
+  const exportMarkup = dynamicExportMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks van de kale prijs af
   const eb = liveEnergyTax;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
   const simData = fullYearData || energyData;
@@ -2461,8 +2473,8 @@ function _simulateCore(cfg, full = false) {
 
       if (gridExport) {
         // Maximale winst: óók aan het net verkopen. Een verkochte kWh levert kale spot
-        // (spot/1.21, we trekken hier de terugleveropslag excl. BTW vanaf) op.
-        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkupExclBtw) * batEfficiency > loAllin);
+        // (spot/1.21) op, minus de terugleveropslag (incl. BTW, rechtstreeks — Pad 1).
+        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkup) * batEfficiency > loAllin);
         // Ruimte om voor de winstgevende export-uren te laden — exact wat die uren kunnen
         // ontladen (vermogen × #uren), begrensd door de capaciteit bóven de zelf-voorraad.
         // Alléén als er zúlke vrije ruimte is verkopen we: anders is de capaciteit volledig
@@ -2545,13 +2557,27 @@ function _simulateCore(cfg, full = false) {
     let impFx = rawImp + hpFromGrid;
     let expFx = rawExp - hpFromSolar;
 
-    // EV verbruik injecteren vanuit gescheiden dagschemas
+    // EV verbruik injecteren vanuit gescheiden dagschemas.
+    // De zon-allocatie (evD.solar) is vooraf bepaald op de RUWE export; de warmtepomp kan
+    // díe zon echter al deels hebben opgegeten (expDyn is post-WP). Het niet-meer-beschikbare
+    // zon-deel mag niet stil worden weggeklemd — het moet ALSNOG van het net komen
+    // (energiebehoud), anders verdwijnt EV-vraag → onderschat bruto import + EB (CB-1).
     if (hasEv) {
       const evD = evScheduleCacheDyn[dayKey]?.[hour];
-      if (evD) { impDyn += evD.grid; expDyn = Math.max(0, expDyn - evD.solar); }
+      if (evD) {
+        impDyn += evD.grid;
+        const solUsed = Math.min(evD.solar, expDyn);   // zon die de EV écht kan pakken
+        expDyn -= solUsed;
+        impDyn += evD.solar - solUsed;                 // zon-tekort → van het net
+      }
 
       const evF = evScheduleCacheFx[dayKey]?.[hour];
-      if (evF) { impFx += evF.grid; expFx = Math.max(0, expFx - evF.solar); }
+      if (evF) {
+        impFx += evF.grid;
+        const solUsedFx = Math.min(evF.solar, expFx);
+        expFx -= solUsedFx;
+        impFx += evF.solar - solUsedFx;
+      }
     }
 
     // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
@@ -2608,7 +2634,7 @@ function _simulateCore(cfg, full = false) {
         // minus terugleveropslag > laadkosten loAllin/rendement) én (b) het écht overschot is:
         // we houden de resterende eigen import van vandaag in de accu.
         const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
-        const minExportSpot = ((loAllin / batEfficiency) + exportMarkupExclBtw) * 1.21;
+        const minExportSpot = ((loAllin / batEfficiency) + exportMarkup) * 1.21;
         const reserve = batSelfReserve[dayKey] ?? 0;                 // bewaar de eigen-verbruik-voorraad
         const exportable = Math.min(d, Math.max(0, batSoC - reserve));
         if (gridExport && exportable > 0 && spot > minExportSpot) {
@@ -2662,7 +2688,7 @@ function _simulateCore(cfg, full = false) {
     // Accumuleer Dynamische Resultaten
     const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
-    dynExpRev += dynExp * ((spot / 1.21) - exportMarkupExclBtw);
+    dynExpRev += dynExp * ((spot / 1.21) - exportMarkup);
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
@@ -2670,7 +2696,7 @@ function _simulateCore(cfg, full = false) {
       hourly[hour].imports.push(dynImp);
       hourly[hour].exports.push(dynExp);
       const allIn = basePrice + eb;
-      const returnPrice = (spot / 1.21) - exportMarkupExclBtw;
+      const returnPrice = (spot / 1.21) - exportMarkup;
       const dynHrCost = dynImp * allIn - dynExp * returnPrice;   // teruglevering = kale spot (excl. BTW, 2027) minus opslag
       const tariff = isPeak ? fixedPeakRate : fixedDalRate;
       const fxHrCost = impFx * tariff - expFx * fixedFeedInRate + expFx * fixedFeedInFee;
@@ -2870,8 +2896,8 @@ function downloadDataWithPrices() {
   }
   const cfg = readSimConfig();
   const eb = liveEnergyTax;
-  const markupBtw = cfg.dynamicMarkup * 1.21;
-  const exportMarkupExclBtw = (cfg.dynamicExportMarkup ?? 0.0) / 1.21;
+  const markupBtw = cfg.dynamicMarkup;   // slider is incl. BTW (Pad 1)
+  const exportMarkup = (cfg.dynamicExportMarkup ?? 0.0);   // slider is incl. BTW (Pad 1)
 
   const header = [
     "tijdstip", "afname_kWh", "teruglevering_kWh", "opwek_kWh",
@@ -2889,7 +2915,7 @@ function downloadDataWithPrices() {
     const real = epexHistory.has(key);
     const spot = real ? epexHistory.get(key) : getFallbackSpot(month, hour);
     const allIn = spot + markupBtw + eb;                       // all-in consumentenprijs dynamisch
-    const dynCost = imp * allIn - exp * ((spot / 1.21) - exportMarkupExclBtw);                  // netto kosten dat uur (dynamisch)
+    const dynCost = imp * allIn - exp * ((spot / 1.21) - exportMarkup);                  // netto kosten dat uur (dynamisch)
     const isPeak = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
     const tariff = isPeak ? cfg.fixedPeakRate : cfg.fixedDalRate;
     const vastCost = imp * tariff - exp * cfg.fixedFeedInRate + exp * cfg.fixedFeedInFee;
@@ -3172,14 +3198,15 @@ function renderDynPriceExample() {
   if (spot == null) spot = getFallbackSpot(1, 18);
 
   const kaleEpex = spot / 1.21;            // spot is incl. BTW → toon de kale beursprijs
-  const btw = (kaleEpex + markup) * 0.21;
-  const allIn = spot + markup * 1.21 + eb;
+  const opslagKaal = markup / 1.21;        // slider is incl. BTW (Pad 1) → kale opslag voor de uitsplitsing
+  const btw = (kaleEpex + opslagKaal) * 0.21;
+  const allIn = spot + markup + eb;        // Pad 1: opslag is incl. BTW → rechtstreeks optellen
   const pct = activeSimulation?.epexPct ?? 0;
   const bron = pct === 100 ? "echte EPEX" : pct > 0 ? `${pct}% echte EPEX` : "geschatte prijs";
 
   const part = (val, lbl) => `<span>€${val.toFixed(3)}</span> <span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);">${lbl}</span>`;
   box.innerHTML =
-    `${part(kaleEpex, "EPEX")} + ${part(markup, "opslag")} + ${part(btw, "BTW")} + ${part(eb, "EB")} = ` +
+    `${part(kaleEpex, "EPEX")} + ${part(opslagKaal, "opslag")} + ${part(btw, "BTW")} + ${part(eb, "EB")} = ` +
     `<span style="color:var(--accent-cyan);font-weight:700;">€${allIn.toFixed(3)}/kWh</span>` +
     `<span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);"> &nbsp;(voorbeeld 18:00 · ${bron})</span>`;
 }
@@ -3629,7 +3656,7 @@ function renderChart() {
     const pureSpot = hm.spot;
     const consPrice = toConsumerPrice(pureSpot);
     const rawEpex = (pureSpot / 1.21).toFixed(3);
-    const markup = (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.02).toFixed(3);
+    const markup = (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024).toFixed(3);
 
     tooltip.innerHTML = `
       <h4>${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00 uur</h4>
@@ -3647,7 +3674,7 @@ function renderChart() {
         <span class="val" style="color: var(--accent-yellow);">€ ${consPrice.toFixed(3)} / kWh</span>
       </div>
       <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.2rem;">
-        EPEX markt €${rawEpex} × 1.21 + opslag €${markup} × 1.21 + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
+        EPEX markt €${rawEpex} × 1.21 + opslag €${markup} (incl. BTW) + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
       </div>
     `;
   });

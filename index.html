@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://peterjan.github.io/DynOfVast/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=65">
+  <link rel="stylesheet" href="/energie/style.css?v=67">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -831,15 +831,16 @@
           <div class="form-group advanced-only">
             <label for="dynamic-markup">Inkoop Opslag / kWh <span class="info-icon" tabindex="0">i<span
                   class="info-tooltip">De marge die de leverancier bovenop de EPEX beursprijs rekent. Bij dynamische
-                  contracten betaal je de spotprijs + deze opslag per kWh.</span></span> <span class="val-badge"
-                id="dynamic-markup-val">€ 0.020</span></label>
-            <input type="range" id="dynamic-markup" min="0.00" max="0.08" step="0.005" value="0.020" data-suffix="">
+                  contracten betaal je de spotprijs + deze opslag per kWh. Vul de opslag <strong>incl. BTW</strong> in
+                  (zoals op je rekening). Noemt je leverancier 'm excl. BTW? Vermenigvuldig met 1,21.</span></span> <span class="val-badge"
+                id="dynamic-markup-val">€ 0.024</span></label>
+            <input type="range" id="dynamic-markup" min="0.00" max="0.08" step="0.001" value="0.024" data-suffix="">
           </div>
           <div class="form-group advanced-only">
             <label for="dynamic-export-markup">Teruglever Opslag / kWh <span class="info-icon" tabindex="0">i<span
-                  class="info-tooltip">De marge die de leverancier inhoudt op je teruggeleverde stroom. Vul het werkelijke gequote bedrag in (inclusief BTW, bijv. Tibber €0,0248). De app rekent hiermee automatisch terug naar de BTW-vrije beursprijs in 2027. Sommige leveranciers rekenen dezelfde opslag als bij inkoop.</span></span> <span class="val-badge"
+                  class="info-tooltip">De terugleverkosten die de leverancier inhoudt op je teruggeleverde stroom. Vul het werkelijke gequote bedrag in (<strong>incl. BTW</strong>, bijv. Tibber €0,0248). Dit bedrag wordt rechtstreeks afgetrokken van je terugleververgoeding (de kale beursprijs) per kWh. Sommige leveranciers rekenen dezelfde opslag als bij inkoop.</span></span> <span class="val-badge"
                 id="dynamic-export-markup-val">€ 0.020</span></label>
-            <input type="range" id="dynamic-export-markup" min="0.00" max="0.08" step="0.005" value="0.020" data-suffix="">
+            <input type="range" id="dynamic-export-markup" min="0.00" max="0.08" step="0.001" value="0.020" data-suffix="">
           </div>
           <div class="form-group advanced-only">
             <label for="dynamic-vastrecht">Vaste Leveringskosten/mnd <span class="info-icon" tabindex="0">i<span
@@ -1615,7 +1616,7 @@
   </div><!-- /.app-container -->
 
   <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=66"></script>
+  <script src="/energie/app.js?v=67"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

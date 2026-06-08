@@ -135,14 +135,27 @@ function buildDay(perHour, spotInclBtw) {
      `B2 export-opbrengst = spot/1.21 (€${res.dynamicRawExportRevenue.toFixed(3)} ≈ €2.40 voor 24 kWh)`);
 }
 
-// B2b. Terugleveropbrengst met opslag: bij vlakke spot 0.121 incl. BTW en dynamicExportMarkup = 0.0242,
-//      is de opslag excl. BTW 0.0242/1.21 = €0.020/kWh.
-//      De opbrengst per kWh is (0.121 - 0.0242)/1.21 = €0.080/kWh.
+// B2b. Terugleveropbrengst met opslag (Pad 1, conventie A): de slider is incl. BTW en
+//      wordt RECHTSTREEKS van de kale prijs afgetrokken. Bij kale spot €0.10 en opslag
+//      €0.020 incl. BTW is de opbrengst 0.10 − 0.020 = €0.080/kWh.
 {
-  const { rows, epex } = buildDay({ exp: 1, solar: 1 }, 0.121);
-  const res = RUN({ rows, epex, cfg: { ...cfgBase, dynamicExportMarkup: 0.0242 }, eb: EB, yearScale: 1.0 });
+  const { rows, epex } = buildDay({ exp: 1, solar: 1 }, 0.121);   // kale spot = 0.121/1.21 = 0.10
+  const res = RUN({ rows, epex, cfg: { ...cfgBase, dynamicExportMarkup: 0.020 }, eb: EB, yearScale: 1.0 });
   ok(near(res.dynamicRawExportRevenue, 24 * 1 * 0.080, 0.01),
-     `B2b export-opbrengst met opslag = (spot - markup)/1.21 (€${res.dynamicRawExportRevenue.toFixed(3)} ≈ €1.92 voor 24 kWh)`);
+     `B2b export-opbrengst met opslag = spot/1.21 − markup (€${res.dynamicRawExportRevenue.toFixed(3)} ≈ €1.92 voor 24 kWh)`);
+}
+
+// B2c. PIN van de teruglever-opslag-conventie (Pad 1, v=66): de effectieve aftrek op de
+//      KALE prijs is exact de slider-waarde (incl. BTW, rechtstreeks). Borgt dat een
+//      refactor deze keuze niet stil omdraait.
+{
+  const day = buildDay({ exp: 1, solar: 1 }, 0.121);
+  const m = 0.0248;   // bv. Tibber-terugleverkosten incl. BTW
+  const noMk = RUN({ rows: day.rows, epex: day.epex, cfg: { ...cfgBase, dynamicExportMarkup: 0 }, eb: EB, yearScale: 1.0 });
+  const wMk  = RUN({ rows: day.rows, epex: day.epex, cfg: { ...cfgBase, dynamicExportMarkup: m }, eb: EB, yearScale: 1.0 });
+  const deductPerKwh = (noMk.dynamicRawExportRevenue - wMk.dynamicRawExportRevenue) / 24;
+  ok(near(deductPerKwh, m, 0.0005),
+     `B2c aftrek op kale prijs = slider-waarde rechtstreeks (€${deductPerKwh.toFixed(4)}/kWh voor markup €${m})`);
 }
 
 
@@ -197,6 +210,23 @@ function buildDay(perHour, spotInclBtw) {
   ok(near(dynRecon, res.dynamicTotalBill, 0.01), `B6 dyn-totaal bevat korting-aftrek (recon €${dynRecon.toFixed(2)} = €${res.dynamicTotalBill.toFixed(2)})`);
 }
 
+// B7. Netbeheerkosten (NETBEHEER_2026) worden bij BEIDE totalen opgeteld → comparison-
+//     neutraal, maar verschijnen in de absolute jaartotalen. Borg: vast-reconstructie + het
+//     verschil (vast − dyn) is invariant voor het al-of-niet meerekenen van netbeheer.
+{
+  const rowsPV = buildYear(3500, 3500);
+  const res = RUN({ rows: rowsPV, epex: new Map(), cfg: cfgBase, eb: EB, yearScale: 1.0 });
+  const gridFees = res.gridFees ?? 0;
+  ok(near(gridFees, 480.00, 0.01), `B7 netbeheerkosten = €480,00 (2026) → €${gridFees.toFixed(2)}`);
+  const fxRecon = res.fixedImportCost - res.fixedFeedInCredit + res.fixedFeedInFee
+    + res.fixedSubscription - res.taxRebate + gridFees;
+  ok(near(fxRecon, res.fixedTotalBill, 0.01), `B7 vast-totaal bevat netbeheer (recon €${fxRecon.toFixed(2)} = €${res.fixedTotalBill.toFixed(2)})`);
+  // Comparison-neutraal: het verschil zonder netbeheer in beide = met netbeheer in beide.
+  const diffWith = res.fixedTotalBill - res.dynamicTotalBill;
+  const diffWithout = (res.fixedTotalBill - gridFees) - (res.dynamicTotalBill - gridFees);
+  ok(near(diffWith, diffWithout, 0.001), `B7 netbeheer valt weg in het verschil (€${diffWith.toFixed(2)})`);
+}
+
 // ─────────────────────────────────────────────────────────────
 console.log("\n--- C. Geborgde fixes (voorheen beperkingen) ---");
 
@@ -211,6 +241,23 @@ console.log("\n--- C. Geborgde fixes (voorheen beperkingen) ---");
      `C1 WP eet zon i.p.v. te importeren: import blijft ${wHp.totalImportKwh.toFixed(2)} kWh (geen kunstmatige bruto-import)`);
   ok(wHp.totalExportKwh < noHp.totalExportKwh - 0.5,
      `C1 WP-zonconsumptie verlaagt export (${noHp.totalExportKwh.toFixed(1)} → ${wHp.totalExportKwh.toFixed(1)} kWh)`);
+}
+
+// C2. REGRESSIEWACHT (CB-1): de warmtepomp én een zonne-ladende EV mogen niet DEZELFDE
+//     zon claimen. Energiebehoud: als de WP alle zon opeet, moet de zonne-EV zijn volledige
+//     dagbehoefte alsnog van het net halen. Vóór de fix klemde de EV-injectie het zon-tekort
+//     stil weg (expDyn = max(0, …)) zonder het als net-afname te verrekenen → EV-vraag
+//     verdween → onderschat bruto import + EB. Toen verhoogde +EV de import met ~0 kWh.
+{
+  const { rows, epex } = buildDay({ imp: 0, exp: 1, solar: 1 }, 0.10);
+  const hpCfg = { ...cfgBase, hasHeatPump: true, hpWinterBaseload: 10.0 };   // eet alle zon (≥1 kWh/u)
+  const evExtra = { hasEv: true, evWeeklyDist: 70, evConsumption: 0.2, evSolarMatch: true, evProfile: "home" };
+  const hp   = RUN({ rows, epex, cfg: hpCfg, eb: EB, yearScale: 1.0 });
+  const hpEv = RUN({ rows, epex, cfg: { ...hpCfg, ...evExtra }, eb: EB, yearScale: 1.0 });
+  const evDailyKwh = 70 * 0.2 / 7;   // 2.0 kWh/dag
+  const dImp = hpEv.totalImportKwh - hp.totalImportKwh;
+  ok(near(dImp, evDailyKwh, 0.05),
+     `C2 WP+EV claimen niet dezelfde zon: +EV verhoogt import met ${dImp.toFixed(2)} kWh ≈ EV-behoefte ${evDailyKwh.toFixed(2)} (energiebehoud)`);
 }
 
 console.log(`\n${fail === 0 ? "✅ ALLE" : "❌ " + fail + "/" + (pass + fail)} checks` + (fail === 0 ? " geslaagd" : " GEFAALD") + ` (${pass} pass)`);

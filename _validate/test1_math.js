@@ -38,7 +38,7 @@ const eb = 0.11084, markup = 0.018, spot = 0.10;
 const REBATE = 628.96;   // heffingskorting (EB-vermindering) — van beide totalen af
 const GRID_FEES = 480.00; // netbeheerkosten gemiddelde
 const totImp = 8760;
-const dynImpCost_hand = totImp * (spot + markup * 1.21);
+const dynImpCost_hand = totImp * (spot + markup);   // Pad 1: inkoop-opslag is incl. BTW → rechtstreeks
 const dynEB_hand = totImp * eb;
 const dynSub_hand = 6.00 * 12;
 const dynBill_hand = dynImpCost_hand + dynEB_hand + dynSub_hand - REBATE + GRID_FEES;
