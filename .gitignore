@@ -27,3 +27,7 @@ assistant/
 /energie
 node_modules/
 dist/
+
+# Build output (gegenereerd door esbuild uit src/app.js)
+/app.js
+/app.js.map

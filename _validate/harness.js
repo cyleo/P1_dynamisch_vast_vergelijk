@@ -4,7 +4,7 @@ const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
 
-const appSrc = fs.readFileSync(path.join(__dirname, "..", "dist", "app.bundle.js"), "utf8");
+const appSrc = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 
 // --- Stub DOM/window zodat app.js zonder crash laadt ---
 const noop = () => {};

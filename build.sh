@@ -10,6 +10,6 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 # Run esbuild bundling
-npx esbuild src/app.js --bundle --outfile=dist/app.bundle.js --minify --sourcemap
+npx esbuild src/app.js --bundle --outfile=app.js --minify --sourcemap
 
-echo "Build complete! Output in dist/app.bundle.js"
+echo "Build complete! Output in app.js"
