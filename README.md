@@ -165,18 +165,29 @@ De app start met een realistisch jaarprofiel (`demo-year.js`): een prosument met
 
 ## Technisch
 
-- Geen externe JS-afhankelijkheden, geen charting-library — custom SVG-grafieken
-- Simulatie-engine (`_simulateCore`): één pure functie, geen DOM-reads in de loop
-- EPEX-prijzen via Frank Energie GraphQL + EnergyZero; seizoensprofiel als fallback
-- Validatietests in `_validate/` (Node.js, `npm test`)
+- Gebouwd met modulaire ES Modules, gebundeld met `esbuild` naar één compact bestand (`dist/app.bundle.js`).
+- Geen externe runtime JS-afhankelijkheden, geen externe charting-library — custom SVG-grafieken.
+- Simulatie-engine (`_simulateCore`): één pure domeinfunctie, geen DOM-reads in de loop.
+- EPEX-prijzen via Frank Energie GraphQL + EnergyZero; seizoensprofiel als fallback.
+- Automatische CI/CD workflow via Gitea Actions.
+- Validatietests in `_validate/` (Node.js, `npm test`).
 
 ```
 index.html      — UI
-app.js          — engine, HA-integratie, grafieken (~4000 regels)
+build.sh        — build script voor esbuild bundeling
+src/            — modulaire broncode
+  ├── app.js             — applicatie orchestrator, UI en charting
+  └── domain/            — pure domeinlogica
+      ├── constants.js   — tarieven, belastingen en factoren
+      ├── energyMath.js  — simulatiemodellen (accu, EV, warmtepomp)
+      └── parser.js      — Home Assistant en CSV parsing logic
+dist/           — output map voor gebundelde productiecode
+  └── app.bundle.js
 style.css       — styling
 demo-year.js    — jaarprofiel (OPSD CC-BY)
-package.json    — npm test + npm start
+package.json    — dependencies (esbuild) en NPM scripts
 _validate/      — Node.js validatietests
+.gitea/         — Gitea Actions CI/CD workflows
 CLAUDE.md       — technische context voor ontwikkelaars/AI
 ```
 
