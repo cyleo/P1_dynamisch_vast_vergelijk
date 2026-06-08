@@ -607,13 +607,18 @@ function processFile(file) {
           throw new Error("Geen geldige P1-stroomgegevens gevonden. Controleer of het bestand import/export sensor data bevat.");
         }
 
-        if (isDemoData) { energyData = []; isDemoData = false; }
+        // Bij voorbeelddata starten we met een lege merge-basis (nieuwe upload vervangt de demo);
+        // anders mergen we de nieuwe records in de bestaande dataset. We muteren de mirror NIET
+        // (store-invariant) — we gebruiken een lokale basis en zetten de store in één keer (zie
+        // appStore.setState hieronder). Zie docs/ENGINEERING_PRACTICES.md → "Store-mirror desync".
+        const mergeBase = isDemoData ? [] : energyData;
+        if (isDemoData) appStore.setState({ isDemoData: false });
 
         const merged = new Map();
-        for (const r of energyData) merged.set(r.timestamp, r);
+        for (const r of mergeBase) merged.set(r.timestamp, r);
         for (const r of parsed) merged.set(r.timestamp, r);
-        
-        const oldUntangle = energyData.untangle;
+
+        const oldUntangle = mergeBase.untangle;
         const sorted = Array.from(merged.values())
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         sorted.untangle = parsed.untangle || oldUntangle;

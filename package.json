@@ -7,7 +7,8 @@
   "scripts": {
     "build": "esbuild src/app.js --bundle --outfile=app.js",
     "dev": "esbuild src/app.js --bundle --outfile=app.js --watch",
-    "test": "npm run build && node _validate/run_tests.js",
+    "test": "npm run build && node _validate/bundle_canary.js && node _validate/run_tests.js",
+    "canary": "npm run build && node _validate/bundle_canary.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

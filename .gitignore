@@ -11,8 +11,10 @@ p1_sample.json
 !package.json
 !package-lock.json
 
-# Claude project bestanden
-.claude/
+# Claude project bestanden — negeer alles ONDER .claude (lokale settings) ...
+.claude/*
+# ...behalve de gedeelde agent-definities (verifier-agents, zie docs/ENGINEERING_PRACTICES.md)
+!.claude/agents/
 cline_mcp_settings.json
 
 # Cline/AI assistant bestanden

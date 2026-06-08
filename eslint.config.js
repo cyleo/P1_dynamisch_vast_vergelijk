@@ -46,6 +46,26 @@ export default [
     },
   },
   {
+    // Mirror-guard (bug B1): de engine-read mirrors boven in src/app.js zijn READ-ONLY
+    // spiegels van appStore. Een bare assignment werkt de mirror bij maar laat de store
+    // stil → de engine rekent met de oude waarde (dat was B1, de energiebelastingschuif).
+    // We verbieden daarom elke assignment aan deze namen TENZIJ de RHS `state.<x>` is
+    // (de legitieme subscribe()-callback en __setTestState spiegelen zo). Zie
+    // docs/ENGINEERING_PRACTICES.md → "Store-mirror desync".
+    files: ["src/app.js"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "AssignmentExpression[left.name=/^(energyData|fullYearData|epexHistory|liveEnergyTax|yearScale|calibratedProfile|activeSimulation|dataMeta)$/]:not([right.object.name='state'])",
+          message:
+            "Mirror read-only: muteer via appStore.setState({ … }), nooit met een bare assignment (bug B1). Zie docs/ENGINEERING_PRACTICES.md.",
+        },
+      ],
+    },
+  },
+  {
     // Node-validatietests (CommonJS).
     files: ["_validate/**/*.js"],
     languageOptions: {
