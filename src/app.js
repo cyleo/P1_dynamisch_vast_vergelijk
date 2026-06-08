@@ -1,6 +1,6 @@
 import { appStore } from "./domain/store.js";
 
-import { getFallbackSpot, buildSimContext, _simulateCore } from "./domain/engine.js";
+import { getFallbackSpot, buildSimContext, _simulateCore, getDayRows } from "./domain/engine.js";
 
 import {
   parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync, parseLongCSV, processHAStatistics
@@ -1511,14 +1511,7 @@ function ensureFullYearData() {
 // zonder cache wordt deze 8760-pass 5× herhaald. Een nieuwe dataset (clean/jaarprojectie,
 // of het validatie-harnas dat per scenario een verse array zet) is een nieuwe referentie
 // → de cache invalideert vanzelf. Geen gedragswijziging, alleen minder werk.
-let _dayRowsCache = null, _dayRowsSrc = null;
-function getDayRows(simData) {
-  if (_dayRowsSrc === simData && _dayRowsCache) return _dayRowsCache;
-  const dr = {};
-  simData.forEach(r => { (dr[rowMeta(r).dayKey] ||= []).push(r); });
-  _dayRowsSrc = simData; _dayRowsCache = dr;
-  return dr;
-}
+
 
 // Verzamelt de dataset + marktparameters die _simulateCore nodig heeft tot één object,
 // zodat de engine zelf géén module-globals meer leest (testbaar, en klaar voor een
@@ -2434,9 +2427,10 @@ if (typeof window !== "undefined") {
   window.processHAStatistics = processHAStatistics;
   window.computeBillForConfig = computeBillForConfig;
   window.runSimulation = runSimulation;
-  window.getDayRows = getDayRows;
+
   
   window.__setTestState = function(state) {
+    // Update local let bindings (backwards compat for direct reads in app.js)
     if ('energyData' in state) energyData = state.energyData;
     if ('fullYearData' in state) fullYearData = state.fullYearData;
     if ('epexHistory' in state) epexHistory = state.epexHistory;
@@ -2444,6 +2438,12 @@ if (typeof window !== "undefined") {
     if ('yearScale' in state) yearScale = state.yearScale;
     if ('_cleanedRef' in state) _cleanedRef = state._cleanedRef;
     if ('calibratedProfile' in state) calibratedProfile = state.calibratedProfile;
+    // Also sync into appStore so engine.js (buildSimContext) picks up test values
+    const storeUpdates = {};
+    for (const key of ['energyData', 'fullYearData', 'epexHistory', 'liveEnergyTax', 'yearScale', 'calibratedProfile']) {
+      if (key in state) storeUpdates[key] = state[key];
+    }
+    if (Object.keys(storeUpdates).length) appStore.setState(storeUpdates);
   };
   
   window.__getTestState = function() {

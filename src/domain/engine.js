@@ -6,11 +6,22 @@ import {
   precomputeEVSchedules, precomputeBatterySchedule,
   applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming
 } from "./energyMath.js";
-import { EPEX_PROFILES } from "./constants.js";
+import { EPEX_PROFILES, EB_REBATE_2026, NETBEHEER_2026 } from "./constants.js";
+
+let _dayRowsCache = null, _dayRowsSrc = null;
+export function getDayRows(simData) {
+  if (_dayRowsSrc === simData && _dayRowsCache) return _dayRowsCache;
+  const dr = {};
+  simData.forEach(r => { (dr[rowMeta(r).dayKey] ||= []).push(r); });
+  _dayRowsSrc = simData; _dayRowsCache = dr;
+  return dr;
+}
 
 export function getFallbackSpot(month, hour) {
+  const { calibratedProfile } = appStore.getState();
   const season = seasonOf(month);
-  // Voorkeur: gekalibreerd op eigen EPEX-historie (al incl. BTW → geen extra ×1.21).
+  
+  // Eerst proberen of er een gekalibreerd profiel voor is
   const cal = calibratedProfile?.[season]?.[hour];
   if (cal != null) return cal;
   // Anders: generiek seizoensprofiel (ruwe beurs → ×1.21 op positieve uren).
@@ -19,6 +30,7 @@ export function getFallbackSpot(month, hour) {
 }
 
 export function buildSimContext() {
+  const { fullYearData, energyData, epexHistory, liveEnergyTax, yearScale } = appStore.getState();
   return {
     simData: fullYearData || energyData,
     epexHistory,
