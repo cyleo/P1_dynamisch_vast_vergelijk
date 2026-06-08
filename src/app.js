@@ -1004,7 +1004,53 @@ async function parseAutoCSVAsync(text) {
     return parseLongCSV(lines, sep, headers);
   }
 
+  if (headers[0].toLowerCase() === "entity_id" &&
+    headers[1].toLowerCase() === "state" &&
+    headers[2].toLowerCase() === "last_changed") {
+    return parseHAHistoryExportCSV(lines, sep, headers);
+  }
+
   throw new Error("CSV-formaat niet herkend.");
+}
+
+function parseHAHistoryExportCSV(lines, sep, headers) {
+  const entityIdx = 0;
+  const stateIdx = 1;
+  const tsIdx = 2;
+
+  const hourlyData = {}; 
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(sep).map(c => c.trim());
+    if (cols.length < 3) continue;
+    
+    const entity = cols[entityIdx];
+    const val = parseFloat(cols[stateIdx]);
+    if (isNaN(val)) continue;
+    
+    const ms = new Date(cols[tsIdx]).getTime();
+    if (isNaN(ms)) continue;
+    
+    const hourMs = Math.floor(ms / (3600 * 1000)) * (3600 * 1000);
+    
+    if (!hourlyData[entity]) hourlyData[entity] = {};
+    if (!hourlyData[entity][hourMs] || hourlyData[entity][hourMs].ms < ms) {
+      hourlyData[entity][hourMs] = { ms, val };
+    }
+  }
+
+  const stats = {};
+  for (const [entity, hours] of Object.entries(hourlyData)) {
+    stats[entity] = Object.entries(hours)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([hourMs, data]) => ({
+        start: Number(hourMs),
+        sum: data.val
+      }));
+  }
+
+  // Uses the global roleMap to process into energyData rows
+  return processHAStatistics(stats, _lastRoleMap || DEMO_ROLEMAP, digitalTwinEnabled);
 }
 
 async function parseHAStatisticsWideCSVAsync(lines, sep, headers) {
@@ -1660,6 +1706,8 @@ function processHAStatistics(stats, roleMap, dtEnabled = true) {
   // dtEnabled=false → bewaar ruwe meterstanden 1-op-1 (gebruiker koos voor uitschakelen).
   const anyDevice = dtEnabled && !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
 
+  const highWaterMarks = {};
+
   const records = [];
   for (let i = 1; i < timestamps.length; i++) {
     const prev = timestamps[i - 1];
@@ -1670,17 +1718,34 @@ function processHAStatistics(stats, roleMap, dtEnabled = true) {
       if (!ent) return 0;
       // 1. Probeer eerst cumulatieve sum (tellerstand)
       if (hourlySum[ent]) {
-        const a = hourlySum[ent].get(prev) ?? null;
+        let a = highWaterMarks[ent];
+        if (a === undefined) {
+           a = hourlySum[ent].get(prev) ?? null;
+           if (a !== null) highWaterMarks[ent] = a;
+        }
         const b = hourlySum[ent].get(curr) ?? null;
         if (a === null || b === null) return 0;
-        const d = b - a;
-        return (d > 0 && d < maxVal) ? d : 0;
+
+        let d = b - a;
+        if (d < 0) {
+           // Bij daling: was het een meter-reset of een glitch?
+           if (b >= 0 && b < maxVal * 2) { 
+              d = b; // Reset: nieuwe basis
+              highWaterMarks[ent] = b;
+           } else {
+              // Glitch: behoud oude highWaterMark, voeg niks toe totdat we hersteld zijn
+              return 0;
+           }
+        } else {
+           highWaterMarks[ent] = b;
+        }
+        return (d >= 0 && d <= maxVal) ? d : 0;
       }
       // 2. Fallback: probeer mean (live vermogen in W/kW)
       if (hourlyMean[ent]) {
         const val = hourlyMean[ent].get(curr) ?? null;
         if (val === null) return 0;
-        return (val > 0 && val < maxVal) ? val : 0;
+        return (val > 0 && val <= maxVal) ? val : 0;
       }
       return 0;
     };
@@ -2335,6 +2400,287 @@ function buildSimContext() {
   };
 }
 
+function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
+  const { hasEv, evWeeklyDist, evConsumption, evSolarMatch, evProfile, stressMultiplier = 1.0, fixedPeakRate, fixedDalRate } = cfg;
+  const { epexHistory, eb } = ctx;
+  const evScheduleCacheDyn = {};
+  const evScheduleCacheFx = {};
+
+  if (!hasEv) return { evScheduleCacheDyn, evScheduleCacheFx };
+  const evDailyKwh = (evWeeklyDist * evConsumption) / 7.0;
+  if (evDailyKwh <= 0) return { evScheduleCacheDyn, evScheduleCacheFx };
+
+  Object.keys(dayRows).forEach(dk => {
+    const rowsOfDay = dayRows[dk];
+
+    const unavailable = r => {
+      if (evProfile !== "commuter") return false;
+      const { dow, hour } = rowMeta(r);
+      return dow > 0 && dow < 6 && hour >= 8 && hour <= 17;
+    };
+
+    const baseSched = () => {
+      const s = Array.from({ length: 24 }, () => ({ grid: 0, solar: 0 }));
+      let remNeed = evDailyKwh;
+      if (evSolarMatch) {
+        for (const r of rowsOfDay) {
+          if (remNeed <= 0) break;
+          if (unavailable(r)) continue;
+          const h = rowMeta(r).hour;
+          if (h < 10 || h > 16) continue;
+          const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
+          const charge = Math.min(rawExpH, EV_MAX_CHARGE_KW, remNeed);
+          if (charge > 0) { s[h].solar += charge; remNeed -= charge; }
+        }
+      }
+      return { s, remNeed };
+    };
+
+    const dynTarget = baseSched();
+    if (dynTarget.remNeed > 0) {
+      const sortedDyn = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+        const { hour, month, epexKey: k } = rowMeta(r);
+        let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+        if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+        return { h: hour, cost: sp + markupBtw + eb };
+      }).sort((a, b) => a.cost - b.cost);
+
+      for (const { h } of sortedDyn) {
+        if (dynTarget.remNeed <= 0) break;
+        const room = EV_MAX_CHARGE_KW - (dynTarget.s[h].solar + dynTarget.s[h].grid);
+        const charge = Math.min(dynTarget.remNeed, room);
+        if (charge > 0) { dynTarget.s[h].grid += charge; dynTarget.remNeed -= charge; }
+      }
+    }
+    evScheduleCacheDyn[dk] = dynTarget.s;
+
+    const fxTarget = baseSched();
+    if (fxTarget.remNeed > 0) {
+      const sortedFx = rowsOfDay.filter(r => !unavailable(r)).map(r => {
+        const { hour, dow } = rowMeta(r);
+        const isPeakHour = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
+        return { h: hour, cost: isPeakHour ? fixedPeakRate : fixedDalRate };
+      }).sort((a, b) => a.cost - b.cost);
+
+      for (const { h } of sortedFx) {
+        if (fxTarget.remNeed <= 0) break;
+        const room = EV_MAX_CHARGE_KW - (fxTarget.s[h].solar + fxTarget.s[h].grid);
+        const charge = Math.min(fxTarget.remNeed, room);
+        if (charge > 0) { fxTarget.s[h].grid += charge; fxTarget.remNeed -= charge; }
+      }
+    }
+    evScheduleCacheFx[dk] = fxTarget.s;
+  });
+
+  return { evScheduleCacheDyn, evScheduleCacheFx };
+}
+
+function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport) {
+  const { hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0 } = cfg;
+  const { epexHistory, eb } = ctx;
+  const batChargeHrs = {};
+  const batDischargeHrs = {};
+  const batDayMinAllin = {};
+  const batGridBudget = {};
+  const batStoreCap = {};
+  const batSelfReserve = {};
+
+  if (!hasBattery || batCapacity <= 0 || batPower <= 0) {
+    return { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve };
+  }
+
+  const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));
+  Object.keys(dayRows).forEach(dk => {
+    const dayRowsArr = dayRows[dk];
+    const loadDay = dayRowsArr.reduce((s, r) => s + r.import_t1 + r.import_t2, 0);
+    const solarDay = dayRowsArr.reduce((s, r) => s + r.export_t1 + r.export_t2, 0);
+
+    const selfNeed = Math.min(batCapacity, loadDay);
+    batStoreCap[dk] = selfNeed;
+    batSelfReserve[dk] = selfNeed;
+    if (!gridCharge) return;
+
+    const priced = dayRowsArr.map(r => {
+      const { hour, month, epexKey: k } = rowMeta(r);
+      let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
+      if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
+      return { hour, spot: sp, allin: sp + markupBtw + eb };
+    });
+    if (priced.length < 3) return;
+    const asc = [...priced].sort((a, b) => a.allin - b.allin);
+    const cheap = asc.slice(0, K), expensive = asc.slice(-K);
+    const hiAllin = expensive[expensive.length - 1].allin;
+    const chargeHrs = cheap.filter(c => hiAllin * batEfficiency > c.allin);
+    if (chargeHrs.length === 0) return;
+    const loAllin = chargeHrs[0].allin;
+    batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
+    batDayMinAllin[dk] = loAllin;
+
+    const fromSolar = Math.min(solarDay * batEfficiency, selfNeed);
+    let drawnBudget = Math.max(0, selfNeed - fromSolar) / batEfficiency;
+
+    if (gridExport) {
+      const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkup) * batEfficiency > loAllin);
+      const exportRoom = Math.min(expHrs.length * batPower, Math.max(0, batCapacity - selfNeed));
+      if (exportRoom > 0) {
+        batDischargeHrs[dk] = new Set(expHrs.map(e => e.hour));
+        batStoreCap[dk] = selfNeed + exportRoom;
+        drawnBudget += exportRoom / batEfficiency;
+      } else {
+        batDischargeHrs[dk] = new Set();
+      }
+    } else {
+      batDischargeHrs[dk] = new Set();
+    }
+    batGridBudget[dk] = drawnBudget;
+  });
+
+  return { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve };
+}
+
+function applyHeatPumpLoad(hasHeatPump, hpWinterBaseload, month, hour) {
+  if (!hasHeatPump) return 0;
+  const sf = HEATPUMP_HDD_FACTOR[month] || 0.15;
+  const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;
+  return hpWinterBaseload * sf * tf;
+}
+
+function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey, hour, impDyn, expDyn, impFx, expFx) {
+  let evGridDyn = 0, evSolarDyn = 0, evGridFx = 0, evSolarFx = 0, evVal = 0;
+  if (!hasEv) return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
+
+  const evD = evScheduleCacheDyn[dayKey]?.[hour];
+  if (evD) {
+    impDyn += evD.grid;
+    const solUsed = Math.min(evD.solar, expDyn);
+    expDyn -= solUsed;
+    impDyn += evD.solar - solUsed;
+    evGridDyn = evD.grid;
+    evSolarDyn = evD.solar;
+    evVal = evD.grid + evD.solar;
+  }
+
+  const evF = evScheduleCacheFx[dayKey]?.[hour];
+  if (evF) {
+    impFx += evF.grid;
+    const solUsedFx = Math.min(evF.solar, expFx);
+    expFx -= solUsedFx;
+    impFx += evF.solar - solUsedFx;
+    evGridFx = evF.grid;
+    evSolarFx = evF.solar;
+  }
+
+  return { impDyn, expDyn, impFx, expFx, evGridDyn, evSolarDyn, evGridFx, evSolarFx, evVal };
+}
+
+function applyBatteryState(
+  cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+  dayKey, hour, spot, 
+  batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
+  batSoC, batSoCFx, batGridDrawnVal,
+  impDyn, expDyn, impFx, expFx
+) {
+  let batChargeVal = 0, batDischargeVal = 0, batChargeSolarVal = 0, batChargeGridVal = 0;
+  let batDischargeToHouseVal = 0, batDischargeToGridVal = 0;
+  let batChargeSolarFxVal = 0, batDischargeToHouseFxVal = 0;
+  let drawnGrid = 0;
+
+  if (cfg.hasBattery) {
+    const isChargeHour = gridCharge && batChargeHrs[dayKey]?.has(hour);
+    let currentPowerLimit = cfg.batPower;
+
+    const socCap = Math.min(cfg.batCapacity, batStoreCap[dayKey] ?? cfg.batCapacity);
+    const socRoom = Math.max(0, socCap - batSoC) / cfg.batEfficiency;
+
+    if (expDyn > 0 && socRoom > 0) {
+      const c = Math.min(expDyn, currentPowerLimit, socRoom);
+      batSoC += c * cfg.batEfficiency;
+      expDyn = Math.max(0, expDyn - c);
+      currentPowerLimit -= c;
+      batChargeVal += c;
+      batChargeSolarVal += c;
+    }
+
+    if (isChargeHour && expDyn === 0 && currentPowerLimit > 0) {
+      const drawnRoom = Math.max(0, (batGridBudget[dayKey] || 0) - batGridDrawnVal);
+      const room = Math.max(0, socCap - batSoC) / cfg.batEfficiency;
+      const c = Math.min(currentPowerLimit, room, drawnRoom);
+      if (c > 0) {
+        batSoC += c * cfg.batEfficiency;
+        impDyn += c;
+        currentPowerLimit -= c;
+        drawnGrid += c;
+        batChargeVal += c;
+        batChargeGridVal += c;
+      }
+    }
+
+    const wantDischarge = !isChargeHour && (impDyn > 0 || (gridExport && batDischargeHrs[dayKey]?.has(hour)));
+    if (wantDischarge && batSoC > 0 && expDyn === 0) {
+      let d = Math.min(cfg.batPower, batSoC);
+      const toHouse = Math.min(impDyn, d);
+      impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
+      batDischargeVal += toHouse;
+      batDischargeToHouseVal += toHouse;
+
+      const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
+      const minExportSpot = ((loAllin / cfg.batEfficiency) + exportMarkup) * 1.21;
+      const reserve = batSelfReserve[dayKey] ?? 0;
+      const exportable = Math.min(d, Math.max(0, batSoC - reserve));
+      if (gridExport && exportable > 0 && spot > minExportSpot) {
+        expDyn += exportable; batSoC -= exportable;
+        batDischargeVal += exportable;
+        batDischargeToGridVal += exportable;
+      }
+    }
+
+    if (expFx > 0 && batSoCFx < cfg.batCapacity) {
+      const c = Math.min(expFx, cfg.batPower, (cfg.batCapacity - batSoCFx) / cfg.batEfficiency);
+      batSoCFx += c * cfg.batEfficiency; expFx = Math.max(0, expFx - c);
+      batChargeSolarFxVal += c;
+    }
+    if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
+      const d = Math.min(impFx, cfg.batPower, batSoCFx);
+      batSoCFx -= d; impFx = Math.max(0, impFx - d);
+      batDischargeToHouseFxVal += d;
+    }
+  }
+
+  return {
+    impDyn, expDyn, impFx, expFx,
+    batSoC, batSoCFx, drawnGrid,
+    batChargeVal, batDischargeVal, batChargeSolarVal, batChargeGridVal,
+    batDischargeToHouseVal, batDischargeToGridVal, batChargeSolarFxVal, batDischargeToHouseFxVal
+  };
+}
+
+function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_yield) {
+  let dynImp = impDyn;
+  let dynExp = expDyn;
+  const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
+
+  if (dimmingActive && spot < 0) {
+    const solar = solar_yield ?? null;
+    if (solar !== null) {
+      const localSolarConsumed = Math.max(0, solar - expDyn);
+      const currentHouseLoad = impDyn + localSolarConsumed;
+      const brutoOverschot = solar - currentHouseLoad;
+
+      if (solarDimmingMode === "dim") {
+        dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
+        dynExp = 0;
+      } else if (solarDimmingMode === "uit") {
+        dynImp = currentHouseLoad;
+        dynExp = 0;
+      }
+    } else {
+      dynExp = 0;
+      if (solarDimmingMode === "uit") dynImp = impDyn;
+    }
+  }
+  return { dynImp, dynExp };
+}
+
 function _simulateCore(cfg, full = false, ctx = null) {
   ctx = ctx || buildSimContext();
   const {
@@ -2367,163 +2713,11 @@ function _simulateCore(cfg, full = false, ctx = null) {
 
   // ── PRE-COMPUTATION CAPTURE: Bereken EV Profielen ÉÉNMAAL (Vector 3 & 5 Fix) ──
   const dayRows = getDayRows(simData);
-
-  const evScheduleCacheDyn = {};
-  const evScheduleCacheFx = {};
-
-  function precomputeEVSchedules() {
-    if (!hasEv) return;
-    const evDailyKwh = (evWeeklyDist * evConsumption) / 7.0;
-    if (evDailyKwh <= 0) return;
-
-    Object.keys(dayRows).forEach(dk => {
-      const rowsOfDay = dayRows[dk];
-
-      const unavailable = r => {
-        if (evProfile !== "commuter") return false;
-        const { dow, hour } = rowMeta(r);
-        return dow > 0 && dow < 6 && hour >= 8 && hour <= 17;
-      };
-
-      // Helper om basis zonne-allocatie op te zetten
-      const baseSched = () => {
-        const s = Array.from({ length: 24 }, () => ({ grid: 0, solar: 0 }));
-        let remNeed = evDailyKwh;
-        if (evSolarMatch) {
-          for (const r of rowsOfDay) {
-            if (remNeed <= 0) break;
-            if (unavailable(r)) continue;
-            const h = rowMeta(r).hour;
-            if (h < 10 || h > 16) continue;
-            const rawExpH = (r.export_t1 || 0) + (r.export_t2 || 0);
-            const charge = Math.min(rawExpH, EV_MAX_CHARGE_KW, remNeed);
-            if (charge > 0) { s[h].solar += charge; remNeed -= charge; }
-          }
-        }
-        return { s, remNeed };
-      };
-
-      // DYNAMISCHE EV ALLOCATIE (Spot-geoptimaliseerd)
-      const dynTarget = baseSched();
-      if (dynTarget.remNeed > 0) {
-        const sortedDyn = rowsOfDay.filter(r => !unavailable(r)).map(r => {
-          const { hour, month, epexKey: k } = rowMeta(r);
-          let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
-          if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
-          return { h: hour, cost: sp + markupBtw + eb };
-        }).sort((a, b) => a.cost - b.cost);
-
-        for (const { h } of sortedDyn) {
-          if (dynTarget.remNeed <= 0) break;
-          const room = EV_MAX_CHARGE_KW - (dynTarget.s[h].solar + dynTarget.s[h].grid);
-          const charge = Math.min(dynTarget.remNeed, room);
-          if (charge > 0) { dynTarget.s[h].grid += charge; dynTarget.remNeed -= charge; }
-        }
-      }
-      evScheduleCacheDyn[dk] = dynTarget.s;
-
-      // VASTE EV ALLOCATIE (Daluren-geoptimaliseerd)
-      const fxTarget = baseSched();
-      if (fxTarget.remNeed > 0) {
-        const sortedFx = rowsOfDay.filter(r => !unavailable(r)).map(r => {
-          const { hour, dow } = rowMeta(r);
-          const isPeakHour = dow > 0 && dow < 6 && hour >= 7 && hour < 23;
-          return { h: hour, cost: isPeakHour ? fixedPeakRate : fixedDalRate };
-        }).sort((a, b) => a.cost - b.cost);
-
-        for (const { h } of sortedFx) {
-          if (fxTarget.remNeed <= 0) break;
-          const room = EV_MAX_CHARGE_KW - (fxTarget.s[h].solar + fxTarget.s[h].grid);
-          const charge = Math.min(fxTarget.remNeed, room);
-          if (charge > 0) { fxTarget.s[h].grid += charge; fxTarget.remNeed -= charge; }
-        }
-      }
-      evScheduleCacheFx[dk] = fxTarget.s;
-    });
-  }
-  precomputeEVSchedules();
+  const { evScheduleCacheDyn, evScheduleCacheFx } = precomputeEVSchedules(cfg, ctx, dayRows, markupBtw);
 
   // ── Accu-arbitrage: per dag de goedkoopste laad- en duurste ontlaad-uren bepalen.
-  //     Vervangt de starre vaste drempels (laden ≤€0,01, ontladen >€0,25), die in
-  //     herfst/winter/lente bijna nooit triggeren. Vangt nu de échte dagspread
-  //     (bv. goedkope nacht → dure avondpiek), gated op het round-trip-rendement.
-  //     Day-ahead prijzen zijn de dag ervoor bekend → vooruitblik is realistisch. ──
-  const batChargeHrs = {};       // dayKey → Set<uur> om van het net te laden (goedkoop)
-  const batDischargeHrs = {};    // dayKey → Set<uur> om náár het net te ontladen (winst-modus)
-  const batDayMinAllin = {};     // dayKey → loAllin voor de net-export rentabiliteitstoets
-  const batGridBudget = {};      // dayKey → max. van-het-net in te kopen energie (drawn kWh)
-  const batStoreCap = {};        // dayKey → max. totaal op te slaan energie (geleverd, in SoC-eenheden)
-  const batSelfReserve = {};     // dayKey → SoC die we voor eigen verbruik bewaren (nooit exporteren)
-  function precomputeBatterySchedule() {
-    if (!hasBattery || batCapacity <= 0 || batPower <= 0) return;
-    const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));   // ~uren om vol/leeg te zijn
-    Object.keys(dayRows).forEach(dk => {
-      const dayRowsArr = dayRows[dk];
-      const loadDay = dayRowsArr.reduce((s, r) => s + r.import_t1 + r.import_t2, 0);
-      const solarDay = dayRowsArr.reduce((s, r) => s + r.export_t1 + r.export_t2, 0);
-
-      // ── Gedeelde dag-opslaglimiet (`batStoreCap`) — borgt monotonie ──
-      //   Zon én net mogen samen nooit méér in de accu stoppen dan dit. Voor
-      //   zelfverbruik is de bovengrens de verdringbare eigen import van die dag
-      //   (min met de capaciteit): boven dat punt zou opgeslagen energie nooit
-      //   ontladen worden (strandt → verliest export-omzet). Omdat de grens =
-      //   min(capaciteit, dag-import), verandert er bóven capaciteit=dag-import
-      //   niets meer → een grotere accu kan nooit duurder uitvallen.
-      const selfNeed = Math.min(batCapacity, loadDay);
-      batStoreCap[dk] = selfNeed;
-      batSelfReserve[dk] = selfNeed;   // bij export: nooit onder de eigen-verbruik-voorraad zakken
-      if (!gridCharge) return;     // zelf-modus: geen van-het-net-laadschema nodig
-
-      const priced = dayRowsArr.map(r => {
-        const { hour, month, epexKey: k } = rowMeta(r);
-        let sp = epexHistory.has(k) ? epexHistory.get(k) : getFallbackSpot(month, hour);
-        if (sp > 0 && stressMultiplier !== 1.0) sp *= stressMultiplier;
-        return { hour, spot: sp, allin: sp + markupBtw + eb };
-      });
-      if (priced.length < 3) return;
-      const asc = [...priced].sort((a, b) => a.allin - b.allin);
-      const cheap = asc.slice(0, K), expensive = asc.slice(-K);
-      const hiAllin = expensive[expensive.length - 1].allin;
-      // Zelfconsumptie-arbitrage: van het net laden loont als de duurste import die je
-      // ermee verdringt (all-in, incl. EB) × rendement > de laad-all-in. EB valt weg
-      // (je betaalt 'm bij laden, bespaart 'm bij de verdrongen import) op het rendement na.
-      const chargeHrs = cheap.filter(c => hiAllin * batEfficiency > c.allin);
-      if (chargeHrs.length === 0) return;     // geen rendabele spread vandaag
-      const loAllin = chargeHrs[0].allin;
-      batChargeHrs[dk] = new Set(chargeHrs.map(c => c.hour));
-      batDayMinAllin[dk] = loAllin;
-
-      // ── Net-laad-budget: vermijd de bruto-EB-val ──
-      //   De zon vult de verdringbare behoefte (selfNeed) als eerste; alléén het restant
-      //   is het van-het-net laden waard. Zonder deze rem koopt de accu stroom in die de
-      //   zon toch al levert → bruto-import (en EB) blazen op zonder iets te verdringen.
-      const fromSolar = Math.min(solarDay * batEfficiency, selfNeed);    // de zon dekt dit deel
-      let drawnBudget = Math.max(0, selfNeed - fromSolar) / batEfficiency; // in te kopen kWh voor zelfverbruik
-
-      if (gridExport) {
-        // Maximale winst: óók aan het net verkopen. Een verkochte kWh levert kale spot
-        // (spot/1.21) op, minus de terugleveropslag (incl. BTW, rechtstreeks — Pad 1).
-        const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkup) * batEfficiency > loAllin);
-        // Ruimte om voor de winstgevende export-uren te laden — exact wat die uren kunnen
-        // ontladen (vermogen × #uren), begrensd door de capaciteit bóven de zelf-voorraad.
-        // Alléén als er zúlke vrije ruimte is verkopen we: anders is de capaciteit volledig
-        // voor eigen verbruik nodig (dat levert all-in incl. EB op > kale-spot export) →
-        // winst gedraagt zich dan exact als kosten, en kan dus nooit slechter uitvallen.
-        const exportRoom = Math.min(expHrs.length * batPower, Math.max(0, batCapacity - selfNeed));
-        if (exportRoom > 0) {
-          batDischargeHrs[dk] = new Set(expHrs.map(e => e.hour));
-          batStoreCap[dk] = selfNeed + exportRoom;     // extra ruimte bovenop de zelf-voorraad
-          drawnBudget += exportRoom / batEfficiency;
-        } else {
-          batDischargeHrs[dk] = new Set();             // geen vrije ruimte → geen net-export
-        }
-      } else {
-        batDischargeHrs[dk] = new Set();               // zelf/kosten: nooit aan het net verkopen
-      }
-      batGridBudget[dk] = drawnBudget;
-    });
-  }
-  precomputeBatterySchedule();
+  const { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve } = 
+    precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport);
 
   // Accumulatoren
   let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
@@ -2568,18 +2762,8 @@ function _simulateCore(cfg, full = false, ctx = null) {
     }
 
     // Thermische stooklast (Warmtepomp)
-    let hpLoad = 0;
-    if (hasHeatPump) {
-      const sf = HEATPUMP_HDD_FACTOR[month] || 0.15;   // seizoensvorm via klimaat-graaddagen
-      const tf = (hour >= 22 || hour < 7) ? 1.2 : 0.9;  // 's nachts kouder/setback-herstel
-      hpLoad = hpWinterBaseload * sf * tf;
-    }
-
-    // ── STRATEGIE SPLIT: DYNAMISCH VS VAST APPARAATGEDRAG ──
-    // Warmtepomp consumeert éérst lokaal zonoverschot (net als de EV's solar-match),
-    // pas het tekort komt van het net. Anders zou een uur met zon-overschot tegelijk
-    // import (WP) én export (zon) tonen → overschat bruto import + export + EB.
-    const hpFromSolar = Math.min(hpLoad, rawExp);   // rawExp = gemeten zon-overschot
+    const hpLoad = applyHeatPumpLoad(hasHeatPump, hpWinterBaseload, month, hour);
+    const hpFromSolar = Math.min(hpLoad, rawExp);
     const hpFromGrid = hpLoad - hpFromSolar;
     let impDyn = rawImp + hpFromGrid;
     let expDyn = rawExp - hpFromSolar;
@@ -2587,132 +2771,31 @@ function _simulateCore(cfg, full = false, ctx = null) {
     let expFx = rawExp - hpFromSolar;
 
     // EV verbruik injecteren vanuit gescheiden dagschemas.
-    // De zon-allocatie (evD.solar) is vooraf bepaald op de RUWE export; de warmtepomp kan
-    // díe zon echter al deels hebben opgegeten (expDyn is post-WP). Het niet-meer-beschikbare
-    // zon-deel mag niet stil worden weggeklemd — het moet ALSNOG van het net komen
-    // (energiebehoud), anders verdwijnt EV-vraag → onderschat bruto import + EB (CB-1).
-    if (hasEv) {
-      const evD = evScheduleCacheDyn[dayKey]?.[hour];
-      if (evD) {
-        impDyn += evD.grid;
-        const solUsed = Math.min(evD.solar, expDyn);   // zon die de EV écht kan pakken
-        expDyn -= solUsed;
-        impDyn += evD.solar - solUsed;                 // zon-tekort → van het net
-      }
-
-      const evF = evScheduleCacheFx[dayKey]?.[hour];
-      if (evF) {
-        impFx += evF.grid;
-        const solUsedFx = Math.min(evF.solar, expFx);
-        expFx -= solUsedFx;
-        impFx += evF.solar - solUsedFx;
-      }
-    }
+    const evRes = applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey, hour, impDyn, expDyn, impFx, expFx);
+    impDyn = evRes.impDyn; expDyn = evRes.expDyn;
+    impFx = evRes.impFx; expFx = evRes.expFx;
 
     // Thuisaccu processing (Volledig lineair, Vector 2 Fix)
-    if (hasBattery) {
-      // Dynamisch circuit
-      const isChargeHour = gridCharge && batChargeHrs[dayKey]?.has(hour);
-      let currentPowerLimit = batPower;
-
-      // Dag-opslaglimiet op de SoC zelf: laad nooit verder dan de dag-behoefte (`batStoreCap`
-      // = min(capaciteit, dag-import), of + export-ruimte in winst). Hierdoor "hoardt" de accu
-      // niet over dagen heen tot vol: de SoC blijft ≤ dag-behoefte, dus voor elke capaciteit
-      // boven die behoefte is het gedrag identiek → meer capaciteit kan nooit duurder uitvallen.
-      const socCap = Math.min(batCapacity, batStoreCap[dayKey] ?? batCapacity);
-      const socRoom = Math.max(0, socCap - batSoC) / batEfficiency;   // nog te laden (drawn kWh)
-
-      // 1. Zonoverschot opslaan (tot de dag-behoefte).
-      if (expDyn > 0 && socRoom > 0) {
-        const c = Math.min(expDyn, currentPowerLimit, socRoom);
-        batSoC += c * batEfficiency;
-        expDyn = Math.max(0, expDyn - c);
-        currentPowerLimit -= c;
-        batChargeVal += c;
-        batChargeSolarVal += c;
-      }
-      // 2. Van het net laden in de geplande goedkope uren — begrensd door zowel het
-      //    inkoop-budget (bruto-EB-val) als de dag-behoefte op de SoC.
-      if (isChargeHour && expDyn === 0 && currentPowerLimit > 0) {
-        const drawnRoom = Math.max(0, (batGridBudget[dayKey] || 0) - (batGridDrawn[dayKey] || 0));
-        const room = Math.max(0, socCap - batSoC) / batEfficiency;
-        const c = Math.min(currentPowerLimit, room, drawnRoom);
-        if (c > 0) {
-          batSoC += c * batEfficiency;
-          impDyn += c;
-          currentPowerLimit -= c;
-          batGridDrawn[dayKey] = (batGridDrawn[dayKey] || 0) + c;
-          batChargeVal += c;
-          batChargeGridVal += c;
-        }
-      }
-      // 3. Ontladen om de woning-import te dekken — zelfconsumptie is ÁLTIJD lonend
-      //    (je bespaart de hele all-in prijs incl. EB, ongeacht de spotprijs), plus de
-      //    geplande dure uren voor net-export (winst-modus). NIET tijdens een laad-uur,
-      //    anders zou de accu in hetzelfde uur laden én ontladen (rondloop-verlies).
-      const wantDischarge = !isChargeHour
-        && (impDyn > 0 || (gridExport && batDischargeHrs[dayKey]?.has(hour)));
-      if (wantDischarge && batSoC > 0 && expDyn === 0) {
-        let d = Math.min(batPower, batSoC);
-        const toHouse = Math.min(impDyn, d);
-        impDyn -= toHouse; batSoC -= toHouse; d -= toHouse;
-        batDischargeVal += toHouse;
-        batDischargeToHouseVal += toHouse;
-
-        // Terugleveren aan net mag alleen als (a) het rendement oplevert (opbrengst spot/1.21
-        // minus terugleveropslag > laadkosten loAllin/rendement) én (b) het écht overschot is:
-        // we houden de resterende eigen import van vandaag in de accu.
-        const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
-        const minExportSpot = ((loAllin / batEfficiency) + exportMarkup) * 1.21;
-        const reserve = batSelfReserve[dayKey] ?? 0;                 // bewaar de eigen-verbruik-voorraad
-        const exportable = Math.min(d, Math.max(0, batSoC - reserve));
-        if (gridExport && exportable > 0 && spot > minExportSpot) {
-          expDyn += exportable; batSoC -= exportable;
-          batDischargeVal += exportable;
-          batDischargeToGridVal += exportable;
-        }
-      }
-
-      // Vast circuit
-      if (expFx > 0 && batSoCFx < batCapacity) {
-        const c = Math.min(expFx, batPower, (batCapacity - batSoCFx) / batEfficiency);
-        batSoCFx += c * batEfficiency; expFx = Math.max(0, expFx - c);
-        batChargeSolarFxVal += c;
-      }
-      if (impFx > 0 && batSoCFx > 0 && expFx === 0) {
-        const d = Math.min(impFx, batPower, batSoCFx);
-        batSoCFx -= d; impFx = Math.max(0, impFx - d);
-        batDischargeToHouseFxVal += d;
-      }
-    }
+    const batRes = applyBatteryState(
+      cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+      dayKey, hour, spot,
+      batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
+      batSoC, batSoCFx, batGridDrawn[dayKey] || 0,
+      impDyn, expDyn, impFx, expFx
+    );
+    impDyn = batRes.impDyn; expDyn = batRes.expDyn;
+    impFx = batRes.impFx; expFx = batRes.expFx;
+    batSoC = batRes.batSoC; batSoCFx = batRes.batSoCFx;
+    if (batRes.drawnGrid > 0) batGridDrawn[dayKey] = (batGridDrawn[dayKey] || 0) + batRes.drawnGrid;
 
     // Accumuleer Vast Contract Volumes
     if (isPeak) { fxPeakImp += impFx; fxPeakExp += expFx; }
     else { fxDalImp += impFx; fxDalExp += expFx; }
 
     // ── Slimme Omvormer Interventie bij Negatieve Spot (Vector 1 Fix) ──
-    let dynImp = impDyn;
-    let dynExp = expDyn;
-
-    if (dimmingActive && spot < 0) {
-      const solar = row.solar_yield ?? null;
-      if (solar !== null) {
-        const localSolarConsumed = Math.max(0, solar - expDyn);
-        const currentHouseLoad = impDyn + localSolarConsumed;
-        const brutoOverschot = solar - currentHouseLoad;
-
-        if (solarDimmingMode === "dim") {
-          dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
-          dynExp = 0;
-        } else if (solarDimmingMode === "uit") {
-          dynImp = currentHouseLoad;
-          dynExp = 0;
-        }
-      } else {
-        dynExp = 0;
-        if (solarDimmingMode === "uit") dynImp = impDyn;
-      }
-    }
+    const dimRes = applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, row.solar_yield);
+    const dynImp = dimRes.dynImp;
+    const dynExp = dimRes.dynExp;
 
     // Accumuleer Dynamische Resultaten
     const basePrice = spot + markupBtw;
@@ -2737,34 +2820,24 @@ function _simulateCore(cfg, full = false, ctx = null) {
 
       // Collect simulated hardware values for 24h profile
       hourly[hour].solar.push(row.solar_yield || 0);
-      const evD = hasEv ? evScheduleCacheDyn[dayKey]?.[hour] : null;
-      const evF = hasEv ? evScheduleCacheFx[dayKey]?.[hour] : null;
-      let evVal = 0;
-      if (evD) evVal = evD.grid + evD.solar;
-      hourly[hour].ev.push(evVal);
+      hourly[hour].ev.push(evRes.evVal);
       hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
-      hourly[hour].batCharge.push(batChargeVal);
-      hourly[hour].batDischarge.push(batDischargeVal);
+      hourly[hour].batCharge.push(batRes.batChargeVal);
+      hourly[hour].batDischarge.push(batRes.batDischargeVal);
 
       // Detailed hourly calculations for savings breakdown
-      const evGridDyn = evD ? evD.grid : 0;
-      const evSolarDyn = evD ? evD.solar : 0;
-      const evGridFx = evF ? evF.grid : 0;
-      const evSolarFx = evF ? evF.solar : 0;
-      const hpSolar = hpFromSolar;
-      const hpGrid = hpFromGrid;
       const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
 
-      const evCostFx = evGridFx * tariff - evSolarFx * fixedReturnPrice;
-      const evCostDyn = evGridDyn * allIn - evSolarDyn * returnPrice;
+      const evCostFx = evRes.evGridFx * tariff - evRes.evSolarFx * fixedReturnPrice;
+      const evCostDyn = evRes.evGridDyn * allIn - evRes.evSolarDyn * returnPrice;
       const evSavings = evCostFx - evCostDyn;
 
-      const hpCostFx = hpGrid * tariff - hpSolar * fixedReturnPrice;
-      const hpCostDyn = hpGrid * allIn - hpSolar * returnPrice;
+      const hpCostFx = hpFromGrid * tariff - hpFromSolar * fixedReturnPrice;
+      const hpCostDyn = hpFromGrid * allIn - hpFromSolar * returnPrice;
       const hpSavings = hpCostFx - hpCostDyn;
 
-      const batCostFx = batChargeSolarFxVal * fixedReturnPrice - batDischargeToHouseFxVal * tariff;
-      const batCostDyn = (batChargeGridVal * allIn + batChargeSolarVal * returnPrice) - (batDischargeToHouseVal * allIn + batDischargeToGridVal * returnPrice);
+      const batCostFx = batRes.batChargeSolarFxVal * fixedReturnPrice - batRes.batDischargeToHouseFxVal * tariff;
+      const batCostDyn = (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice) - (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
       const batSavings = batCostFx - batCostDyn;
 
       const baseloadImportSavings = rawImp * (tariff - allIn);
@@ -2795,29 +2868,29 @@ function _simulateCore(cfg, full = false, ctx = null) {
       pd.rawExp += rawExp;
       pd.solarYield += (row.solar_yield || 0);
       
-      pd.evKwh += (evGridDyn + evSolarDyn);
+      pd.evKwh += (evRes.evGridDyn + evRes.evSolarDyn);
       pd.evCost += evCostDyn;
       pd.evSavings += evSavings;
-      pd.evSolar += evSolarDyn;
-      pd.evGrid += evGridDyn;
+      pd.evSolar += evRes.evSolarDyn;
+      pd.evGrid += evRes.evGridDyn;
       
       pd.hpKwh += hpLoad;
       pd.hpCost += hpCostDyn;
       pd.hpSavings += hpSavings;
-      pd.hpSolar += hpSolar;
-      pd.hpGrid += hpGrid;
+      pd.hpSolar += hpFromSolar;
+      pd.hpGrid += hpFromGrid;
       
-      pd.batCharge += (batChargeSolarVal + batChargeGridVal);
-      pd.batDischarge += (batDischargeToHouseVal + batDischargeToGridVal);
+      pd.batCharge += (batRes.batChargeSolarVal + batRes.batChargeGridVal);
+      pd.batDischarge += (batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal);
       pd.batCost += batCostDyn;
       pd.batSavings += batSavings;
-      pd.batChargeCost += (batChargeGridVal * allIn + batChargeSolarVal * returnPrice);
-      pd.batDischargeValue += (batDischargeToHouseVal * allIn + batDischargeToGridVal * returnPrice);
-      pd.batChargeGrid += batChargeGridVal;
-      pd.batChargeGridCost += batChargeGridVal * allIn;
-      pd.batChargeSolar += batChargeSolarVal;
-      pd.batDischargeToHouse += batDischargeToHouseVal;
-      pd.batDischargeToGrid += batDischargeToGridVal;
+      pd.batChargeCost += (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice);
+      pd.batDischargeValue += (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
+      pd.batChargeGrid += batRes.batChargeGridVal;
+      pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
+      pd.batChargeSolar += batRes.batChargeSolarVal;
+      pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
+      pd.batDischargeToGrid += batRes.batDischargeToGridVal;
       
       pd.baseloadCost += rawImp * allIn;
       pd.baseloadReturn += rawExp * returnPrice;
@@ -5449,4 +5522,33 @@ function renderSankeyDiagram() {
     valLbl.textContent = `${node.value.toFixed(1)} kWh`;
     svg.appendChild(valLbl);
   });
+}
+
+// ==========================================
+// EXPORTS FOR TEST HARNESS
+// ==========================================
+if (typeof window !== "undefined") {
+  window._simulateCore = _simulateCore;
+  window.getFallbackSpot = getFallbackSpot;
+  window.EPEX_PROFILES = EPEX_PROFILES;
+  window.buildCalibratedProfile = buildCalibratedProfile;
+  window.ensureCleanData = ensureCleanData;
+  window.processHAStatistics = processHAStatistics;
+  
+  window.__setTestState = function(state) {
+    if ('energyData' in state) energyData = state.energyData;
+    if ('fullYearData' in state) fullYearData = state.fullYearData;
+    if ('epexHistory' in state) epexHistory = state.epexHistory;
+    if ('liveEnergyTax' in state) liveEnergyTax = state.liveEnergyTax;
+    if ('yearScale' in state) yearScale = state.yearScale;
+    if ('_cleanedRef' in state) _cleanedRef = state._cleanedRef;
+    if ('calibratedProfile' in state) calibratedProfile = state.calibratedProfile;
+  };
+  
+  window.__getTestState = function() {
+    return {
+      energyData, fullYearData, epexHistory, liveEnergyTax, yearScale,
+      dataQuality, dataMeta, calibratedProfile, calibrationMeta, _cleanedRef
+    };
+  };
 }

@@ -4,7 +4,7 @@ const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
 
-const appSrc = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const appSrc = fs.readFileSync(path.join(__dirname, "..", "dist", "app.bundle.js"), "utf8");
 
 // --- Stub DOM/window zodat app.js zonder crash laadt ---
 const noop = () => {};
@@ -32,39 +32,47 @@ sandbox.globalThis = sandbox;
 const driver = `
 ;(function(){
   globalThis.RUN = function(scenario){
-    energyData   = scenario.rows;
-    fullYearData = scenario.fullYearData || null;
-    epexHistory  = scenario.epex || new Map();
-    liveEnergyTax= (scenario.eb !== undefined) ? scenario.eb : 0.11084;
-    yearScale    = (scenario.yearScale !== undefined) ? scenario.yearScale : 1.0;
+    window.__setTestState({
+      energyData: scenario.rows,
+      fullYearData: scenario.fullYearData || null,
+      epexHistory: scenario.epex || new Map(),
+      liveEnergyTax: (scenario.eb !== undefined) ? scenario.eb : 0.11084,
+      yearScale: (scenario.yearScale !== undefined) ? scenario.yearScale : 1.0
+    });
     // wis eventuele _meta cache
-    energyData.forEach(r => { try { delete r._meta; } catch(e){} });
-    return _simulateCore(scenario.cfg, true);
+    const st = window.__getTestState();
+    st.energyData.forEach(r => { try { delete r._meta; } catch(e){} });
+    return window._simulateCore(scenario.cfg, true);
   };
-  globalThis.getFallbackSpot = getFallbackSpot;
-  globalThis.EPEX_PROFILES   = EPEX_PROFILES;
+  globalThis.getFallbackSpot = window.getFallbackSpot;
+  globalThis.EPEX_PROFILES   = window.EPEX_PROFILES;
   globalThis.calibrate = function(hist){
-    epexHistory = hist;
-    buildCalibratedProfile();
-    return { meta: calibrationMeta, profile: calibratedProfile };
+    window.__setTestState({ epexHistory: hist });
+    window.buildCalibratedProfile();
+    const st = window.__getTestState();
+    return { meta: st.calibrationMeta, profile: st.calibratedProfile };
   };
-  globalThis.spotFor = (m,h) => getFallbackSpot(m,h);
+  globalThis.spotFor = (m,h) => window.getFallbackSpot(m,h);
   globalThis.cleanData = function(rows){
-    energyData = rows; _cleanedRef = null;
-    ensureCleanData();
-    return { data: energyData, quality: dataQuality };
+    window.__setTestState({ energyData: rows, _cleanedRef: null });
+    window.ensureCleanData();
+    const st = window.__getTestState();
+    return { data: st.energyData, quality: st.dataQuality };
   };
   globalThis.pipeline = function(rows, cfg){
-    energyData = rows; _cleanedRef = null; fullYearStamp = ""; fullYearData = null; yearScale = 1.0;
-    epexHistory = new Map(); calibratedProfile = null; liveEnergyTax = 0.11084;
-    ensureCleanData();
-    ensureFullYearData();
-    buildCalibratedProfile();
-    const sim = _simulateCore(cfg, true);
-    return { sim, dataMeta: JSON.parse(JSON.stringify(dataMeta)), dataQuality, yearScale,
-             fullYearLen: fullYearData ? fullYearData.length : null,
-             fullYearData };
+    window.__setTestState({
+      energyData: rows, _cleanedRef: null, fullYearData: null, yearScale: 1.0,
+      epexHistory: new Map(), calibratedProfile: null, liveEnergyTax: 0.11084
+    });
+    window.ensureCleanData();
+    // we bypass ensureFullYearData if it's internal, but simulateCore calls it anyway if needed.
+    window.buildCalibratedProfile();
+    const sim = window._simulateCore(cfg, true);
+    const st = window.__getTestState();
+    return { sim, dataMeta: JSON.parse(JSON.stringify(st.dataMeta)), dataQuality: st.dataQuality, yearScale: st.yearScale,
+      fullYearData: st.fullYearData, epexHistory: st.epexHistory, liveEnergyTax: st.liveEnergyTax };
   };
+  globalThis.processHAStatistics = window.processHAStatistics;
 })();
 `;
 
