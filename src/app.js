@@ -1,3 +1,8 @@
+import { appStore } from "./domain/store.js";
+import {
+  parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync, parseLongCSV, processHAStatistics
+} from "./domain/parser.js";
+
 /* Core Dashboard Logic & Simulation Engine */
 
 import {
@@ -11,77 +16,7 @@ import {
   hardwareExplainerContent, toggleTableDetail, toggleCard, toggleProfileLine,
   showCsvMapModal, showUploadError, toggleAfnameDetail, updateDigitalTwinBanner
 } from "./ui/dom.js";
-// Global state
-let energyData = [];
-let overviewMode = "day"; // "day" | "week" | "month"
-let overviewMetric = "energy"; // "energy" | "cost" | "savings"
-let activeViewType = "bars"; // "bars" | "sankey"
-let sankeyInterval = "year"; // "year" | "month" | "week" | "day"
-let sankeyValue = ""; // Period identifier (YYYY-MM, ISO week, or YYYY-MM-DD)
-let simMode = "day";  // "day" | "week"
-let simDrillDay = null;   // YYYY-MM-DD — drill-down naar uurweergave voor die dag
-let activeSimulation = {};
-let profileVisibleLines = {
-  imp: true,
-  exp: true,
-  spot: true,
-  solar: true,
-  ev: true,
-  hp: true,
-  bat: true
-};
 
-window.toggleProfileLine = toggleProfileLine;
-let epexHistory = new Map(); // isoHour (floored) → price incl. BTW (€/kWh)
-let liveEnergyTax = 0.11084;   // updated by fetchTarieven()
-
-// ── Digital Twin ─────────────────────────────────────────────────────────────
-let _lastHAStats = null;    // ruwe HA-statistieken; bewaard voor DT-toggle hertransformatie
-let _lastRoleMap = null;    // bijbehorende roleMap
-let digitalTwinEnabled = true;  // false = gebruik ruwe meterstanden ook als apparaten gekoppeld zijn
-
-// ── Data-ingest & jaarprojectie ─────────────────────────────────────────────
-let isDemoData = true;   // demo/voorbeeld actief? eerste upload vervangt i.p.v. mergt
-let fullYearData = null;   // 8760-uurs jaarprojectie (echte + gesynthetiseerde uren); null = geen synthese
-let fullYearStamp = "";     // cache-stempel: vermijdt herbouw als energyData/toggle ongewijzigd is
-let yearScale = 1.0;    // normaliseert de som van de loop naar exact één jaar (8760u / #uren)
-let dataMeta = { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 };
-
-// ── Wegklikbare uitleg/waarschuwingen ───────────────────────────────────────
-// Statische boxen (intro, scope-note) onthouden hun weggeklikt-status in localStorage;
-// dynamisch gerenderde banners (EPEX-waarschuwing, prognose-badge) per sessie via vlag.
-let epexWarnDismissed = false;
-let prognosisDismissed = false;
-
-function isDismissed(id) {
-  try { return localStorage.getItem("dismiss_" + id) === "1"; } catch (e) { return false; }
-}
-function applyPersistedDismissals() {
-  ["intro-explainer", "scope-note"].forEach(id => {
-    if (isDismissed(id)) { const el = document.getElementById(id); if (el) el.style.display = "none"; }
-  });
-}
-function initDismissHandlers() {
-  applyPersistedDismissals();
-  // Capture-fase: vóór de details-toggle / globale tooltip-click, zodat de × alleen wegklikt.
-  document.addEventListener("click", (e) => {
-    const x = e.target.closest(".dismiss-x");
-    if (!x) return;
-    e.preventDefault(); e.stopPropagation();
-    const id = x.getAttribute("data-dismiss");
-    const el = document.getElementById(id);
-    if (el) el.style.display = "none";
-    if (x.hasAttribute("data-persist")) { try { localStorage.setItem("dismiss_" + id, "1"); } catch (_) {} }
-    if (id === "epex-warn-box") epexWarnDismissed = true;
-    if (id === "prognosis-badge") prognosisDismissed = true;
-    if (id === "data-quality-banner") dataQualityDismissed = true;
-  }, true);
-}
-
-// ── Simulatie-constanten
-import {
-  parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync, parseLongCSV, processHAStatistics
-} from "./domain/parser.js";
 import {
   EV_MAX_CHARGE_KW, BATTERY_C_RATE, EVENING_PEAK_MULT, HEATPUMP_HDD_FACTOR,
   ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES
@@ -93,24 +28,40 @@ import {
   applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming
 } from "./domain/energyMath.js";
 
-// Maandelijkse warmtepomp-belastingfactor o.b.v. NL klimaat-graaddagen (HDD, basis 18°C,
-// De Bilt-normaal 1991–2020), genormaliseerd op de wintermaanden (dec–feb gem. ≈ 1,3 =
-// de "winter stooklast"-schuif). Zomer houdt een vloer (~0,15) voor warmtapwater.
-// Realistischere seizoensvorm dan de oude 3-staps 1,3/0,7/0,15: koudste maand (jan) piekt
-// en de schouderseizoenen lopen geleidelijk. NB: dit lijnt nog NIET per dag uit met de
-// EPEX-koudepieken — daarvoor zijn KNMI-daggegevens (graaddagen per dag) nodig.
 
-// ── Zelf-kalibrerende fallback ──────────────────────────────────────────────
-// Wanneer er echte EPEX-historie is opgehaald (epexHistory), leiden we hieruit een
-// (seizoen × uur)-prijsprofiel af en gebruiken dat om de geprojecteerde/synthetische
-// uren te vullen — verankerd aan de eigen regio/periode i.p.v. de generieke profielen.
-let calibratedProfile = null;   // { winter:{0..23}, ... } in €/kWh incl. BTW, of null
-let calibrationMeta = { buckets: 0, samples: 0 };
+// Keep local let bindings for READS, but sync them via Pub/Sub to allow zero-risk refactoring
+let {
+  energyData, overviewMode, overviewMetric, activeViewType, sankeyInterval,
+  sankeyValue, simMode, simDrillDay, activeSimulation, profileVisibleLines,
+  epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled,
+  isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta, epexWarnDismissed,
+  prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta
+} = appStore.getState();
+
+appStore.subscribe(state => {
+  energyData = state.energyData; overviewMode = state.overviewMode;
+  overviewMetric = state.overviewMetric; activeViewType = state.activeViewType;
+  sankeyInterval = state.sankeyInterval; sankeyValue = state.sankeyValue;
+  simMode = state.simMode; simDrillDay = state.simDrillDay;
+  activeSimulation = state.activeSimulation; profileVisibleLines = state.profileVisibleLines;
+  epexHistory = state.epexHistory; liveEnergyTax = state.liveEnergyTax;
+  _lastHAStats = state._lastHAStats; _lastRoleMap = state._lastRoleMap;
+  digitalTwinEnabled = state.digitalTwinEnabled; isDemoData = state.isDemoData;
+  fullYearData = state.fullYearData; fullYearStamp = state.fullYearStamp;
+  yearScale = state.yearScale; dataMeta = state.dataMeta;
+  epexWarnDismissed = state.epexWarnDismissed; prognosisDismissed = state.prognosisDismissed;
+  dataQualityDismissed = state.dataQualityDismissed; calibratedProfile = state.calibratedProfile;
+  calibrationMeta = state.calibrationMeta;
+});
+
+// Global exports for backwards compat in other files during migration
+window.toggleProfileLine = toggleProfileLine;
+
 const CALIB_MIN_SAMPLES = 3;    // minimaal aantal echte prijzen per (seizoen,uur)-emmer
 
 function buildCalibratedProfile() {
-  calibratedProfile = null;
-  calibrationMeta = { buckets: 0, samples: 0 };
+  appStore.setState({ calibratedProfile: null });
+  appStore.setState({ calibrationMeta: { buckets: 0, samples: 0 } });
   if (epexHistory.size < 24) return;   // te weinig historie om op te kalibreren
 
   const acc = {};  // seizoen → uur → { sum, n }
@@ -133,8 +84,8 @@ function buildCalibratedProfile() {
     }
   }
   if (buckets > 0) {
-    calibratedProfile = prof;
-    calibrationMeta = { buckets, samples: epexHistory.size };
+    appStore.setState({ calibratedProfile: prof });
+    appStore.setState({ calibrationMeta: { buckets, samples: epexHistory.size } });
   }
 }
 
@@ -420,8 +371,8 @@ async function loadDemoData() {
   try {
     // Voorkeur: gebundeld realistisch jaarprofiel (OPSD residential4, NL-geschaald).
     if (window.DEMO_PROFILE && Array.isArray(window.DEMO_PROFILE.imp)) {
-      energyData = expandDemoProfile(window.DEMO_PROFILE);
-      isDemoData = true;
+      appStore.setState({ energyData: expandDemoProfile(window.DEMO_PROFILE) });
+      appStore.setState({ isDemoData: true });
       document.getElementById("data-status").textContent =
         `Voorbeelddata geladen — realistisch jaarprofiel (${Math.round(energyData.length / 24)} dagen) · koppel jouw HA voor je eigen data`;
       runSimulation();
@@ -430,8 +381,8 @@ async function loadDemoData() {
     // Fallback: lokaal p1_sample.json (eigen data, niet meegeleverd in de repo).
     const response = await fetch("p1_sample.json");
     if (!response.ok) throw new Error("Sample file missing");
-    energyData = await response.json();
-    isDemoData = true;   // markeer als demo zodat de eerste upload deze vervangt
+    appStore.setState({ energyData: await response.json() });
+    appStore.setState({ isDemoData: true });   // markeer als demo zodat de eerste upload deze vervangt
     document.getElementById("data-status").textContent = "Voorbeelddata geladen — koppel jouw HA voor persoonlijke data";
     runSimulation();
   } catch (error) {
@@ -518,7 +469,7 @@ function processFile(file) {
         for (const r of parsed) merged.set(r.timestamp, r);
         
         const oldUntangle = energyData.untangle;
-        energyData = Array.from(merged.values())
+        appStore.setState({ energyData: Array.from(merged.values()) })
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
         energyData.untangle = parsed.untangle || oldUntangle;
@@ -952,10 +903,10 @@ async function handleHAImport() {
 
     const stats = await fetchHAStatisticsWS(wsUrl, tokenInput, uniqueEntities, startTime, endTime, statusEl);
 
-    _lastHAStats = stats;
-    _lastRoleMap = roleMap;
-    energyData = processHAStatistics(stats, roleMap, digitalTwinEnabled);
-    isDemoData = false;   // echte HA-data: verdere uploads mergen erbij
+    appStore.setState({ _lastHAStats: stats });
+    appStore.setState({ _lastRoleMap: roleMap });
+    appStore.setState({ energyData: processHAStatistics(stats, roleMap, digitalTwinEnabled) });
+    appStore.setState({ isDemoData: false });   // echte HA-data: verdere uploads mergen erbij
 
     const untangle = energyData.untangle || { active: false };
     updateDigitalTwinBanner(untangle);
@@ -1052,13 +1003,13 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 
 // ── Convert HA statistics (cumulative sum per hour) to hourly P1 records ───
 function toggleDigitalTwin(enabled) {
-  digitalTwinEnabled = enabled;
+  appStore.setState({ digitalTwinEnabled: enabled });
   if (!_lastHAStats || !_lastRoleMap) return;
-  energyData = processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled);
-  isDemoData = false;
+  appStore.setState({ energyData: processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled) });
+  appStore.setState({ isDemoData: false });
   const untangle = energyData.untangle || { active: false };
   updateDigitalTwinBanner(untangle);
-  fullYearStamp = "";   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
+  appStore.setState({ fullYearStamp: "" });   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
   runSimulation();
 }
 
@@ -1179,7 +1130,7 @@ async function fetchTarieven() {
     if (prices.length > 0) {
       // Energiebelasting is constant across hours — take from first entry
       const eb = prices[0].energyTaxPrice;
-      liveEnergyTax = eb;
+      appStore.setState({ liveEnergyTax: eb });
       setSlider("energy-tax", eb);   // schuif = single source of truth voor runSimulation
 
       // Average inkoop opslag (constant at Frank, but average across hours)
@@ -1301,7 +1252,7 @@ const HOUR_MS = 3600 * 1000;
 // ════════════════════════════════════════════════════════════════════════════
 const GAP_SMALL_MAX_HOURS = 6;   // ≤6u = interpoleren, >6u = standaardprofiel
 let dataQuality = null;          // { expectedHours, realHours, interpHours, profileHours, completenessPct, largePeriods[], spanFrom, spanTo }
-let dataQualityDismissed = false;
+
 let _cleanedRef = null;          // referentie naar de laatst-opgeschoonde energyData-array (idempotentie)
 
 function _rowTotals(r) {
@@ -1399,7 +1350,7 @@ function cleanAndFillEnergyData() {
   });
 
   // 5. Terugschrijven als gatenloze, gesorteerde reeks
-  energyData = [...byHour.keys()].sort((a, b) => a - b).map(ms => byHour.get(ms));
+  appStore.setState({ energyData: [...byHour.keys()].sort((a, b) => a - b).map(ms => byHour.get(ms)) });
 
   dataQuality = {
     expectedHours, realHours, interpHours, profileHours,
@@ -1407,7 +1358,7 @@ function cleanAndFillEnergyData() {
     largePeriods,
     spanFrom: new Date(first).toISOString(), spanTo: new Date(last).toISOString(),
   };
-  dataQualityDismissed = false;   // nieuwe import → samenvatting weer tonen
+  appStore.setState({ dataQualityDismissed: false });   // nieuwe import → samenvatting weer tonen
 }
 
 /**
@@ -1422,15 +1373,15 @@ function ensureFullYearData() {
   const prognose = document.getElementById("prognose-toggle")?.checked ?? true;
 
   if (energyData.length === 0) {
-    fullYearData = null; yearScale = 1.0;
-    dataMeta = { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 };
+    appStore.setState({ fullYearData: null, yearScale: 1.0 });
+    appStore.setState({ dataMeta: { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 } });
     return;
   }
 
   // Cache-stempel: togglestand + lengte + eerste/laatste timestamp. Sliders → geen herbouw.
   const stamp = `${prognose}|${energyData.length}|${energyData[0].timestamp}|${energyData[energyData.length - 1].timestamp}`;
   if (stamp === fullYearStamp) return;
-  fullYearStamp = stamp;
+  appStore.setState({ fullYearStamp: stamp });
 
   // Spanwijdte in dagen (lokale tijd) bepaalt of synthese nodig is.
   const firstMs = new Date(energyData[0].timestamp).getTime();
@@ -1447,17 +1398,17 @@ function ensureFullYearData() {
   // slechts ~364,96 dagen — daarom óók op uren/dagen toetsen, niet enkel op spanwijdte.
   if (spanDays >= 365 || realHoursTot >= 8760 || realDays >= 365) {
     // Genoeg data: geen synthese, energie genormaliseerd naar exact één jaar.
-    fullYearData = null;
-    yearScale = 8760 / realHoursTot;
-    dataMeta = { mode: "full", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale };
+    appStore.setState({ fullYearData: null });
+    appStore.setState({ yearScale: 8760 / realHoursTot });
+    appStore.setState({ dataMeta: { mode: "full", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale } });
     return;
   }
 
   if (!prognose) {
     // Prognose UIT: geen synthese, gemeten periode lineair doorrekenen naar een jaar.
-    fullYearData = null;
-    yearScale = 8760 / realHoursTot;
-    dataMeta = { mode: "linear", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale };
+    appStore.setState({ fullYearData: null });
+    appStore.setState({ yearScale: 8760 / realHoursTot });
+    appStore.setState({ dataMeta: { mode: "linear", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale } });
     return;
   }
 
@@ -1546,10 +1497,10 @@ function ensureFullYearData() {
     }
   }
 
-  fullYearData = out;
-  yearScale = 1.0;   // de projectie is al exact 8760u — geen extra normalisatie
+  appStore.setState({ fullYearData: out });
+  appStore.setState({ yearScale: 1.0 });   // de projectie is al exact 8760u — geen extra normalisatie
   const synthPct = (realHours + synthHours) > 0 ? synthHours / (realHours + synthHours) : 0;
-  dataMeta = { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 };
+  appStore.setState({ dataMeta: { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 } });
 }
 
 /**
@@ -2123,15 +2074,15 @@ function runSimulation() {
   const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batMode: cfg.batMode }, false, ctx);
 
   // ── activeSimulation bijwerken ────────────────────────────────────────────
-  activeSimulation = {
+  appStore.setState({ activeSimulation: {
     ...sim,
     hwEffects: {
       base,
       hp: { fixed: withHp.fixedBill - base.fixedBill, dyn: withHp.dynBill - base.dynBill, enabled: cfg.hasHeatPump, cfg: { hpWinterBaseload: cfg.hpWinterBaseload } },
       ev: { fixed: withEv.fixedBill - base.fixedBill, dyn: withEv.dynBill - base.dynBill, enabled: cfg.hasEv, cfg: { evDist: cfg.evWeeklyDist, evCons: cfg.evConsumption, evSolar: cfg.evSolarMatch } },
       bat: { fixed: withBat.fixedBill - base.fixedBill, dyn: withBat.dynBill - base.dynBill, enabled: cfg.hasBattery, cfg: { batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency * 100, batMode: cfg.batMode } },
-    },
-  };
+    }
+  } });
 
   // ── EPEX-noot in tabel zetten ─────────────────────────────────────────────
   const pct = sim.epexPct;
@@ -2343,8 +2294,8 @@ window.addEventListener("resize", () => { renderChart(); renderOverviewChart(); 
 
 // ── Sim chart mode/drill-down controls ───────────────────────────────────────
 function setSimMode(mode) {
-  simMode = mode;
-  simDrillDay = null;
+  appStore.setState({ simMode: mode });
+  appStore.setState({ simDrillDay: null });
   document.getElementById("sim-btn-day").className = mode === "day" ? "btn-primary" : "btn-secondary";
   document.getElementById("sim-btn-week").className = mode === "week" ? "btn-primary" : "btn-secondary";
   document.getElementById("sim-btn-day").style.cssText = "padding:0.3rem 0.7rem;font-size:0.75rem;";
@@ -2545,7 +2496,7 @@ function isoWeek(dateStr) {
 }
 
 function setOverviewMode(mode) {
-  overviewMode = mode;
+  appStore.setState({ overviewMode: mode });
   ["day", "week", "month"].forEach(m => {
     const btn = document.getElementById(`ov-btn-${m}`);
     if (btn) btn.classList.toggle("active", m === mode);
@@ -2554,7 +2505,7 @@ function setOverviewMode(mode) {
 }
 
 function setOverviewMetric(metric) {
-  overviewMetric = metric;
+  appStore.setState({ overviewMetric: metric });
   ["energy", "cost", "savings"].forEach(m => {
     const btn = document.getElementById(`ov-btn-${m}`);
     if (btn) btn.classList.toggle("active", m === metric);
@@ -2563,7 +2514,7 @@ function setOverviewMetric(metric) {
 }
 
 function setOverviewViewType(type) {
-  activeViewType = type;
+  appStore.setState({ activeViewType: type });
   const btnBars = document.getElementById("ov-btn-view-bars");
   const btnSankey = document.getElementById("ov-btn-view-sankey");
   
@@ -2590,7 +2541,7 @@ function setOverviewViewType(type) {
 }
 
 function setSankeyInterval(interval) {
-  sankeyInterval = interval;
+  appStore.setState({ sankeyInterval: interval });
   ["year", "month", "week", "day"].forEach(i => {
     const btn = document.getElementById(`sk-btn-${i}`);
     if (btn) btn.classList.toggle("active", i === interval);
@@ -2607,7 +2558,7 @@ function setSankeyInterval(interval) {
 }
 
 function setSankeyValue(val) {
-  sankeyValue = val;
+  appStore.setState({ sankeyValue: val });
   renderSankeyDiagram();
 }
 
@@ -2645,7 +2596,7 @@ function initSankeyPickers() {
   
   if (sankeyInterval === "year") {
     container.innerHTML = `<span style="font-size:0.75rem; color:var(--text-main); font-weight:bold; padding:0.25rem 0.5rem;">Hele Jaar</span>`;
-    sankeyValue = "";
+    appStore.setState({ sankeyValue: "" });
     if (prevBtn) prevBtn.style.display = "none";
     if (nextBtn) nextBtn.style.display = "none";
   } else if (sankeyInterval === "month") {
@@ -2668,7 +2619,7 @@ function initSankeyPickers() {
     
     if (periods.months.length > 0) {
       if (!periods.months.includes(sankeyValue)) {
-        sankeyValue = periods.months[0];
+        appStore.setState({ sankeyValue: periods.months[0] });
       }
       select.value = sankeyValue;
     }
@@ -2693,7 +2644,7 @@ function initSankeyPickers() {
     
     if (periods.weeks.length > 0) {
       if (!periods.weeks.includes(sankeyValue)) {
-        sankeyValue = periods.weeks[0];
+        appStore.setState({ sankeyValue: periods.weeks[0] });
       }
       select.value = sankeyValue;
     }
@@ -2713,7 +2664,7 @@ function initSankeyPickers() {
       input.min = periods.days[0];
       input.max = periods.days[periods.days.length - 1];
       if (!periods.days.includes(sankeyValue)) {
-        sankeyValue = periods.days[0];
+        appStore.setState({ sankeyValue: periods.days[0] });
       }
       input.value = sankeyValue;
     }
@@ -2732,12 +2683,12 @@ function navigateSankey(direction) {
   
   let idx = list.indexOf(sankeyValue);
   if (idx === -1) {
-    sankeyValue = list[0];
+    appStore.setState({ sankeyValue: list[0] });
   } else {
     idx += direction;
     if (idx < 0) idx = 0;
     if (idx >= list.length) idx = list.length - 1;
-    sankeyValue = list[idx];
+    appStore.setState({ sankeyValue: list[idx] });
   }
   
   const selectMonth = document.getElementById("sk-month-select");
