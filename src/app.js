@@ -179,6 +179,10 @@ function setViewMode(mode) {
   // Alleen simulatie herberekenen als er al data geladen is
   if (typeof energyData !== "undefined" && energyData.length > 0) {
     runSimulation();
+    // Geavanceerde weergave start standaard op de Sankey-stroomgrafiek (rijker overzicht
+    // voor power-users); de basis-weergave houdt de eenvoudiger staaf-/lijngrafiek. Alleen
+    // bij geladen data — zonder data zou de Sankey leeg renderen (boot regelt dit ná de load).
+    setOverviewViewType(mode === "simple" ? "bars" : "sankey");
   }
 }
 
@@ -194,8 +198,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // View mode initialiseren
   const savedMode = (typeof localStorage !== "undefined" && localStorage.getItem("view_mode")) || "simple";
   setViewMode(savedMode);
-  
-  loadDemoData();
+
+  // Voorbeelddata laden zodat de grafieken meteen gevuld zijn, dán de modus-standaard voor
+  // het overzicht toepassen (geavanceerd → Sankey). Bij boot heeft setViewMode nog geen data,
+  // dus dat doen we hier ná de load.
+  loadDemoData().then(() => {
+    if (typeof energyData !== "undefined" && energyData.length > 0) {
+      setOverviewViewType(savedMode === "simple" ? "bars" : "sankey");
+    }
+  });
 });
 
 // Setup Events
@@ -221,6 +232,28 @@ function scheduleSim() {
   } else if (!_simTrailing) {
     _simTrailing = setTimeout(() => { _simTrailing = 0; fire(); }, SIM_MIN_INTERVAL_MS - since);
   }
+}
+
+// Sluitknoppen ("×") op de info-/waarschuwingsbanners. Eén gedelegeerde document-listener
+// zodat het óók werkt voor banners die later (her)gerenderd worden (EPEX-waarschuwing,
+// datakwaliteit, prognose). `data-dismiss="<doel-id>"` verbergt dat element; voor de
+// herhaaldelijk gerenderde banners onthouden we de keuze in de store (sessie) zodat ze
+// niet terugkomen bij de volgende render.
+function initDismissHandlers() {
+  const DISMISS_FLAG = {
+    "epex-warn-box": "epexWarnDismissed",
+    "prognosis-badge": "prognosisDismissed",
+    "data-quality-banner": "dataQualityDismissed",
+  };
+  document.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("[data-dismiss]");
+    if (!btn) return;
+    const targetId = btn.getAttribute("data-dismiss");
+    const el = document.getElementById(targetId);
+    if (el) el.style.display = "none";
+    const flag = DISMISS_FLAG[targetId];
+    if (flag) appStore.setState({ [flag]: true });
+  });
 }
 
 function setupEventListeners() {
@@ -1274,6 +1307,9 @@ async function fetchTarieven() {
   status.textContent = "Frank Energie prijzen ophalen…";
 
   try {
+    let eb = liveEnergyTax || 0.11084;
+    let avgOpslag = parseFloat(document.getElementById("dynamic-markup")?.value || "0.024");
+
     // ── 1. Frank Energie: vandaag's prijzen + tariefcomponenten ──────────────
     const today = new Date().toISOString().slice(0, 10);
     const frankResp = await fetch("https://frank-graphql-prod.graphcdn.app/", {
@@ -1286,12 +1322,12 @@ async function fetchTarieven() {
 
     if (prices.length > 0) {
       // Energiebelasting is constant across hours — take from first entry
-      const eb = prices[0].energyTaxPrice;
+      eb = prices[0].energyTaxPrice;
       appStore.setState({ liveEnergyTax: eb });
       setSlider("energy-tax", eb);   // schuif = single source of truth voor runSimulation
 
       // Average inkoop opslag (constant at Frank, but average across hours)
-      const avgOpslag = prices.reduce((s, p) => s + p.sourcingMarkupPrice, 0) / prices.length;
+      avgOpslag = prices.reduce((s, p) => s + p.sourcingMarkupPrice, 0) / prices.length;
 
       // Update sliders
       setSlider("dynamic-markup", avgOpslag.toFixed(4));

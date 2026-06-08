@@ -367,10 +367,9 @@ export function renderChart() {
       dotExp.style.display = "none";
     }
 
-    // Update Tooltip details
+    // Update Tooltip details — positioneren gebeurt ná het vullen (zie onder), zodat we
+    // de echte tooltip-breedte kunnen meten en bij de rechterrand naar links klappen.
     tooltip.style.display = "block";
-    tooltip.style.left = `${x + 15}px`;
-    tooltip.style.top = `${getYEnergy(impVal) - 40}px`;
 
     let extraHtml = "";
     if (isDtActive) {
@@ -413,6 +412,16 @@ export function renderChart() {
         EPEX markt €${rawEpex} × 1.21 + opslag €${markup} (incl. BTW) + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
       </div>
     `;
+
+    // Rand-bewuste positionering: meet de echte breedte (na innerHTML) en klap de tooltip
+    // naar links van de cursor zodra hij rechts buiten de grafiek zou vallen — zelfde gedrag
+    // als de dynamisch-vs-vast grafiek. Voorheen stond 'left' vast op x+15 → clip rechts.
+    const ttW = tooltip.offsetWidth || 240;
+    let tx = x + 15;
+    if (tx + ttW > width) tx = x - ttW - 15;
+    if (tx < 0) tx = 5;
+    tooltip.style.left = `${tx}px`;
+    tooltip.style.top = `${getYEnergy(impVal) - 40}px`;
   });
 
   overlay.addEventListener("mouseleave", () => {
@@ -523,9 +532,9 @@ function _renderSimDrill() {
     const pRX = W - PAD_R + 4;
     [0, 0.5, 1].forEach(r => {
       const val = priceMin + r * (priceMax - priceMin), y = yP(val);
-      svg.appendChild(mk("line", { x1: W - PAD_R, y1: y, x2: W - PAD_R + 3, y2: y, stroke: "rgba(255,255,255,0.2)", "stroke-width": "1" }));
-      const lbl = mk("text", { x: pRX + 1, y: y + 3, "text-anchor": "start", fill: "rgba(255,255,255,0.35)", "font-size": "7" });
-      lbl.textContent = `€${val.toFixed(2)}`; svg.appendChild(lbl);
+      // Remove tick mark line because it visually resembles a minus symbol right next to the label (e.g. "- €0.34")
+      const lbl = mk("text", { x: W - PAD_R + 6, y: y + 3, "text-anchor": "start", fill: "rgba(255,255,255,0.35)", "font-size": "7" });
+      lbl.textContent = `€ ${val.toFixed(2)}`; svg.appendChild(lbl);
     });
     // Add zero line if price is negative
     if (priceMin < 0) {

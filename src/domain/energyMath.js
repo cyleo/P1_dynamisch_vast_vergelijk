@@ -1,4 +1,5 @@
 import { EV_MAX_CHARGE_KW, HEATPUMP_HDD_FACTOR } from "./constants.js";
+import { appStore } from "./store.js";
 // NB: de precompute-helpers hieronder roepen getFallbackSpot() aan, dat in engine.js leeft.
 // Bewust GEEN `import { getFallbackSpot } from "./engine.js"`: dat introduceert een cirkel-
 // import (engine importeert deze module) die esbuild's symbool-resolutie verstoort en
@@ -24,7 +25,8 @@ export function rowMeta(row) {
  * Formats a Date object into a reliable ISO-hour string for EPEX lookup.
  */
 export function epexKey(dt) {
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}`;
+  const p2 = n => (n < 10 ? "0" + n : "" + n);
+  return `${dt.getFullYear()}-${p2(dt.getMonth() + 1)}-${p2(dt.getDate())}T${p2(dt.getHours())}`;
 }
 
 /**
@@ -33,7 +35,7 @@ export function epexKey(dt) {
  */
 export function toConsumerPrice(spot, tax) {
   const markup = typeof document !== "undefined" ? (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024) : 0.024;
-  const currentTax = tax !== undefined ? tax : (typeof window !== "undefined" && window.liveEnergyTax !== undefined ? window.liveEnergyTax : 0.11084);
+  const currentTax = tax !== undefined ? tax : (appStore.getState()?.liveEnergyTax !== undefined ? appStore.getState().liveEnergyTax : 0.11084);
   return spot + markup + currentTax;
 }
 
