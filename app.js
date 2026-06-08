@@ -2308,7 +2308,35 @@ function ensureFullYearData() {
  *                         false → geef alleen { fixedBill, dynBill } terug (snel pad voor hw-deltas).
  * @returns {object} Simulatieresultaat.
  */
-function _simulateCore(cfg, full = false) {
+// Groepeert de uurreeks per lokale dag (dayKey → rows[]). Gememoïseerd op de identiteit
+// van de bron-array: runSimulation() roept _simulateCore 5× met dezelfde simData aan, dus
+// zonder cache wordt deze 8760-pass 5× herhaald. Een nieuwe dataset (clean/jaarprojectie,
+// of het validatie-harnas dat per scenario een verse array zet) is een nieuwe referentie
+// → de cache invalideert vanzelf. Geen gedragswijziging, alleen minder werk.
+let _dayRowsCache = null, _dayRowsSrc = null;
+function getDayRows(simData) {
+  if (_dayRowsSrc === simData && _dayRowsCache) return _dayRowsCache;
+  const dr = {};
+  simData.forEach(r => { (dr[rowMeta(r).dayKey] ||= []).push(r); });
+  _dayRowsSrc = simData; _dayRowsCache = dr;
+  return dr;
+}
+
+// Verzamelt de dataset + marktparameters die _simulateCore nodig heeft tot één object,
+// zodat de engine zelf géén module-globals meer leest (testbaar, en klaar voor een
+// Web Worker). Wordt als default gebruikt zodat bestaande aanroepers (en het validatie-
+// harnas, dat deze globals zet) onveranderd blijven werken.
+function buildSimContext() {
+  return {
+    simData: fullYearData || energyData,
+    epexHistory,
+    eb: liveEnergyTax,
+    yearScale,
+  };
+}
+
+function _simulateCore(cfg, full = false, ctx = null) {
+  ctx = ctx || buildSimContext();
   const {
     fixedPeakRate, fixedDalRate, fixedFeedInRate, fixedVastrecht, fixedFeedInFee,
     dynamicMarkup, dynamicExportMarkup = 0.0, dynamicVastrecht, stressMultiplier = 1.0,
@@ -2331,13 +2359,14 @@ function _simulateCore(cfg, full = false) {
 
   const markupBtw = dynamicMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks gebruiken
   const exportMarkup = dynamicExportMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks van de kale prijs af
-  const eb = liveEnergyTax;
+  // Markt-/dataset-inputs uit de context i.p.v. module-globals (DOM-vrij, worker-klaar).
+  const eb = ctx.eb;
+  const epexHistory = ctx.epexHistory;   // lokaal: alle .has/.get hieronder binden hieraan
+  const simData = ctx.simData;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
-  const simData = fullYearData || energyData;
 
   // ── PRE-COMPUTATION CAPTURE: Bereken EV Profielen ÉÉNMAAL (Vector 3 & 5 Fix) ──
-  const dayRows = {};
-  simData.forEach(r => { (dayRows[rowMeta(r).dayKey] ||= []).push(r); });
+  const dayRows = getDayRows(simData);
 
   const evScheduleCacheDyn = {};
   const evScheduleCacheFx = {};
@@ -2800,9 +2829,10 @@ function _simulateCore(cfg, full = false) {
     }
   });
 
-  // Jaarnormalisatie-schaling
-  fxPeakImp *= yearScale; fxDalImp *= yearScale; fxPeakExp *= yearScale; fxDalExp *= yearScale;
-  dynImpCost *= yearScale; dynExpRev *= yearScale; dynImpKwh *= yearScale; dynExpKwh *= yearScale;
+  // Jaarnormalisatie-schaling (factor uit de context)
+  const ys = ctx.yearScale;
+  fxPeakImp *= ys; fxDalImp *= ys; fxPeakExp *= ys; fxDalExp *= ys;
+  dynImpCost *= ys; dynExpRev *= ys; dynImpKwh *= ys; dynExpKwh *= ys;
 
   // ── EINDTOTALEN REKENING (Fiscaal Zuiver Model 2027) ──
   // Het vaste piek/dal-tarief is het all-in tarief zoals getekend (incl. EB-bij-tekenen).
@@ -3100,8 +3130,12 @@ function runSimulation() {
   // ── Alle DOM-reads EENMALIG voor de loop ─────────────────────────────────
   const cfg = readSimConfig();
 
+  // Dataset + marktparameters één keer vastleggen en aan alle 5 runs meegeven (de globals
+  // zijn hierboven al gezet door ensureFullYearData/buildCalibratedProfile/liveEnergyTax).
+  const ctx = buildSimContext();
+
   // ── Hoofdsimulatie + hardware-deltas (5 x _simulateCore) ─────────────────
-  const sim = _simulateCore(cfg, true);
+  const sim = _simulateCore(cfg, true, ctx);
 
   const base0 = {
     ...cfg,
@@ -3109,10 +3143,10 @@ function runSimulation() {
     hasEv: false, evWeeklyDist: 0, evConsumption: 0, evSolarMatch: false,
     hasBattery: false, batCapacity: 0, batPower: 0, batEfficiency: 1, batMode: "zelf",
   };
-  const base = _simulateCore(base0, false);
-  const withHp = _simulateCore({ ...base0, hasHeatPump: true, hpWinterBaseload: cfg.hpWinterBaseload }, false);
-  const withEv = _simulateCore({ ...base0, hasEv: true, evWeeklyDist: cfg.evWeeklyDist, evConsumption: cfg.evConsumption, evSolarMatch: cfg.evSolarMatch }, false);
-  const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batMode: cfg.batMode }, false);
+  const base = _simulateCore(base0, false, ctx);
+  const withHp = _simulateCore({ ...base0, hasHeatPump: true, hpWinterBaseload: cfg.hpWinterBaseload }, false, ctx);
+  const withEv = _simulateCore({ ...base0, hasEv: true, evWeeklyDist: cfg.evWeeklyDist, evConsumption: cfg.evConsumption, evSolarMatch: cfg.evSolarMatch }, false, ctx);
+  const withBat = _simulateCore({ ...base0, hasBattery: true, batCapacity: cfg.batCapacity, batPower: cfg.batPower, batEfficiency: cfg.batEfficiency, batMode: cfg.batMode }, false, ctx);
 
   // ── activeSimulation bijwerken ────────────────────────────────────────────
   activeSimulation = {
