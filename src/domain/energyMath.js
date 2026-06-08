@@ -6,6 +6,9 @@ import { appStore } from "./store.js";
 // gelijknamige functies in andere modules (bv. _updateSimHeader in charts.js) laat sneuvelen.
 // In de gebundelde IIFE-scope is de gehoiste getFallbackSpot gewoon bereikbaar.
 
+/** Zero-pads a number to 2 digits — used in date key construction. */
+const p2 = n => String(n).padStart(2, "0");
+
 /**
  * Lazily computes and caches local datetime metadata for a given row.
  * Essential to avoid repetitive Date parsing in 8760-hour loops.
@@ -13,7 +16,6 @@ import { appStore } from "./store.js";
 export function rowMeta(row) {
   if (row._meta) return row._meta;
   const dt = new Date(row.timestamp);
-  const p2 = n => (n < 10 ? "0" + n : "" + n);
   const mo = dt.getMonth() + 1, da = dt.getDate(), h = dt.getHours();
   const dayKey = `${dt.getFullYear()}-${p2(mo)}-${p2(da)}`;
   const meta = { hour: h, date: da, month: mo, dow: dt.getDay(), dayKey, epexKey: `${dayKey}T${p2(h)}` };
@@ -25,7 +27,6 @@ export function rowMeta(row) {
  * Formats a Date object into a reliable ISO-hour string for EPEX lookup.
  */
 export function epexKey(dt) {
-  const p2 = n => (n < 10 ? "0" + n : "" + n);
   return `${dt.getFullYear()}-${p2(dt.getMonth() + 1)}-${p2(dt.getDate())}T${p2(dt.getHours())}`;
 }
 
@@ -35,7 +36,7 @@ export function epexKey(dt) {
  */
 export function toConsumerPrice(spot, tax) {
   const markup = typeof document !== "undefined" ? (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024) : 0.024;
-  const currentTax = tax !== undefined ? tax : (appStore.getState()?.liveEnergyTax !== undefined ? appStore.getState().liveEnergyTax : 0.11084);
+  const currentTax = tax ?? appStore.getState()?.liveEnergyTax ?? 0.11084;
   return spot + markup + currentTax;
 }
 

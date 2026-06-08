@@ -6,7 +6,7 @@ const ICON_WARN = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="colo
 const ICON_STAR = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-yellow);fill:var(--accent-yellow);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
 const ICON_LIGHTBULB = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-yellow);"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .3 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg>`;
 
-import { getFallbackSpot, buildSimContext, _simulateCore, getDayRows } from "./domain/engine.js";
+import { getFallbackSpot, buildSimContext, _simulateCore } from "./domain/engine.js";
 
 import {
   parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync, parseLongCSV, processHAStatistics
@@ -15,28 +15,19 @@ import {
 /* Core Dashboard Logic & Simulation Engine */
 
 import {
-  renderChart, renderSimChart, renderAfnameDetail, renderAfnameDetailHour,
-  renderAfnameDetailDay, renderMonthlyChart, renderHwChart, renderOverviewChart,
+  renderChart, renderSimChart, renderMonthlyChart, renderHwChart, renderOverviewChart,
   renderSankeyDiagram, setChartsDependencies
 } from "./ui/charts.js";
 
 import {
   showSetupModal, closeSetupModal, showHardwareExplainer, closeHardwareExplainer,
-  hardwareExplainerContent, toggleTableDetail, toggleCard, toggleProfileLine,
+  toggleTableDetail, toggleCard, toggleProfileLine,
   showCsvMapModal, showUploadError, toggleAfnameDetail, updateDigitalTwinBanner
 } from "./ui/dom.js";
 
-import {
-  EV_MAX_CHARGE_KW, BATTERY_C_RATE, EVENING_PEAK_MULT, HEATPUMP_HDD_FACTOR,
-  ENERGY_TAX_2026, EB_REBATE_2026, NETBEHEER_2026, EPEX_PROFILES, DEMO_ROLEMAP
-} from "./domain/constants.js";
+import { EPEX_PROFILES, DEMO_ROLEMAP } from "./domain/constants.js";
 
-import {
-  rowMeta, epexKey, toConsumerPrice, seasonOf,
-  precomputeEVSchedules, precomputeBatterySchedule,
-  applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming,
-  isoWeek
-} from "./domain/energyMath.js";
+import { rowMeta, epexKey, seasonOf, isoWeek } from "./domain/energyMath.js";
 
 
 // ── Store-mirror invariant (lees dit vóór je een van deze namen muteert) ──────────────
@@ -53,25 +44,22 @@ import {
 // belastingschuif had geen effect op de rekening). De enige uitzondering is de test-harness
 // (__setTestState), die bewust mirror én store samen zet.
 let {
-  energyData, overviewMode, overviewMetric, activeViewType, sankeyInterval,
-  sankeyValue, simMode, simDrillDay, activeSimulation, profileVisibleLines,
+  energyData, sankeyInterval, sankeyValue, activeSimulation,
   epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled,
-  isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta, epexWarnDismissed,
+  isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta,
   prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta
 } = appStore.getState();
 
 appStore.subscribe(state => {
-  energyData = state.energyData; overviewMode = state.overviewMode;
-  overviewMetric = state.overviewMetric; activeViewType = state.activeViewType;
+  energyData = state.energyData;
   sankeyInterval = state.sankeyInterval; sankeyValue = state.sankeyValue;
-  simMode = state.simMode; simDrillDay = state.simDrillDay;
-  activeSimulation = state.activeSimulation; profileVisibleLines = state.profileVisibleLines;
+  activeSimulation = state.activeSimulation;
   epexHistory = state.epexHistory; liveEnergyTax = state.liveEnergyTax;
   _lastHAStats = state._lastHAStats; _lastRoleMap = state._lastRoleMap;
   digitalTwinEnabled = state.digitalTwinEnabled; isDemoData = state.isDemoData;
   fullYearData = state.fullYearData; fullYearStamp = state.fullYearStamp;
   yearScale = state.yearScale; dataMeta = state.dataMeta;
-  epexWarnDismissed = state.epexWarnDismissed; prognosisDismissed = state.prognosisDismissed;
+  prognosisDismissed = state.prognosisDismissed;
   dataQualityDismissed = state.dataQualityDismissed; calibratedProfile = state.calibratedProfile;
   calibrationMeta = state.calibrationMeta;
 });
@@ -1211,98 +1199,6 @@ function toggleDigitalTwin(enabled) {
   runSimulation();
 }
 
-// Convert HA History output to aligned hourly P1 records
-// roleMap: { imp1, imp2, exp1, exp2 } — entity_id per rol (leeg = niet gebruikt)
-function processHAHistoryToP1(historyArray, roleMap) {
-
-  // ── 1. Build sparse hourly map per entity: hour-ISO → last known cumulative value ──
-  const sparse = {}; // entity_id → Map<hourISO, float>
-  historyArray.forEach(entityList => {
-    if (!entityList || entityList.length === 0) return;
-    const entId = entityList[0].entity_id;
-    const m = new Map();
-    entityList.forEach(s => {
-      const val = parseFloat(s.state);
-      if (isNaN(val)) return;
-      const dt = new Date(s.last_changed);
-      dt.setMinutes(0, 0, 0, 0);
-      m.set(dt.getTime(), val); // keep last value per epoch-hour
-    });
-    if (m.size > 0) sparse[entId] = m;
-  });
-
-  const usedEntities = Object.values(roleMap).filter(Boolean);
-  if (usedEntities.every(e => !sparse[e])) return [];
-
-  // ── 2. Find global time range across all used entities ──
-  let globalMin = Infinity, globalMax = -Infinity;
-  usedEntities.forEach(ent => {
-    if (!sparse[ent]) return;
-    sparse[ent].forEach((_, t) => {
-      if (t < globalMin) globalMin = t;
-      if (t > globalMax) globalMax = t;
-    });
-  });
-
-  // ── 3. Forward-fill each entity over the complete hour grid ──
-  // This fills gaps (HA offline, irregular reporting) with the last known meter value.
-  const HOUR_MS = 3600 * 1000;
-  const filled = {}; // entity_id → Float64Array indexed by hour offset
-
-  usedEntities.forEach(ent => {
-    if (!sparse[ent]) return;
-    const nHours = Math.round((globalMax - globalMin) / HOUR_MS) + 1;
-    const arr = new Float64Array(nHours).fill(NaN);
-
-    // Place known values
-    sparse[ent].forEach((val, t) => {
-      const idx = Math.round((t - globalMin) / HOUR_MS);
-      if (idx >= 0 && idx < nHours) arr[idx] = val;
-    });
-
-    // Forward-fill NaN gaps
-    let last = NaN;
-    for (let i = 0; i < nHours; i++) {
-      if (!isNaN(arr[i])) { last = arr[i]; }
-      else if (!isNaN(last)) { arr[i] = last; }
-    }
-    // Backward-fill leading NaNs (beginning of period)
-    let first = NaN;
-    for (let i = nHours - 1; i >= 0; i--) {
-      if (!isNaN(arr[i])) { first = arr[i]; }
-      else if (!isNaN(first)) { arr[i] = first; }
-    }
-
-    filled[ent] = arr;
-  });
-
-  // ── 4. Generate hourly records from consecutive filled values ──
-  const nHours = Math.round((globalMax - globalMin) / HOUR_MS) + 1;
-
-  const hourDelta = (ent, i) => {
-    if (!ent || !filled[ent]) return 0;
-    const a = filled[ent][i - 1];
-    const b = filled[ent][i];
-    if (isNaN(a) || isNaN(b)) return 0;
-    const d = b - a;
-    // Sanity-check: ignore resets (meter replacement) or absurd spikes > 100 kWh/h
-    return (d > 0 && d < 100) ? d : 0;
-  };
-
-  const records = [];
-  for (let i = 1; i < nHours; i++) {
-    const ts = new Date(globalMin + i * HOUR_MS).toISOString();
-    records.push({
-      timestamp: ts,
-      import_t1: hourDelta(roleMap.imp1, i),
-      import_t2: hourDelta(roleMap.imp2, i),
-      export_t1: hourDelta(roleMap.exp1, i),
-      export_t2: hourDelta(roleMap.exp2, i),
-    });
-  }
-
-  return records;
-}
 
 // ── Live tarieven ophalen (Frank Energie + energyzero) ───────────────────────
 async function fetchTarieven() {
@@ -1821,7 +1717,6 @@ function downloadDataWithPrices() {
 }
 
 const BATTERY_SWEEP_CAPS = [2, 5, 10, 15, 20];   // kWh
-const BATTERY_COST_PER_KWH = 450;                // €/kWh investering (industriestandaard)
 // ── ROI-realisme: degradatie + levensduur ────────────────────────────────────
 // Een LFP-thuisaccu degradeert ~2%/jaar (≈80% restcapaciteit na ~15 jaar). De
 // terugverdientijd op basis van het 1e-jaars-voordeel is daardoor te optimistisch:
@@ -2267,8 +2162,6 @@ function setSimMode(mode) {
 
 
 // ── Hardware effect chart ─────────────────────────────────────────────────────
-// ── Afname detail toggle ──────────────────────────────────────────────────────
-let afnameDetailOpen = false;
 
 // Maandelijkse kostenvergelijking: aggregeert perDayTotals (energiekosten excl.
 // vastrecht) per kalendermaand en tekent 12 gegroepeerde staafparen (vast vs dynamisch).
