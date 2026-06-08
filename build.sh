@@ -1,9 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
-echo "Building the application bundle..."
-# Gebruik npm run build (welke npx esbuild aanroept)
-npm install
-npm run build
+echo "Building P1 Energie Contract Analysator..."
 
-echo "Build complete! Open index.html to view the application."
+# Verify esbuild is installed
+if ! command -v npx >/dev/null 2>&1; then
+    echo "Error: npx is not installed. Please install Node.js."
+    exit 1
+fi
+
+# Run esbuild bundling
+npx esbuild src/app.js --bundle --outfile=dist/app.bundle.js --minify --sourcemap
+
+echo "Build complete! Output in dist/app.bundle.js"
