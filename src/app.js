@@ -290,6 +290,12 @@ function setupEventListeners() {
   document.getElementById("bat-mode")?.addEventListener("change", runSimulation);
   document.getElementById("bat-mode")?.addEventListener("change", updateBatModeHint);
   updateBatModeHint();
+  // Fiscaal scenariojaar: hertekent de hele simulatie + werkt het jaar-label bij.
+  document.getElementById("scenario-year")?.addEventListener("change", () => {
+    updateScenarioYearTag();
+    runSimulation();
+  });
+  updateScenarioYearTag();
   // solar-dimming-mode: onchange al in HTML, hier alleen uitleg-tekst tonen
   const solarModeEl = document.getElementById("solar-dimming-mode");
   if (solarModeEl) {
@@ -547,6 +553,13 @@ function updateBatModeHint() {
   };
   el.innerHTML = hints[mode] || "";
   el.style.display = el.innerHTML ? "block" : "none";
+}
+// Werkt het jaar-label naast "Parameters vast contract" bij op het gekozen scenario.
+function updateScenarioYearTag() {
+  const tag = document.getElementById("fixed-params-year-tag");
+  if (!tag) return;
+  const year = document.getElementById("scenario-year")?.value || "2027";
+  tag.textContent = year === "2026" ? "(2026 · met saldering)" : "(2027 · geen saldering)";
 }
 function copySetupSnippet() {
   const origin = window.location.origin;
@@ -1650,6 +1663,9 @@ function readSimConfig() {
     ? document.body.classList.contains("mode-simple")
     : true; // Default to simple if not in a proper browser environment
   return {
+    // Fiscaal scenariojaar (2026 = saldering · 2027 = bruto-EB, geen saldering).
+    // Default 2027 zodat ontbrekende selector het bestaande gedrag behoudt.
+    fiscalYear: parseInt(document.getElementById("scenario-year")?.value, 10) || 2027,
     fixedPeakRate: parseFloat(document.getElementById("fixed-peak").value),
     fixedDalRate: parseFloat(document.getElementById("fixed-dal").value),
     fixedFeedInRate: parseFloat(document.getElementById("fixed-feedin-rate").value),
@@ -2146,9 +2162,11 @@ function updateUIElements() {
   const dynVasteLasten = sim.dynamicSubscription - (sim.taxRebate ?? 0) + (sim.gridFees ?? 0);
   document.getElementById("tbl-dyn-vaste-lasten").textContent = `€ ${dynVasteLasten.toFixed(2)}`;
 
-  // EB 2027: over BRUTO afname van het net (geen saldering) — volume = totale import,
-  // zodat volume × tarief exact gelijk is aan het getoonde bedrag.
-  document.getElementById("tbl-dyn-tax-vol").textContent = `${sim.totalImportKwh.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
+  // EB-volume: 2027 = BRUTO afname (totale import); 2026 = NETTO afname na saldering
+  // (max(0, import − export)). `dynamicTaxableKwh` valt terug op de import als de engine
+  // het veld (nog) niet levert, zodat oudere snapshots blijven kloppen.
+  const ebVol = sim.dynamicTaxableKwh ?? sim.totalImportKwh;
+  document.getElementById("tbl-dyn-tax-vol").textContent = `${ebVol.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
   document.getElementById("tbl-dyn-tax").textContent = `€ ${sim.dynamicNetTax.toFixed(2)}`;
   document.getElementById("tbl-dyn-subcost").textContent = `€ ${sim.dynamicSubscription.toFixed(2)}`;
   document.getElementById("tbl-dyn-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;

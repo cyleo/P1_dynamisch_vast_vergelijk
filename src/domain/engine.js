@@ -8,7 +8,7 @@ import {
   precomputeEVSchedules, precomputeBatterySchedule,
   applyHeatPumpLoad, applyEVLoad, applyBatteryState, applySmartDimming
 } from "./energyMath.js";
-import { EPEX_PROFILES, EB_REBATE_2026, NETBEHEER_2026 } from "./constants.js";
+import { EPEX_PROFILES, FISCAL_MODELS, DEFAULT_FISCAL_YEAR } from "./constants.js";
 
 let _dayRowsCache = null, _dayRowsSrc = null;
 
@@ -127,6 +127,9 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   // Accumulatoren
   let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
   let dynImpCost = 0, dynExpRev = 0, dynImpKwh = 0, dynExpKwh = 0;
+  // Salderbare teruglever-omzet (incl. BTW + inkoopvergoeding) — de all-in waarde van het
+  // export-uur, parallel aan dynExpRev (kale 2027-waarde). Alléén gebruikt in het 2026-model.
+  let dynExpRevSalder = 0;
   let batSoC = 0, batSoCFx = 0;
   let epexReal = 0, epexFall = 0;
   const batGridDrawn = {};    // dayKey → reeds van het net ingekochte kWh (drawn, budgetbewaking)
@@ -296,6 +299,9 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     const basePrice = spot + markupBtw;
     dynImpCost += dynImp * basePrice;
     dynExpRev += dynExp * ((spot / 1.21) - exportMarkup);
+    // Saldering-waardering (2026): salderbare teruglevering krijgt BTW + inkoopvergoeding
+    // terug → de all-in import-prijs van het export-uur (spot incl. BTW + opslag).
+    dynExpRevSalder += dynExp * basePrice;
     dynImpKwh += dynImp;
     dynExpKwh += dynExp;
 
@@ -309,27 +315,59 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   // Jaarnormalisatie-schaling (factor uit de context)
   const ys = ctx.yearScale;
   fxPeakImp *= ys; fxDalImp *= ys; fxPeakExp *= ys; fxDalExp *= ys;
-  dynImpCost *= ys; dynExpRev *= ys; dynImpKwh *= ys; dynExpKwh *= ys;
+  dynImpCost *= ys; dynExpRev *= ys; dynExpRevSalder *= ys; dynImpKwh *= ys; dynExpKwh *= ys;
 
-  // ── EINDTOTALEN REKENING (Fiscaal Zuiver Model 2027) ──
-  // Het vaste piek/dal-tarief is het all-in tarief zoals getekend (incl. EB-bij-tekenen).
-  // We rekenen er rechtstreeks mee: de energiebelasting-schuif (een dynamisch-contract-
-  // parameter, ook live bijgewerkt door Frank) mag het vaste contract NIET stil herprijzen.
-  const fxImpCost = fxPeakImp * fixedPeakRate + fxDalImp * fixedDalRate;
-  const fxFeedCredit = (fxPeakExp + fxDalExp) * fixedFeedInRate;
-  const fxFeedPenalt = (fxPeakExp + fxDalExp) * fixedFeedInFee;
+  // ── FISCAAL JAARMODEL (scenario-selector) ──
+  // Eén object per jaar bundelt álle verschillen; de engine takt alléén op `salderen`.
+  // 2027 = huidige gedrag (geen saldering); 2026 = wettelijke jaarverrekening.
+  const model = FISCAL_MODELS[cfg.fiscalYear] || FISCAL_MODELS[DEFAULT_FISCAL_YEAR];
+  // Heffingskorting + netbeheer komen uit het jaarmodel — identiek voor beide contracten
+  // (comparison-neutraal), maar nodig voor realistische jaartotalen.
+  const ebRebate = model.ebRebate;
+  const gridFees = model.netbeheer;
   const fxSub = fixedVastrecht * 12.0;
-
-  // Heffingskorting (vaste jaarlijkse EB-vermindering per aansluiting) — identiek voor
-  // beide contracten, dus comparison-neutraal, maar nodig voor realistische jaartotalen.
-  const ebRebate = EB_REBATE_2026;
-  const gridFees = NETBEHEER_2026;
-
-  const fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub - ebRebate + gridFees;
-
-  const dynEB = dynImpKwh * eb; // Gross energy tax charging rule
   const dynSub = dynamicVastrecht * 12.0;
-  const dynBill = (dynImpCost - dynExpRev) + dynEB + dynSub - ebRebate + gridFees;
+
+  // ── EINDTOTALEN REKENING ──
+  // Het vaste piek/dal-tarief is het all-in tarief zoals getekend (incl. EB-bij-tekenen).
+  // De energiebelasting-schuif (een dynamisch-contract-parameter) mag het vaste contract
+  // NIET stil herprijzen.
+  let fxImpCost, fxFeedCredit, fxFeedPenalt, fixedBill, dynEB, effExpRev, dynTaxableKwh, dynBill;
+
+  if (model.salderen) {
+    // ── 2026 · SALDERING (wettelijke jaarverrekening, salderingsgrens = jaarafname) ──
+    // Vast contract: afname ↔ teruglevering wordt netto verrekend tégen het retail-tarief.
+    // De netto import betaalt het volume-gewogen piek/dal-tarief; het overschot (teruglevering
+    // bóven de afname) krijgt het teruglevertarief (− VTK).
+    const fxImpKwh = fxPeakImp + fxDalImp;
+    const fxExpKwh = fxPeakExp + fxDalExp;
+    const fxNetImp = Math.max(0, fxImpKwh - fxExpKwh);
+    const fxSurplusExp = Math.max(0, fxExpKwh - fxImpKwh);
+    const peakShare = fxImpKwh > 0 ? fxPeakImp / fxImpKwh : 0;
+    fxImpCost = fxNetImp * (peakShare * fixedPeakRate + (1 - peakShare) * fixedDalRate);
+    fxFeedCredit = fxSurplusExp * fixedFeedInRate;
+    fxFeedPenalt = fxSurplusExp * fixedFeedInFee;
+
+    // Dynamisch contract: EB over de NETTO afname; salderbare teruglevering (tot de
+    // salderingsgrens = totale afname) krijgt BTW + inkoopvergoeding terug (all-in waarde),
+    // het overschot krijgt de kale 2027-waarde. We proraten op jaarvolume → geen
+    // uur-volgorde-bias (de salderbare fractie wordt over álle export-uren uitgesmeerd).
+    dynTaxableKwh = Math.max(0, dynImpKwh - dynExpKwh);
+    dynEB = dynTaxableKwh * eb;
+    const salderFrac = dynExpKwh > 0 ? Math.min(1, dynImpKwh / dynExpKwh) : 0;
+    effExpRev = salderFrac * dynExpRevSalder + (1 - salderFrac) * dynExpRev;
+  } else {
+    // ── 2027 · GEEN SALDERING (EB over bruto afname, kale teruglevering) ──
+    fxImpCost = fxPeakImp * fixedPeakRate + fxDalImp * fixedDalRate;
+    fxFeedCredit = (fxPeakExp + fxDalExp) * fixedFeedInRate;
+    fxFeedPenalt = (fxPeakExp + fxDalExp) * fixedFeedInFee;
+    dynTaxableKwh = dynImpKwh;
+    dynEB = dynImpKwh * eb; // Gross energy tax charging rule
+    effExpRev = dynExpRev;
+  }
+
+  fixedBill = fxImpCost - fxFeedCredit + fxFeedPenalt + fxSub - ebRebate + gridFees;
+  dynBill = (dynImpCost - effExpRev) + dynEB + dynSub - ebRebate + gridFees;
 
   const out = { fixedBill, dynBill };
 
@@ -337,8 +375,9 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     Object.assign(out, {
       totalImportKwh: dynImpKwh, totalExportKwh: dynExpKwh,
       netDynamicKwh: Math.max(0, dynImpKwh - dynExpKwh),
-      dynamicRawImportCost: dynImpCost, dynamicRawExportRevenue: dynExpRev,
-      dynamicNetTax: dynEB, dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
+      dynamicRawImportCost: dynImpCost, dynamicRawExportRevenue: effExpRev,
+      dynamicNetTax: dynEB, dynamicTaxableKwh: dynTaxableKwh,
+      dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
       taxRebate: ebRebate, gridFees: gridFees,
       fixedPeakImport: fxPeakImp, fixedPeakExport: fxPeakExp,
       fixedDalImport: fxDalImp, fixedDalExport: fxDalExp,

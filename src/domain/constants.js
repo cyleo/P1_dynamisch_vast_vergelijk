@@ -41,6 +41,39 @@ export const EB_REBATE_2026 = 628.96;
 export const NETBEHEER_2026 = 480.00;
 
 /**
+ * Fiscale jaarmodellen (scenario-selector). Eén object per kalenderjaar bundelt álle
+ * verschillen tussen de jaren, zodat de engine alléén op `salderen` hoeft te takken en
+ * een volgend jaar (2028+) een één-object-uitbreiding is.
+ *
+ * Het kernverschil is **saldering** (de wettelijke jaarverrekening van afname ↔
+ * teruglevering): in 2026 nog 100% van kracht, per 1-1-2027 afgeschaft.
+ *   - 2026 (`salderen:true`): EB wordt geheven over de NETTO afname (max(0, import−export))
+ *     en de salderbare teruglevering (tot de jaarafname = salderingsgrens) krijgt BTW én
+ *     inkoopvergoeding terug → gewaardeerd tegen de all-in import-prijs van het export-uur.
+ *     Het vaste contract verrekent netto tegen het piek/dal-tarief; overschot tegen het
+ *     teruglevertarief.
+ *   - 2027 (`salderen:false`): EB over de BRUTO afname; teruglevering tegen de kale
+ *     marktprijs (`spot/1.21 − opslag`). Dit is het huidige model.
+ *
+ * `energyTax` is een **default**; de live/schuif-waarde (`appStore.liveEnergyTax`) is
+ * leidend in de engine (`ctx.eb`) — de EB-schuif blijft dus werken in beide jaren.
+ * `ebRebate`/`netbeheer` zijn (nu) gelijk voor beide jaren maar staan per jaar zodat ze
+ * later kunnen divergeren zonder de engine te raken.
+ * @constant {Object<number, {year:number, salderen:boolean, energyTax:number, ebRebate:number, netbeheer:number}>}
+ */
+export const FISCAL_MODELS = {
+  2026: { year: 2026, salderen: true,  energyTax: ENERGY_TAX_2026, ebRebate: EB_REBATE_2026, netbeheer: NETBEHEER_2026 },
+  2027: { year: 2027, salderen: false, energyTax: ENERGY_TAX_2026, ebRebate: EB_REBATE_2026, netbeheer: NETBEHEER_2026 },
+};
+
+/**
+ * Default fiscaal jaar wanneer er geen scenario gekozen is. Blijft 2027 zodat het
+ * bestaande gedrag (en de golden snapshot) ongewijzigd is.
+ * @constant {number}
+ */
+export const DEFAULT_FISCAL_YEAR = 2027;
+
+/**
  * Seasonal fallback EPEX profiles (raw market prices €/kWh, excl VAT/taxes/markup).
  * Used when live fetching fails or is unavailable.
  * @constant {Object<string, Object<number, number>>}

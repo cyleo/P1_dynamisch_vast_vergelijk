@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=75">
+  <link rel="stylesheet" href="/style.css?v=77">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -744,6 +744,21 @@
             <span class="collapse-chevron"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
           </h2>
 
+          <!-- Fiscaal scenariojaar: bepaalt of saldering (jaarverrekening) nog geldt -->
+          <div class="form-group">
+            <label for="scenario-year">Fiscaal scenario <span class="info-icon" tabindex="0">i<span
+                  class="info-tooltip"><strong>2026:</strong> de salderingsregeling geldt nog — je teruglevering
+                  wordt op jaarbasis weggestreept tegen je afname (incl. energiebelasting + BTW tot je jaarverbruik).
+                  <strong>2027:</strong> saldering is afgeschaft — je betaalt energiebelasting over élke afgenomen kWh
+                  en teruglevering levert alleen de kale marktprijs op. Kies het jaar dat je wilt doorrekenen.</span></span></label>
+            <select id="scenario-year" class="ha-select" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;">
+              <option value="2027" selected>2027 — geen saldering (bruto EB)</option>
+              <option value="2026">2026 — met saldering (jaarverrekening)</option>
+            </select>
+            <p style="font-size:0.68rem;color:var(--text-muted);margin-top:0.35rem;">Saldering eindigt 1-1-2027. Kies
+              2026 om het laatste salderingsjaar te vergelijken.</p>
+          </div>
+
           <!-- Leverancier-presets: vult tarieven/VTK/opslag met indicatieve waarden -->
           <div class="form-group">
             <label for="supplier-preset">Leverancier-preset <span class="info-icon" tabindex="0">i<span
@@ -768,7 +783,7 @@
           <!-- Fixed sliders — 2027 model (geen saldering) -->
           <h3
             style="font-size: 0.85rem; color: var(--accent-blue); margin-bottom: 0.8rem; font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.5px;">
-            Parameters vast contract <span style="font-size:0.7rem;opacity:0.6;text-transform:none;">(2027 · geen
+            Parameters vast contract <span id="fixed-params-year-tag" style="font-size:0.7rem;opacity:0.6;text-transform:none;">(2027 · geen
               saldering)</span></h3>
           <div class="form-group">
             <label for="fixed-peak">Piek Tarief afname <span class="info-icon" tabindex="0">i<span
@@ -1614,7 +1629,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=75"></script>
+  <script src="/app.js?v=77"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
