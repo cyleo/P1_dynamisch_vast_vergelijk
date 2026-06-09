@@ -1,5 +1,4 @@
 import { EV_MAX_CHARGE_KW, HEATPUMP_HDD_FACTOR } from "./constants.js";
-import { appStore } from "./store.js";
 // NB: de precompute-helpers hieronder roepen getFallbackSpot() aan, dat in engine.js leeft.
 // Bewust GEEN `import { getFallbackSpot } from "./engine.js"`: dat introduceert een cirkel-
 // import (engine importeert deze module) die esbuild's symbool-resolutie verstoort en
@@ -31,13 +30,14 @@ export function epexKey(dt) {
 }
 
 /**
- * Calculates the all-in consumer price (including tax, markup, and VAT)
- * for a given raw wholesale EPEX spot price.
+ * All-in consumentenprijs (Pad 1): spot en opslag zijn beide incl. BTW.
+ * Pure functie — lees markup en tax eenmalig voor de loop en geef ze door.
+ * @param {number} spot   - EPEX spot incl. BTW, excl. EB (€/kWh)
+ * @param {number} markup - Inkoop-opslag incl. BTW (€/kWh)
+ * @param {number} tax    - Energiebelasting (€/kWh)
  */
-export function toConsumerPrice(spot, tax) {
-  const markup = typeof document !== "undefined" ? (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024) : 0.024;
-  const currentTax = tax ?? appStore.getState()?.liveEnergyTax ?? 0.11084;
-  return spot + markup + currentTax;
+export function toConsumerPrice(spot, markup, tax) {
+  return spot + markup + tax;
 }
 
 /**
@@ -134,7 +134,10 @@ export function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
  * Determines when to charge from the grid vs discharge based on daily EPEX spreads.
  */
 export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport) {
-  const { hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0 } = cfg;
+  const {
+    hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0,
+    hasHeatPump, hpWinterBaseload, hasEv, evWeeklyDist, evConsumption,
+  } = cfg;
   const { epexHistory, eb } = ctx;
   const batChargeHrs = {};
   const batDischargeHrs = {};
@@ -148,12 +151,23 @@ export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMa
   }
 
   const K = Math.max(1, Math.min(10, Math.round(batCapacity / batPower)));
+  // EV daily target is a flat per-day figure; computed once outside the loop.
+  const evDay = hasEv ? (evWeeklyDist * evConsumption) / 7.0 : 0;
+
   Object.keys(dayRows).forEach(dk => {
     const dayRowsArr = dayRows[dk];
     const loadDay = dayRowsArr.reduce((s, r) => s + r.import_t1 + r.import_t2, 0);
     const solarDay = dayRowsArr.reduce((s, r) => s + r.export_t1 + r.export_t2, 0);
 
-    const selfNeed = Math.min(batCapacity, loadDay);
+    // Include HP and EV loads so the battery is allowed to store enough to cover them.
+    let hpDay = 0;
+    if (hasHeatPump) {
+      for (const r of dayRowsArr) {
+        const { month, hour } = rowMeta(r);
+        hpDay += applyHeatPumpLoad(true, hpWinterBaseload, month, hour);
+      }
+    }
+    const selfNeed = Math.min(batCapacity, loadDay + hpDay + evDay);
     batStoreCap[dk] = selfNeed;
     batSelfReserve[dk] = selfNeed;
     if (!gridCharge) return;

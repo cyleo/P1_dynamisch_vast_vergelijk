@@ -25,12 +25,40 @@ tests and ships a blank app**.
 
 ---
 
+## The second rule: totals-only tests miss interaction bugs
+
+Most engine tests assert a **total** (`dynamicTotalBill`, `totalImportKwh`). A bug
+that only surfaces in the *interaction between two features* can leave every total
+plausible and still be wrong. Assert **invariants**, not just numbers.
+
+> Real example: solar dimming mode `"uit"` (inverter fully off) pulled **all**
+> consumption to the grid at any `spot < 0`. But at moderately negative prices the
+> energy-tax floor keeps grid import positive, so free solar self-consumption is
+> still cheaper — and with a solar-charging EV scheduled into those hours, `"uit"`
+> made the bill *higher than doing nothing*. Logically impossible, invisible to
+> every totals-only test, found only by manual testing. Fix: remove
+> self-consumption only when the all-in import price itself goes negative
+> (`spot + markup + eb < 0`). Guarded by `test13` **C3**, which asserts the
+> invariant `bill("uit") ≤ bill("off")` *with an EV enabled* — exactly the
+> interaction the totals missed.
+
+→ **When a fix touches how two features combine (dimming×EV, battery×HP/EV,
+WP×solar), add an invariant assertion** ("feature X must never make the bill
+worse than X off", "adding capacity must never reduce savings"), not just a new
+expected total. The "characterize before refactoring" rule below covers *shape*;
+this covers *direction*.
+
+---
+
 ## Pre-commit checklist (in order)
 
 1. `npm run build` succeeds.
 2. **Bundle canary:** `node _validate/bundle_canary.js` — confirms render-critical
    functions survived bundling (see esbuild trap below). Wired into `npm test`.
-3. `npm test` — all green.
+3. `npm test` — all green. (The harness now **auto-builds the bundle** before
+   loading it — `run_tests.js` builds once and sets `BUNDLE_FRESH=1`; a direct
+   `node _validate/testX.js` rebuilds on its own. So tests can never run against a
+   stale `app.js` — a foot-gun that previously made bug-injection look "green".)
 4. `npm run lint` — **0 errors** (warnings are tracked incremental cleanup).
 5. Browser smoke test if you touched the boot path, event wiring, charts, or any
    `src/domain` / `src/ui` import.

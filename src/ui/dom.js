@@ -58,7 +58,8 @@ export function hardwareExplainerContent(kind) {
       <p style="margin-top:0.4rem;">Opgewekte zonnestroom stroomt in deze vaste prioriteitsvolgorde door je woning:</p>
       <ol style="margin-left: 1.2rem; padding: 0; line-height: 1.6;">
         <li><strong>Huisverbruik:</strong> Eerst worden je actieve apparaten in huis gevoed.</li>
-        <li><strong>Elektrische auto (EV):</strong> Wat over is gaat naar de EV (indien zonne-laden actief is en de auto is gekoppeld).</li>
+        <li><strong>Warmtepomp:</strong> Het resterende zonne-overschot dekt als eerste de warmtepomplast (indien actief).</li>
+        <li><strong>Elektrische auto (EV):</strong> Wat daarna over is gaat naar de EV (indien zonne-laden actief is en de auto is gekoppeld).</li>
         <li><strong>Thuisaccu:</strong> Wat daarna nog overblijft laadt de thuisaccu op.</li>
         <li><strong>Elektriciteitsnet:</strong> Pas als alles verzadigd is, gaat het restant naar het net (en wordt op dat moment eventueel gedimd bij negatieve prijzen).</li>
       </ol>
@@ -118,7 +119,7 @@ ontladen: dekt eigen import (bespaart all-in)</code>
               altijd waardevoller dan teruglevering (kale spot). Echt voordeel ontstaat pas bij flinke
               prijspieken én vrije accu-capaciteit.</li>
           </ul>
-          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: kale_beursprijs / 1.21 > (goedkope_all_in_prijs / rendements_factor) × 1.21
+          <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: beursprijs / 1.21 − teruglever_opslag > goedkope_all_in_prijs / rendements_factor
   export = max(0, opgeslagen_stroom − maximale_eigen_behoefte)</code>
         </div>
         <p class="explain-note">
@@ -142,11 +143,11 @@ geleverde_stroom = ontladen_stroom  (ontladen gaat zonder extra verlies)</code>
             <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">maximale_eigen_behoefte = de kleinste waarde van (accu_capaciteit OF totale_dag_import)
 opslag_limiet = maximale_eigen_behoefte  (plus eventueel verkoopruimte in de winst-modus)</code>
 
-            <p><strong>3. Consumentenprijs (All-in importprijs):</strong></p>
+            <p><strong>3. Consumentenprijs (all-in importprijs):</strong></p>
             <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
-              De all-in prijs die je betaalt per kWh stroom van het net. Dit is wat je bespaart als je stroom uit de accu gebruikt:
+              De all-in prijs die je betaalt per kWh stroom van het net. Beursprijs én opslag voer je incl. btw in, dus je telt ze rechtstreeks bij de energiebelasting op. Dit is wat je bespaart door stroom uit de accu te gebruiken:
             </p>
-            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">all_in_prijs = kale_beursprijs + (inkoop_opslag × 1.21) + energie_belasting</code>
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">all-in prijs = beursprijs (incl. btw) + inkoop-opslag (incl. btw) + energiebelasting</code>
 
             <p><strong>4. Laden vanaf het net (wanneer loont dit?):</strong></p>
             <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
@@ -162,9 +163,11 @@ opslag_limiet = maximale_eigen_behoefte  (plus eventueel verkoopruimte in de win
 
             <p><strong>6. Teruglevering loont (alleen in de winst-modus):</strong></p>
             <p style="margin-left: 0.5rem; color: var(--text-muted); padding-bottom: 0.2rem;">
-              Terugleveren loont alleen als de ontvangen vergoeding (de kale spotprijs zonder BTW) hoger is dan de all-in inkoopprijs gedeeld door het rendement (rekening houdend met de BTW die je niet terugkrijgt):
+              Terugleveren loont alleen als de ontvangen vergoeding hoger is dan de inkoopkosten per geleverde kWh:
             </p>
-            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">kale_beursprijs / 1.21  >  (goedkope_all_in_prijs / rendements_factor) × 1.21
+            <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin:0.3rem 0.5rem 0.8rem;white-space:pre-wrap;">terugleververgoeding per kWh  =  beursprijs / 1.21 − teruglever_opslag
+laadkosten per geleverde kWh  =  goedkope_all_in_prijs / rendements_factor
+verkopen loont als:  terugleververgoeding > laadkosten
 export_stroom = maximale_waarde van (0 OF opgeslagen_stroom − maximale_eigen_behoefte)</code>
           </div>
         </details>`,
@@ -186,7 +189,7 @@ export_stroom = maximale_waarde van (0 OF opgeslagen_stroom − maximale_eigen_b
               piek in dec/jan, geleidelijk aflopend naar het voorjaar, met een kleine zomer-vloer voor
               warmtapwater.</li>
             <li>Per uur: <em>last = winter-stooklast × maandfactor × dag/nacht-factor</em>.</li>
-            <li>Dag/nacht: 's nachts ~1,2× (kouder + setback-herstel), overdag ~0,9×.</li>
+            <li>Dag/nacht: 's nachts ~1,2× (kouder + opwarmen na de nachtverlaging), overdag ~0,9×.</li>
           </ul>
         </div>
         <p class="explain-note">

@@ -260,5 +260,44 @@ console.log("\n--- C. Geborgde fixes (voorheen beperkingen) ---");
      `C2 WP+EV claimen niet dezelfde zon: +EV verhoogt import met ${dImp.toFixed(2)} kWh ≈ EV-behoefte ${evDailyKwh.toFixed(2)} (energiebehoud)`);
 }
 
+// C3. REGRESSIEWACHT: zonnedimmen mag de dynamische rekening NOOIT verhogen t.o.v. niets
+//     doen. Bug (gevonden bij handmatig testen): de "uit"-modus trok bij ÉLKE negatieve spot
+//     de hele huis-last naar het net (dynImp = currentHouseLoad). Bij gematigd-negatieve
+//     prijzen kost net-import echter nog steeds geld (EB-vloer: spot + opslag + EB > 0), dus
+//     gratis zelfverbruik is goedkoper. Met een zonne-ladende EV in die uren verhoogde "uit"
+//     daardoor de rekening — logisch onmogelijk. Fix: zelfverbruik alleen wegnemen als de
+//     all-in importprijs zélf negatief is. Dit borgt de invariant dat dimmen ≤ niets doen,
+//     juist in de hardware-interactie (EV) die de totalen-only suite eerder niet ving.
+{
+  // Dag met gematigd-negatieve middag-spot (−0.05): spot < 0, maar all-in (+opslag+EB) > 0.
+  // Middag zon-overschot dat de zonne-ladende EV oppikt; rest van de dag gewone afname.
+  const p2 = n => (n < 10 ? "0" + n : "" + n);
+  const rows = [], epex = new Map();
+  for (let h = 0; h < 24; h++) {
+    const dt = new Date(2026, 5, 1, h, 0, 0);
+    const midday = h >= 10 && h <= 15;
+    rows.push({
+      timestamp: dt.toISOString(),
+      import_t1: midday ? 0 : 0.5, import_t2: 0,
+      export_t1: midday ? 3 : 0, export_t2: 0,
+      solar_yield: midday ? 4 : 0,
+    });
+    // Net-negatieve middag-spot (−0.01): all-in blijft ruim positief (−0.01+opslag+EB ≈ 0.12),
+    // dus de buggy "uit" zou zelfverbruik (incl. EV-zon) tegen 0.12/kWh naar het net duwen,
+    // terwijl de vermeden export-boete (≈0.008/kWh) verwaarloosbaar is → bug domineert helder.
+    epex.set(`2026-06-01T${p2(h)}`, midday ? -0.01 : 0.10);
+  }
+  const evCfg = { hasEv: true, evWeeklyDist: 70, evConsumption: 0.2, evSolarMatch: true, evProfile: "home" };
+  const off = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "off" }, eb: EB, yearScale: 1.0 });
+  const uit = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "uit" }, eb: EB, yearScale: 1.0 });
+  const dim = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "dim" }, eb: EB, yearScale: 1.0 });
+  ok(uit.dynamicTotalBill <= off.dynamicTotalBill + 0.001,
+     `C3 dimmen "uit" ≤ niets doen, ook met zonne-EV (€${uit.dynamicTotalBill.toFixed(2)} ≤ €${off.dynamicTotalBill.toFixed(2)})`);
+  ok(dim.dynamicTotalBill <= off.dynamicTotalBill + 0.001,
+     `C3 dimmen "dim" ≤ niets doen (€${dim.dynamicTotalBill.toFixed(2)} ≤ €${off.dynamicTotalBill.toFixed(2)})`);
+  ok(near(uit.fixedTotalBill, off.fixedTotalBill, 0.001) && near(dim.fixedTotalBill, off.fixedTotalBill, 0.001),
+     `C3 dimmen raakt het vaste contract NIET (€${off.fixedTotalBill.toFixed(2)})`);
+}
+
 console.log(`\n${fail === 0 ? "✅ ALLE" : "❌ " + fail + "/" + (pass + fail)} checks` + (fail === 0 ? " geslaagd" : " GEFAALD") + ` (${pass} pass)`);
 if (fail > 0) process.exitCode = 1;

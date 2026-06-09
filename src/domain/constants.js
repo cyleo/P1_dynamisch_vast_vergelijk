@@ -9,17 +9,6 @@
  */
 export const EV_MAX_CHARGE_KW = 11.0;
 
-/**
- * Battery charge/discharge C-rate. Max power = capacity * C-rate.
- * @constant {number}
- */
-export const BATTERY_C_RATE = 0.5;
-
-/**
- * Evening peak multiplier for synthetic baseload (17:00-21:00).
- * @constant {number}
- */
-export const EVENING_PEAK_MULT = 3.0;
 
 /**
  * Monthly heat pump load factors based on NL climate degree days (HDD).

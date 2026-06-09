@@ -4,7 +4,28 @@ const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
 
-const appSrc = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const ROOT = path.join(__dirname, "..");
+
+// ── Auto-bundel (anti-stale-build-vangnet) ───────────────────────────────────
+// De harness draait de GEBUNDELDE root-app.js (esbuild uit src/), niet src/ direct.
+// Een veelvoorkomende valkuil: `node _validate/testX.js` draaien ná een src-wijziging
+// test dan tegen een VEROUDERDE bundel → groen-vals of rood-vals dat niets met je
+// wijziging te maken heeft. Daarom bouwt de harness de bundel zelf, tenzij de aanroeper
+// (run_tests.js / `npm test`) al heeft gebouwd en BUNDLE_FRESH=1 heeft gezet — dan slaan
+// we de ~15ms esbuild-stap over zodat de volledige suite maar één keer bouwt.
+if (!process.env.BUNDLE_FRESH) {
+  try {
+    require("esbuild").buildSync({
+      entryPoints: [path.join(ROOT, "src", "app.js")],
+      bundle: true,
+      outfile: path.join(ROOT, "app.js"),
+    });
+  } catch (e) {
+    console.error("WARN: kon de bundel niet automatisch bouwen — test draait mogelijk tegen een verouderde app.js.\n" + e.message);
+  }
+}
+
+const appSrc = fs.readFileSync(path.join(ROOT, "app.js"), "utf8");
 
 // --- Stub DOM/window zodat app.js zonder crash laadt ---
 const noop = () => {};

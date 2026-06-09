@@ -67,6 +67,9 @@ export function renderChart() {
   const svg = document.getElementById("chart-svg");
   const tooltip = document.getElementById("chart-tooltip");
 
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
+  const tax = liveEnergyTax;
+
   const width = container.clientWidth;
   const height = container.clientHeight;
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -134,7 +137,7 @@ export function renderChart() {
   let minPrice = 0.0;
   let maxPrice = 0.40;
   hourMedians.forEach(h => {
-    const p = toConsumerPrice(h.spot);
+    const p = toConsumerPrice(h.spot, markup, tax);
     if (p > maxPrice) maxPrice = p;
     if (p < minPrice) minPrice = p;
   });
@@ -227,7 +230,7 @@ export function renderChart() {
     const hm = hourMedians[h];
     importPathPoints.push(`${getX(h)},${getYEnergy(hm.imp)}`);
     exportPathPoints.push(`${getX(h)},${getYEnergy(hm.exp)}`);
-    pricePathPoints.push(`${getX(h)},${getYPrice(toConsumerPrice(hm.spot))}`);
+    pricePathPoints.push(`${getX(h)},${getYPrice(toConsumerPrice(hm.spot, markup, tax))}`);
     
     solarPathPoints.push(`${getX(h)},${getYEnergy(hm.solar)}`);
     evPathPoints.push(`${getX(h)},${getYEnergy(hm.ev)}`);
@@ -389,9 +392,8 @@ export function renderChart() {
     }
 
     const pureSpot = hm.spot;
-    const consPrice = toConsumerPrice(pureSpot);
+    const consPrice = toConsumerPrice(pureSpot, markup, tax);
     const rawEpex = (pureSpot / 1.21).toFixed(3);
-    const markup = (parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024).toFixed(3);
 
     tooltip.innerHTML = `
       <h4>${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00 uur</h4>
@@ -409,7 +411,7 @@ export function renderChart() {
         <span class="val" style="color: var(--accent-yellow);">€ ${consPrice.toFixed(3)} / kWh</span>
       </div>
       <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.2rem;">
-        EPEX markt €${rawEpex} × 1.21 + opslag €${markup} (incl. BTW) + EB €${liveEnergyTax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
+        EPEX markt €${rawEpex} × 1.21 + opslag €${markup.toFixed(3)} (incl. BTW) + EB €${tax.toFixed(3)} = all-in €${consPrice.toFixed(3)}
       </div>
     `;
 
@@ -460,6 +462,8 @@ function _renderSimDrill() {
 
   const fixedPeak = parseFloat(document.getElementById("fixed-peak")?.value) || 0.27;
   const fixedDal = parseFloat(document.getElementById("fixed-dal")?.value) || 0.24;
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
+  const tax = liveEnergyTax;
 
   const dynVals = dayData.map(h => h ? h.dynCost : 0);
   const fixedVals = dayData.map(h => {
@@ -517,7 +521,7 @@ function _renderSimDrill() {
   // Price line + right axis
   const validSpots = spots.filter(s => s != null);
   if (validSpots.length) {
-    const pricesList = validSpots.map(s => toConsumerPrice(s)).concat([fixedPeak, fixedDal]);
+    const pricesList = validSpots.map(s => toConsumerPrice(s, markup, tax)).concat([fixedPeak, fixedDal]);
     let priceMin = 0.0;
     let priceMax = 0.10;
     pricesList.forEach(p => {
@@ -561,7 +565,7 @@ function _renderSimDrill() {
     const pts = [];
     spots.forEach((s, h) => {
       if (s == null) return;
-      const x1 = PAD_L + h * barSlot, x2 = x1 + barSlot, y = yP(toConsumerPrice(s));
+      const x1 = PAD_L + h * barSlot, x2 = x1 + barSlot, y = yP(toConsumerPrice(s, markup, tax));
       pts.push(pts.length === 0 ? `M${x1},${y}` : `L${x1},${y}`);
       pts.push(`L${x2},${y}`);
     });
@@ -586,7 +590,7 @@ function _renderSimDrill() {
       de.textContent = (diff < 0 ? "−" : "+") + ` € ${Math.abs(diff).toFixed(4)} (${diff < 0 ? "dyn goedkoper" : "dyn duurder"})`;
       de.style.color = diff < 0 ? "var(--accent-green)" : "var(--accent-orange)";
       const s = spots[h];
-      document.getElementById("sim-tt-spot").textContent = s != null ? `Consumentenprijs: € ${toConsumerPrice(s).toFixed(3)}/kWh` : "";
+      document.getElementById("sim-tt-spot").textContent = s != null ? `Consumentenprijs: € ${toConsumerPrice(s, markup, tax).toFixed(3)}/kWh` : "";
       tooltip.style.display = "block";
       let tx = xOf(h) + 12; if (tx + 200 > W) tx = xOf(h) - 210;
       tooltip.style.left = tx + "px"; tooltip.style.top = (PAD_T + 10) + "px";
@@ -762,6 +766,8 @@ export function renderAfnameDetailHour(body, viewToggle) {
   if (!hp) { body.innerHTML = viewToggle + "<p>Geen data.</p>"; return; }
   const fixedPeak = parseFloat(document.getElementById("fixed-peak")?.value) || 0.27;
   const fixedDal = parseFloat(document.getElementById("fixed-dal")?.value) || 0.24;
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
+  const tax = liveEnergyTax;
 
   const med = arr => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
@@ -769,7 +775,7 @@ export function renderAfnameDetailHour(body, viewToggle) {
     const impKwh = med(hp[h].imports);
     const expKwh = med(hp[h].exports);
     const spot = med(hp[h].spots);
-    const consPrice = toConsumerPrice(spot);
+    const consPrice = toConsumerPrice(spot, markup, tax);
     const isPeak = h >= 7 && h < 23;
     const fixedRate = isPeak ? fixedPeak : fixedDal; // simplified (weekday/weekend not split here)
     const impCostDyn = impKwh * consPrice;

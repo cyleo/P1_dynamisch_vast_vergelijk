@@ -6,6 +6,21 @@ const fs = require("fs");
 const path = require("path");
 
 const dir = __dirname;
+
+// Bouw de bundel ÉÉN keer vooraf, en vertel de child-processen via BUNDLE_FRESH=1 dat de
+// bundel vers is (de harness slaat z'n eigen auto-build dan over). Zo draait de hele suite
+// altijd tegen de huidige src/ — ook bij een directe `node _validate/run_tests.js` — zonder
+// dat elk testbestand opnieuw bouwt.
+try {
+  require("esbuild").buildSync({
+    entryPoints: [path.join(dir, "..", "src", "app.js")],
+    bundle: true,
+    outfile: path.join(dir, "..", "app.js"),
+  });
+} catch (e) {
+  console.error("WARN: vooraf bouwen van de bundel mislukt:\n" + e.message);
+}
+const CHILD_ENV = { ...process.env, BUNDLE_FRESH: "1" };
 const tests = fs.readdirSync(dir)
   .filter(f => f.match(/^test\d+.*\.js$/))
   .sort();
@@ -21,7 +36,7 @@ for (const t of tests) {
   const file = path.join(dir, t);
   let out = "", code = 0, err = "";
   try {
-    out = execFileSync(process.execPath, [file], { encoding: "utf8" });
+    out = execFileSync(process.execPath, [file], { encoding: "utf8", env: CHILD_ENV });
   } catch (e) {
     code = e.status ?? 1;
     out = e.stdout || "";

@@ -1997,7 +1997,7 @@ function renderDataQualityBanner() {
 function renderDynPriceExample() {
   const box = document.getElementById("dynprice-example");
   if (!box) return;
-  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.018;
+  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
   const eb = liveEnergyTax;
 
   let spot = null;
@@ -2008,16 +2008,13 @@ function renderDynPriceExample() {
   }
   if (spot == null) spot = getFallbackSpot(1, 18);
 
-  const kaleEpex = spot / 1.21;            // spot is incl. BTW → toon de kale beursprijs
-  const opslagKaal = markup / 1.21;        // slider is incl. BTW (Pad 1) → kale opslag voor de uitsplitsing
-  const btw = (kaleEpex + opslagKaal) * 0.21;
   const allIn = spot + markup + eb;        // Pad 1: opslag is incl. BTW → rechtstreeks optellen
   const pct = activeSimulation?.epexPct ?? 0;
   const bron = pct === 100 ? "echte EPEX" : pct > 0 ? `${pct}% echte EPEX` : "geschatte prijs";
 
   const part = (val, lbl) => `<span>€${val.toFixed(3)}</span> <span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);">${lbl}</span>`;
   box.innerHTML =
-    `${part(kaleEpex, "EPEX")} + ${part(opslagKaal, "opslag")} + ${part(btw, "BTW")} + ${part(eb, "EB")} = ` +
+    `${part(spot, "EPEX (incl. btw)")} + ${part(markup, "opslag (incl. btw)")} + ${part(eb, "EB")} = ` +
     `<span style="color:var(--accent-cyan);font-weight:700;">€${allIn.toFixed(3)}/kWh</span>` +
     `<span style="color:var(--text-muted);font-size:0.72rem;font-family:var(--font-body);"> &nbsp;(voorbeeld 18:00 · ${bron})</span>`;
 }
