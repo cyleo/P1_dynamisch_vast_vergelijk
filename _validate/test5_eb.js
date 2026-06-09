@@ -1,7 +1,7 @@
 const { RUN } = require("./harness");
 const { buildYear } = require("./profile");
 const cfg = { fixedPeakRate:0.27,fixedDalRate:0.24,fixedFeedInRate:0.07,fixedVastrecht:7.5,fixedFeedInFee:0.0,
-  dynamicMarkup:0.018,dynamicVastrecht:6.0,stressMultiplier:1.0,solarDimmingMode:"off",
+  dynamicMarkup:0.018,dynamicVastrecht:6.0,stressMultiplier:1.0,solarDimmingMode:"do_nothing",
   hasHeatPump:false,hasEv:false,hasBattery:false };
 const rows = buildYear(2900,0);
 console.log("EB-slidergevoeligheid (geen PV, 2900 kWh) — moet BEIDE contracten verhogen:");

@@ -16,9 +16,9 @@
   <meta property="og:image" content="https://raw.githubusercontent.com/cyleo/P1_dynamisch_vast_vergelijk/main/assets/geavanceerd_view.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:url" content="https://cyleo.github.io/P1_dynamisch_vast_vergelijk/">
+  <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/energie/style.css?v=72">
+  <link rel="stylesheet" href="/style.css?v=75">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -359,12 +359,12 @@
       <!-- Dynamische Mixed Content waarschuwing -->
       <div id="ha-mixed-content-warning" style="display:none; background:rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.35); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1rem; color:#ff8b8b; font-size:0.82rem; line-height:1.5;">
         <strong><svg class="icon icon-inline" viewBox="0 0 24 24" style="color: #ff8b8b; margin-right: 0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Let op: Mixed Content gedetecteerd</strong><br>
-        Je bezoekt deze site via een beveiligde verbinding (<code class="site-url">https://vibe.vulpini.nl</code>), maar je probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.
+        Je bezoekt deze site via een beveiligde verbinding (<code class="site-url">https://energie.vulpini.nl</code>), maar je probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.
         <br><br>
         <strong>Oplossingen:</strong>
         <ul style="margin: 0.3rem 0 0 1.2rem; padding: 0;">
           <li>Koppel via een beveiligd HTTPS-adres (bijv. Nabu Casa of reverse proxy).</li>
-          <li>Of draai deze app lokaal via HTTP (open <a href="http://localhost:3000/energie/" style="color:#00f2fe; text-decoration:underline; font-weight:600;">http://localhost:3000/energie/</a>).</li>
+          <li>Of draai deze app lokaal via HTTP (open <a href="http://localhost:3000/" style="color:#00f2fe; text-decoration:underline; font-weight:600;">http://localhost:3000/</a>).</li>
         </ul>
       </div>
 
@@ -900,9 +900,9 @@
                   je keuze. De berekening voor het vaste contract gebruikt altijd je originele meetdata.</span></span>
             </div>
             <select id="solar-dimming-mode" class="ha-select" style="font-size:0.78rem;padding:0.35rem 0.5rem;">
-              <option value="off">Niets doen — export blijft doorlopen</option>
+              <option value="do_nothing">Niets doen — export blijft doorlopen</option>
               <option value="dim">Dimmen — panelen regelen af tot huisverbruik (nul-export)</option>
-              <option value="uit">Uitschakelen — panelen volledig uit (alles van het net)</option>
+              <option value="turn_off">Uitschakelen — panelen volledig uit (alles van het net)</option>
             </select>
             <div id="solar-dimming-explain"
               style="margin-top:0.5rem;font-size:0.72rem;color:var(--text-muted);line-height:1.55;display:none;"></div>
@@ -1087,7 +1087,7 @@
 
           <div class="glass-panel stat-card savings" id="stat-savings-card">
             <div class="stat-header" id="stat-savings-header"><span id="stat-savings-text">Besparing per jaar</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Het verschil tussen beide contracten voor jóuw verbruik. Dit zijn alleen leveringskosten — netbeheerkosten en de belastingvermindering zijn voor beide contracten gelijk en vallen weg in de vergelijking.</span></span></div>
-            <div class="stat-value" id="stat-savings-value" style="color: var(--accent-green);">
+            <div class="stat-value" id="stat-savings-value" style="color: var(--accent-green);" aria-live="polite" aria-atomic="true">
               <span class="curr">€</span>
               <span id="stat-savings-val">0.00</span>
               <span class="sub" id="stat-savings-pct">0.0%</span>
@@ -1452,12 +1452,12 @@
                   <td id="tbl-fixed-subcost">-</td>
                 </tr>
                 <tr class="fixed-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
+                  <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Richtcijfer voor 2026; het 2027-bedrag is nog niet vastgesteld. Telt even zwaar mee in béide contracten — verandert het verschil niet, alleen het absolute jaartotaal.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-fixed-rebate" style="color:var(--accent-green);">-</td>
                 </tr>
                 <tr class="fixed-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het gemiddelde van €480/jaar.</span></span></td>
+                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het landelijke gemiddelde van €480/jaar; verschilt per regio (Liander/Enexis/Stedin) en stijgt jaarlijks. Het 2027-tarief is nog niet vastgesteld. Telt even zwaar mee in béide contracten — verandert het verschil niet, alleen het absolute jaartotaal.</span></span></td>
                   <td>Gemiddelde kosten per jaar</td>
                   <td id="tbl-fixed-grid-fees">-</td>
                 </tr>
@@ -1465,7 +1465,7 @@
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
                   <td>Totale jaarrekening</td>
                   <td>Netto energie + vaste lasten</td>
-                  <td id="tbl-fixed-total" style="color:var(--text-main);">-</td>
+                  <td id="tbl-fixed-total" style="color:var(--text-main);" aria-live="polite">-</td>
                 </tr>
               </tbody>
             </table>
@@ -1535,12 +1535,12 @@
                   <td id="tbl-dyn-subcost">-</td>
                 </tr>
                 <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Elk huishouden krijgt deze, ongeacht het contract.</span></span></td>
+                  <td>Vermindering energiebelasting <span class="info-icon" tabindex="0">i<span class="info-tooltip">De <strong>vermindering energiebelasting</strong> (ook bekend als heffingskorting): een vaste jaarlijkse korting per elektriciteitsaansluiting (€629 in 2026). Richtcijfer voor 2026; het 2027-bedrag is nog niet vastgesteld. Telt even zwaar mee in béide contracten — verandert het verschil niet, alleen het absolute jaartotaal.</span></span></td>
                   <td>Vaste korting per aansluiting / jaar</td>
                   <td id="tbl-dyn-rebate" style="color:var(--accent-green);">-</td>
                 </tr>
                 <tr class="dyn-lasten-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het gemiddelde van €480/jaar.</span></span></td>
+                  <td>Netbeheerkosten <span class="info-icon" tabindex="0">i<span class="info-tooltip">De netbeheerkosten (vastrecht stroomaansluiting t/m 3x25A) betaal je via je leverancier aan je netbeheerder. Gerekend met het landelijke gemiddelde van €480/jaar; verschilt per regio (Liander/Enexis/Stedin) en stijgt jaarlijks. Het 2027-tarief is nog niet vastgesteld. Telt even zwaar mee in béide contracten — verandert het verschil niet, alleen het absolute jaartotaal.</span></span></td>
                   <td>Gemiddelde kosten per jaar</td>
                   <td id="tbl-dyn-grid-fees">-</td>
                 </tr>
@@ -1548,7 +1548,7 @@
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
                   <td>Totale jaarrekening</td>
                   <td>Netto + EB + vast − korting</td>
-                  <td id="tbl-dyn-total" style="color:var(--accent-cyan);">-</td>
+                  <td id="tbl-dyn-total" style="color:var(--accent-cyan);" aria-live="polite">-</td>
                 </tr>
               </tbody>
             </table>
@@ -1613,8 +1613,8 @@
 
   </div><!-- /.app-container -->
 
-  <script src="/energie/demo-year.js?v=1"></script>
-  <script src="/energie/app.js?v=72"></script>
+  <script src="/demo-year.js?v=1"></script>
+  <script src="/app.js?v=75"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

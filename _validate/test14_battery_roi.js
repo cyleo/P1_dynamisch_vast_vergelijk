@@ -18,7 +18,7 @@ console.log("=== TEST 14: THUISBATTERIJ ROI / MEERWAARDE ===\n");
 const base = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07, fixedVastrecht: 7.5, fixedFeedInFee: 0.0,
   dynamicMarkup: 0.018, dynamicExportMarkup: 0.020, dynamicVastrecht: 6.0,
-  stressMultiplier: 1.0, solarDimmingMode: "off", hasHeatPump: false, hasEv: false,
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing", hasHeatPump: false, hasEv: false,
   hasBattery: false, batEfficiency: 0.90, batMode: "kosten", batCost: 450,
 };
 

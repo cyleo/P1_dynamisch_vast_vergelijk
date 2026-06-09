@@ -24,7 +24,7 @@ for (let d = 0; d < DAYS; d++) for (let h = 0; h < 24; h++) {
 
 const base = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07, fixedVastrecht: 7.5, fixedFeedInFee: 0.0,
-  dynamicMarkup: 0.018, dynamicVastrecht: 6.0, stressMultiplier: 1.0, solarDimmingMode: "off",
+  dynamicMarkup: 0.018, dynamicVastrecht: 6.0, stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
 const run = cfg => RUN({ rows, epex, cfg, eb: 0.11084, yearScale: 1.0 });

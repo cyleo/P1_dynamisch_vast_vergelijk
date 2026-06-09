@@ -13,8 +13,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "start": "npm run build && npx serve -l 3000 .",
-    "start:energie": "npm run build && npx serve -l 3000 --config serve.json ."
+    "start": "npm run build && npx serve -l 3000 --config serve.json ."
   },
   "engines": {
     "node": ">=18"

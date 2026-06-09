@@ -37,14 +37,12 @@ Upload je P1-data (of koppel Home Assistant) en zie direct:
 
 Puur HTML/CSS/JavaScript — geen build-stap, geen database, geen tracking.
 
-> De assets worden geladen via het pad-prefix `/energie/`. Serveer de app via een HTTP-server (niet via `file://`).
-
 ### Optie 1 — npm (aanbevolen)
 
 ```bash
 git clone https://github.com/peterjan/DynOfVast.git
 cd DynOfVast
-npm start          # start op http://localhost:3000/energie/
+npm start          # start op http://localhost:3000/
 ```
 
 Tests draaien:
@@ -52,27 +50,33 @@ Tests draaien:
 npm test
 ```
 
-### Optie 2 — Python + symlink
+### Optie 2 — Python
 
 ```bash
-ln -sfn . energie                 # /energie/ → projectmap
 python3 -m http.server 8080
-# open http://localhost:8080/energie/
+# open http://localhost:8080/
 ```
 
-### Optie 3 — nginx (productie)
+### Optie 3 — nginx (productie, bijv. energie.vulpini.nl)
 
 ```nginx
-location /energie/ {
-    alias /var/www/p1-analysator/;
-    try_files $uri $uri/ /energie/index.html;
-}
+server {
+    listen 443 ssl;
+    server_name energie.vulpini.nl;
 
-# CORS voor je Home Assistant-instantie
-add_header Access-Control-Allow-Origin "https://jouwdomein.nl" always;
-add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
-add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
-if ($request_method = OPTIONS) { return 204; }
+    root /var/www/p1-analysator;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # CORS voor je Home Assistant-instantie
+    add_header Access-Control-Allow-Origin "https://energie.vulpini.nl" always;
+    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+    add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
+    if ($request_method = OPTIONS) { return 204; }
+}
 ```
 
 ---
@@ -96,11 +100,11 @@ De app gebruikt `recorder/statistics_during_period` (uurstatistieken) — levert
 
 ### Beveiliging & Mixed Content (HTTPS vs HTTP)
 
-Als deze app wordt bezocht via een beveiligde HTTPS-verbinding (zoals `https://vibe.vulpini.nl`), staat de browser om veiligheidsredenen (**Mixed Content**) geen verbindingen toe naar een onbeveiligde HTTP-URL (zoals `http://homeassistant.local:8123` of lokale IP-adressen).
+Als deze app wordt bezocht via een beveiligde HTTPS-verbinding (zoals `https://energie.vulpini.nl`), staat de browser om veiligheidsredenen (**Mixed Content**) geen verbindingen toe naar een onbeveiligde HTTP-URL (zoals `http://homeassistant.local:8123` of lokale IP-adressen).
 
 Om dit op te lossen zijn er drie opties:
 1. **Gebruik HTTPS voor Home Assistant**: Vul je externe HTTPS-adres in (bijv. via Nabu Casa `https://xxx.ui.nabu.casa` of een eigen domein met Let's Encrypt).
-2. **Draai de app lokaal**: Clone de repository en draai de app lokaal via HTTP (bijv. met `npm start` op `http://localhost:3000/energie/`). Omdat de app dan zelf via HTTP geladen is, mag hij wel met je lokale HTTP Home Assistant verbinden.
+2. **Draai de app lokaal**: Clone de repository en draai de app lokaal via HTTP (bijv. met `npm start` op `http://localhost:3000/`). Omdat de app dan zelf via HTTP geladen is, mag hij wel met je lokale HTTP Home Assistant verbinden.
 3. **Handmatige export**: Exporteer je P1-data handmatig als CSV of JSON uit Home Assistant en upload het bestand in de app onder *Bestand uploaden*.
 
 ### Digital Twin

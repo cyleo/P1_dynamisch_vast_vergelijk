@@ -22,7 +22,7 @@ const elValues = {
   "fixed-peak": "0.27", "fixed-dal": "0.24", "fixed-feedin-rate": "0.07",
   "fixed-vastrecht": "7.50", "fixed-feedin-fee": "0.00",
   "dynamic-markup": "0.018", "dynamic-export-markup": "0.020", "dynamic-vastrecht": "6.00",
-  "stress-multiplier": "1.0", "solar-dimming-mode": "off",
+  "stress-multiplier": "1.0", "solar-dimming-mode": "do_nothing",
   "hp-baseload": "0", "ev-dist": "0", "ev-cons": "18", "ev-profile": "home",
   "bat-cap": "0", "bat-power": "0", "bat-eff": "90", "bat-mode": "zelf", "bat-cost": "450",
   "energy-tax": "0.10",

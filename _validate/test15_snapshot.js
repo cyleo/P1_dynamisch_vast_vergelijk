@@ -78,7 +78,7 @@ const cfg = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07,
   fixedVastrecht: 7.50, fixedFeedInFee: 0.00,
   dynamicMarkup: 0.018, dynamicVastrecht: 6.00,
-  stressMultiplier: 1.0, solarDimmingMode: "off",
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: true, hpWinterBaseload: 10,
   hasEv: true, evWeeklyDist: 100, evConsumption: 0.18, evSolarMatch: true, evProfile: "home",
   hasBattery: true, batCapacity: 5, batPower: 2.5, batEfficiency: 0.9, batMode: "winst",

@@ -1,7 +1,5 @@
 {
   "rewrites": [
-    { "source": "/energie", "destination": "/index.html" },
-    { "source": "/energie/", "destination": "/index.html" },
-    { "source": "/energie/:path*", "destination": "/:path*" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -92,7 +92,7 @@ const cfgBase = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07,
   fixedVastrecht: 7.50, fixedFeedInFee: 0.00,
   dynamicMarkup: 0.018, dynamicVastrecht: 6.00,
-  stressMultiplier: 1.0, solarDimmingMode: "off",
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
 const EB = 0.11084;
@@ -288,8 +288,8 @@ console.log("\n--- C. Geborgde fixes (voorheen beperkingen) ---");
     epex.set(`2026-06-01T${p2(h)}`, midday ? -0.01 : 0.10);
   }
   const evCfg = { hasEv: true, evWeeklyDist: 70, evConsumption: 0.2, evSolarMatch: true, evProfile: "home" };
-  const off = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "off" }, eb: EB, yearScale: 1.0 });
-  const uit = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "uit" }, eb: EB, yearScale: 1.0 });
+  const off = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "do_nothing" }, eb: EB, yearScale: 1.0 });
+  const uit = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "turn_off" }, eb: EB, yearScale: 1.0 });
   const dim = RUN({ rows, epex, cfg: { ...cfgBase, ...evCfg, solarDimmingMode: "dim" }, eb: EB, yearScale: 1.0 });
   ok(uit.dynamicTotalBill <= off.dynamicTotalBill + 0.001,
      `C3 dimmen "uit" ≤ niets doen, ook met zonne-EV (€${uit.dynamicTotalBill.toFixed(2)} ≤ €${off.dynamicTotalBill.toFixed(2)})`);

@@ -70,8 +70,9 @@ window.toggleProfileLine = toggleProfileLine;
 const CALIB_MIN_SAMPLES = 3;    // minimaal aantal echte prijzen per (seizoen,uur)-emmer
 
 function buildCalibratedProfile() {
-  appStore.setState({ calibratedProfile: null });
-  appStore.setState({ calibrationMeta: { buckets: 0, samples: 0 } });
+  // Eén setState i.p.v. twee: elke setState notificeert álle subscribers, dus adjacente
+  // updates bundelen we tot één state-mutatie (scheelt redundante subscriber-runs).
+  appStore.setState({ calibratedProfile: null, calibrationMeta: { buckets: 0, samples: 0 } });
   if (epexHistory.size < 24) return;   // te weinig historie om op te kalibreren
 
   const acc = {};  // seizoen → uur → { sum, n }
@@ -94,8 +95,7 @@ function buildCalibratedProfile() {
     }
   }
   if (buckets > 0) {
-    appStore.setState({ calibratedProfile: prof });
-    appStore.setState({ calibrationMeta: { buckets, samples: epexHistory.size } });
+    appStore.setState({ calibratedProfile: prof, calibrationMeta: { buckets, samples: epexHistory.size } });
   }
 }
 
@@ -251,12 +251,17 @@ function setupEventListeners() {
   // Slider input reactive badges
   const sliders = document.querySelectorAll('input[type="range"]');
   sliders.forEach(slider => {
+    // Set initial aria-valuetext from the badge already rendered in HTML
+    const initBadge = document.getElementById(`${slider.id}-val`);
+    if (initBadge) slider.setAttribute('aria-valuetext', initBadge.textContent.trim());
+
     slider.addEventListener("input", (e) => {
       const badge = document.getElementById(`${e.target.id}-val`);
       if (badge) {
         let prefix = e.target.dataset.prefix || "";
         let suffix = e.target.dataset.suffix || "";
         badge.textContent = `${prefix}${e.target.value}${suffix}`;
+        e.target.setAttribute('aria-valuetext', badge.textContent.trim());
       }
       scheduleSim();
     });
@@ -296,7 +301,7 @@ function setupEventListeners() {
       const sensorNote = hasSensor
         ? `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);margin-right:0.25rem;"><polyline points="20 6 9 17 4 12"></polyline></svg> Omvormer-sensor gekoppeld — nauwkeurige berekening.`
         : `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Geen omvormer-sensor — schatting op basis van P1-meterdata.`;
-      if (v === "off") { el.style.display = "none"; return; }
+      if (v === "do_nothing") { el.style.display = "none"; return; }
       el.style.display = "block";
       if (v === "dim") {
         el.innerHTML = `<strong>Dimmen</strong>: de omvormer regelt automatisch af tot het momentele huisverbruik. Zonne-energie voedt nog steeds het huis — alleen het <em>overschot</em> dat naar het net zou gaan, wordt onderdrukt.<br>Effect op dynamisch: <strong>export = 0, import ≈ 0</strong> wanneer zonneopwek ≥ huisverbruik.<br><em>${sensorNote}</em>`;
@@ -1312,6 +1317,7 @@ function setSlider(id, value) {
     const suffix = el.dataset.suffix || "";
     const num = parseFloat(value);
     badge.textContent = `€ ${num.toFixed(num < 0.1 ? 3 : 2)}${suffix}`;
+    el.setAttribute('aria-valuetext', badge.textContent.trim());
   }
 }
 
@@ -1470,8 +1476,10 @@ function ensureFullYearData() {
   const prognose = document.getElementById("prognose-toggle")?.checked ?? true;
 
   if (energyData.length === 0) {
-    appStore.setState({ fullYearData: null, yearScale: 1.0 });
-    appStore.setState({ dataMeta: { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 } });
+    appStore.setState({
+      fullYearData: null, yearScale: 1.0,
+      dataMeta: { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 },
+    });
     return;
   }
 
@@ -1495,17 +1503,23 @@ function ensureFullYearData() {
   // slechts ~364,96 dagen — daarom óók op uren/dagen toetsen, niet enkel op spanwijdte.
   if (spanDays >= 365 || realHoursTot >= 8760 || realDays >= 365) {
     // Genoeg data: geen synthese, energie genormaliseerd naar exact één jaar.
-    appStore.setState({ fullYearData: null });
-    appStore.setState({ yearScale: 8760 / realHoursTot });
-    appStore.setState({ dataMeta: { mode: "full", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale } });
+    // ys lokaal berekenen i.p.v. via de net-gezette mirror (één setState, geen
+    // afhankelijkheid van de synchrone mirror-update tussen twee setStates in).
+    const ys = 8760 / realHoursTot;
+    appStore.setState({
+      fullYearData: null, yearScale: ys,
+      dataMeta: { mode: "full", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale: ys },
+    });
     return;
   }
 
   if (!prognose) {
     // Prognose UIT: geen synthese, gemeten periode lineair doorrekenen naar een jaar.
-    appStore.setState({ fullYearData: null });
-    appStore.setState({ yearScale: 8760 / realHoursTot });
-    appStore.setState({ dataMeta: { mode: "linear", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale } });
+    const ys = 8760 / realHoursTot;
+    appStore.setState({
+      fullYearData: null, yearScale: ys,
+      dataMeta: { mode: "linear", synthesized: false, realDays, realHours: realHoursTot, synthHours: 0, yearScale: ys },
+    });
     return;
   }
 
@@ -1594,10 +1608,12 @@ function ensureFullYearData() {
     }
   }
 
-  appStore.setState({ fullYearData: out });
-  appStore.setState({ yearScale: 1.0 });   // de projectie is al exact 8760u — geen extra normalisatie
+  // De projectie is al exact 8760u → yearScale 1.0 (geen extra normalisatie). Eén setState.
   const synthPct = (realHours + synthHours) > 0 ? synthHours / (realHours + synthHours) : 0;
-  appStore.setState({ dataMeta: { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 } });
+  appStore.setState({
+    fullYearData: out, yearScale: 1.0,
+    dataMeta: { mode: "seasonal", synthesized: true, realDays, realHours, synthHours, synthPct, yearScale: 1 },
+  });
 }
 
 /**
@@ -1643,7 +1659,7 @@ function readSimConfig() {
     dynamicExportMarkup: parseFloat(document.getElementById("dynamic-export-markup")?.value || 0.0),
     dynamicVastrecht: parseFloat(document.getElementById("dynamic-vastrecht").value),
     stressMultiplier: isSimple ? 1.0 : (parseFloat(document.getElementById("stress-multiplier")?.value) || 1.0),
-    solarDimmingMode: isSimple ? "off" : (document.getElementById("solar-dimming-mode")?.value || "off"),
+    solarDimmingMode: isSimple ? "do_nothing" : (document.getElementById("solar-dimming-mode")?.value || "do_nothing"),
     hasHeatPump: isSimple ? false : document.getElementById("has-heatpump").checked,
     hpWinterBaseload: parseFloat(document.getElementById("hp-baseload").value),
     hasEv: isSimple ? false : document.getElementById("has-ev").checked,
@@ -1916,7 +1932,7 @@ function runSimulation() {
   const totalSolarKwh = ctx.simData.reduce((s, r) => s + (r.solar_yield || 0), 0) * ctx.yearScale;
   const hasSolarData = totalSolarKwh > 0;
   const noSolar = hasSolarData
-    ? _simulateCore({ ...base0, noSolar: true, solarDimmingMode: "off" }, false, ctx)
+    ? _simulateCore({ ...base0, noSolar: true, solarDimmingMode: "do_nothing" }, false, ctx)
     : null;
 
   // ── activeSimulation bijwerken ────────────────────────────────────────────

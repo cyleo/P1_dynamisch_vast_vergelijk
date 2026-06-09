@@ -973,14 +973,30 @@ body.mode-simple #dynprice-explainer {
     height: 260px !important;
   }
 
-  /* 6. Detailed Table Padding - prevents wrapping of currency values/names */
+  /* 6. Detailed Table — hide the middle description column; show label + value only */
+  .detail-table th:nth-child(2),
+  .detail-table td:nth-child(2) {
+    display: none;
+  }
+
   .detail-table th,
   .detail-table td {
-    padding: 0.6rem 0.25rem !important;
+    padding: 0.6rem 0.3rem !important;
+    font-size: 0.8rem;
   }
 
   .detail-table tr.sub-row td {
     padding-left: 0.75rem !important;
+  }
+
+  /* 7. Larger form labels for readability */
+  .form-group label {
+    font-size: 0.9rem;
+  }
+
+  /* 8. Slightly larger section headings */
+  .section-title {
+    font-size: 1.05rem;
   }
 }
 
@@ -1003,11 +1019,19 @@ body.mode-simple #dynprice-explainer {
 }
 
 
-/* Very Small Mobile Screen Adjustments (Screens <= 400px) */
-@media (max-width: 400px) {
-  /* Stack the stats-row vertically as 2 columns becomes too narrow */
+/* Medium-small screens: single-column stats (480px instead of 400px for better legibility) */
+@media (max-width: 480px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* prefers-reduced-motion: disable all transitions and animations */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
