@@ -9,7 +9,9 @@ const ICON_LIGHTBULB = `<svg class="icon icon-inline" viewBox="0 0 24 24" style=
 import { getFallbackSpot, buildSimContext, _simulateCore } from "./domain/engine.js";
 
 import {
-  parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync, parseLongCSV, processHAStatistics
+  parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync,
+  parseLongCSV, parseLongCSVWithMapping, guessColumnRoles,
+  processHAStatistics
 } from "./domain/parser.js";
 
 /* Core Dashboard Logic & Simulation Engine */
@@ -448,6 +450,16 @@ function setupEventListeners() {
   document.getElementById('hdr-dyn-vaste-lasten')?.addEventListener('click', () => toggleTableDetail('hdr-dyn-vaste-lasten', 'dyn-lasten-detail'));
 
   document.getElementById('btn-download-csv')?.addEventListener('click', downloadDataWithPrices);
+
+  document.getElementById('btn-p1-help')?.addEventListener('click', () => {
+    document.getElementById('p1-help-backdrop').style.display = 'flex';
+  });
+  document.getElementById('p1-help-close')?.addEventListener('click', () => {
+    document.getElementById('p1-help-backdrop').style.display = 'none';
+  });
+  document.getElementById('p1-help-backdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) document.getElementById('p1-help-backdrop').style.display = 'none';
+  });
   // --- End Dynamic Bindings ---
 
   // Wegklik-knoppen voor uitleg/waarschuwingen adviseren
@@ -692,7 +704,13 @@ async function parseAutoCSVAsync(text) {
   }
 
   if (headers.some(h => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
-    return parseLongCSV(lines, sep, headers);
+    const result = parseLongCSV(lines, sep, headers);
+    if (result !== null) return result;
+    // Column auto-detection failed (e.g. unknown netbeheerder / HomeWizard column names).
+    // Show the mapping modal so the user can assign columns to roles manually.
+    const guesses = guessColumnRoles(headers);
+    const selection = await showCsvMapModal(headers, guesses);
+    return parseLongCSVWithMapping(lines, sep, headers, selection);
   }
 
   if (headers[0].toLowerCase() === "entity_id" &&

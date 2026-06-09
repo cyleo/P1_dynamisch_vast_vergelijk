@@ -145,42 +145,170 @@ export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsv
   return records;
 }
 
+// ─── Tidy-CSV helpers (netbeheerder / HomeWizard / custom exports) ────────────
+
+/** Strips unit suffixes like "(kWh)" and lowercases a CSV header. */
+function normHeader(h) {
+  return h.toLowerCase().replace(/\s*\([^)]*\)\s*/g, "").trim();
+}
+
+/** Parses a number that may use a Dutch comma as decimal separator. */
+function parseDutchFloat(s) {
+  if (!s) return 0;
+  return Math.max(0, parseFloat(String(s).trim().replace(",", ".")) || 0);
+}
+
 /**
- * Parses a standard P1 smart meter CSV with cumulative or delta totals per hour.
- * Creates an initial array of hourly records.
+ * Parses a date string that may be ISO 8601 or Dutch DD-MM-YYYY.
+ * Accepts an optional separate time part (e.g. from a "Van"-column).
  */
-export function parseLongCSV(lines, sep, headers) {
-  const idx = (names) => {
-    for (const n of names) {
-      const i = headers.findIndex(h => h.toLowerCase() === n);
-      if (i !== -1) return i;
-    }
-    return -1;
-  };
+function parseFlexDate(datePart, timePart = "") {
+  const s = (datePart + (timePart ? " " + timePart : "")).trim();
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  // DD-MM-YYYY[( |T)HH:MM[:SS]]
+  const m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(
+      parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]),
+      parseInt(m[4] || 0), parseInt(m[5] || 0), parseInt(m[6] || 0)
+    );
+  }
+  return null;
+}
 
-  const tsIdx = idx(["timestamp", "datetime", "datum", "date"]);
-  const i1Idx = idx(["import_t1", "afname_t1", "verbruik_piek", "delivery_t1"]);
-  const i2Idx = idx(["import_t2", "afname_t2", "verbruik_dal", "delivery_t2"]);
-  const e1Idx = idx(["export_t1", "teruglevering_t1", "return_t1"]);
-  const e2Idx = idx(["export_t2", "teruglevering_t2", "return_t2"]);
+/**
+ * Resamples sub-hourly records (e.g. 15-min kwartierwaarden) to hourly by summing.
+ * Input records must have a `.ts` Date and import_t1/t2, export_t1/t2 fields.
+ */
+function resampleToHourly(raw) {
+  if (raw.length === 0) return [];
+  const HOUR_MS = 3_600_000;
+  const isSubHourly = raw.length >= 2 && (raw[1].ts - raw[0].ts) < HOUR_MS;
+  if (!isSubHourly) {
+    return raw.map(r => ({
+      timestamp: r.ts.toISOString(),
+      import_t1: r.import_t1, import_t2: r.import_t2,
+      export_t1: r.export_t1, export_t2: r.export_t2,
+    }));
+  }
+  const buckets = new Map();
+  for (const r of raw) {
+    const key = Math.floor(r.ts.getTime() / HOUR_MS) * HOUR_MS;
+    if (!buckets.has(key)) buckets.set(key, { import_t1: 0, import_t2: 0, export_t1: 0, export_t2: 0 });
+    const b = buckets.get(key);
+    b.import_t1 += r.import_t1; b.import_t2 += r.import_t2;
+    b.export_t1 += r.export_t1; b.export_t2 += r.export_t2;
+  }
+  return Array.from(buckets.entries()).sort(([a], [b]) => a - b)
+    .map(([ms, v]) => ({ timestamp: new Date(ms).toISOString(), ...v }));
+}
 
-  if (tsIdx === -1) throw new Error("Geen tijdstempelkolom gevonden in CSV.");
-  if (i1Idx === -1 && i2Idx === -1) throw new Error("Geen import-kolommen gevonden in CSV.");
+/**
+ * Column name vocabularies for each role.
+ * Covers Enexis, Liander, Stedin, HomeWizard, and the existing HA tidy-CSV format.
+ */
+const COLUMN_PATTERNS = {
+  imp1: [
+    "import_t1", "afname_t1", "verbruik_piek", "delivery_t1",
+    "verbruik hoog", "afname hoog", "levering hoog", "stroom verbruik t1", "afname t1", "verbruik t1",
+    "import high", "import-high", "consumption t1", "consumption high",
+  ],
+  imp2: [
+    "import_t2", "afname_t2", "verbruik_dal", "delivery_t2",
+    "verbruik laag", "afname laag", "levering laag", "stroom verbruik t2", "afname t2", "verbruik t2",
+    "import low", "import-low", "consumption t2", "consumption low",
+  ],
+  exp1: [
+    "export_t1", "teruglevering_t1", "return_t1",
+    "teruglevering hoog", "retour hoog", "stroom teruglever t1", "teruglevering t1", "productie t1",
+    "export high", "export-high", "production t1", "production high",
+  ],
+  exp2: [
+    "export_t2", "teruglevering_t2", "return_t2",
+    "teruglevering laag", "retour laag", "stroom teruglever t2", "teruglevering t2", "productie t2",
+    "export low", "export-low", "production t2", "production low",
+  ],
+};
 
-  const records = [];
+/**
+ * Resolves column indices from normalized headers.
+ * Returns { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx } or null when
+ * no timestamp or no import column is found (caller should show fallback modal).
+ */
+function detectColumnIndices(norm) {
+  const find = (names) => { for (const n of names) { const i = norm.indexOf(n); if (i !== -1) return i; } return -1; };
+  const tsIdx = find(["timestamp", "datetime", "datum", "date"]);
+  if (tsIdx === -1) return null;
+  const timeIdx = find(["van", "from", "start", "start time", "starttijd"]);
+  const i1Idx = find(COLUMN_PATTERNS.imp1);
+  const i2Idx = find(COLUMN_PATTERNS.imp2);
+  if (i1Idx === -1 && i2Idx === -1) return null;
+  const e1Idx = find(COLUMN_PATTERNS.exp1);
+  const e2Idx = find(COLUMN_PATTERNS.exp2);
+  return { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx };
+}
+
+/** Core row parser shared by auto-detect and manual-mapping paths. */
+function parseLongCSVCore(lines, sep, { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx }) {
+  const pf = (cols, i) => i !== -1 ? parseDutchFloat(cols[i]) : 0;
+  const raw = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(sep).map(c => c.trim());
     if (!cols[tsIdx]) continue;
-    const pf = (idx) => idx !== -1 ? Math.max(0, parseFloat(cols[idx]) || 0) : 0;
-    records.push({
-      timestamp: new Date(cols[tsIdx]).toISOString(),
-      import_t1: pf(i1Idx),
-      import_t2: pf(i2Idx),
-      export_t1: pf(e1Idx),
-      export_t2: pf(e2Idx),
-    });
+    const ts = parseFlexDate(cols[tsIdx], timeIdx !== -1 ? (cols[timeIdx] || "") : "");
+    if (!ts) continue;
+    raw.push({ ts, import_t1: pf(cols, i1Idx), import_t2: pf(cols, i2Idx),
+                   export_t1: pf(cols, e1Idx), export_t2: pf(cols, e2Idx) });
   }
-  return records;
+  return resampleToHourly(raw);
+}
+
+/**
+ * Guesses column roles from raw header strings.
+ * Exported so parseAutoCSVAsync can pre-fill the mapping modal.
+ */
+export function guessColumnRoles(headers) {
+  const norm = headers.map(normHeader);
+  const find = (patterns) => { for (const p of patterns) { const i = norm.indexOf(p); if (i !== -1) return headers[i]; } return ""; };
+  return {
+    imp1: find(COLUMN_PATTERNS.imp1), imp2: find(COLUMN_PATTERNS.imp2),
+    exp1: find(COLUMN_PATTERNS.exp1), exp2: find(COLUMN_PATTERNS.exp2),
+    solar: find(["solar", "zon", "opwek", "pv", "zonnepanelen"]),
+    ev: find(["ev", "charger", "laadpaal"]),
+    hp: find(["hp", "heatpump", "warmtepomp"]),
+    batIn: find(["bat_in", "battery_charge", "batterij_laden"]),
+    batOut: find(["bat_out", "battery_discharge", "batterij_ontladen"]),
+  };
+}
+
+/**
+ * Parses a standard tidy-CSV (netbeheerder, HomeWizard, or custom P1 export) with
+ * auto-detected column names. Returns hourly records, or null when columns cannot
+ * be resolved — caller should then show the mapping modal and use parseLongCSVWithMapping.
+ * Handles DD-MM-YYYY dates, Dutch comma decimals, and 15-min kwartierwaarden.
+ */
+export function parseLongCSV(lines, sep, headers) {
+  const norm = headers.map(normHeader);
+  const colIndices = detectColumnIndices(norm);
+  if (!colIndices) return null;
+  return parseLongCSVCore(lines, sep, colIndices);
+}
+
+/**
+ * Parses a tidy-CSV using an explicit column mapping supplied by the user via modal.
+ * mapping = { imp1: "column header", imp2: ..., exp1: ..., exp2: ... }
+ */
+export function parseLongCSVWithMapping(lines, sep, headers, mapping) {
+  const norm = headers.map(normHeader);
+  const findIdx = (name) => { if (!name) return -1; return norm.indexOf(normHeader(name)); };
+  const tsIdx = norm.findIndex(h => ["timestamp", "datetime", "datum", "date"].includes(h));
+  if (tsIdx === -1) throw new Error("Geen tijdstempelkolom gevonden.");
+  const timeIdx = norm.findIndex(h => ["van", "from", "start", "start time"].includes(h));
+  const i1Idx = findIdx(mapping.imp1), i2Idx = findIdx(mapping.imp2);
+  const e1Idx = findIdx(mapping.exp1), e2Idx = findIdx(mapping.exp2);
+  if (i1Idx === -1 && i2Idx === -1) throw new Error("Geen import-kolom geselecteerd.");
+  return parseLongCSVCore(lines, sep, { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx });
 }
 
 /**
