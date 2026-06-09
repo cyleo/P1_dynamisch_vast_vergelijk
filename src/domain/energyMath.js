@@ -357,8 +357,28 @@ export function applyBatteryState(ctx) {
 
 /**
  * Simulates solar smart dimming (curtailment) when spot prices fall below a certain threshold.
+ *
+ * "dim" mode  — inverter throttles output to exactly house load (self-consumption only,
+ *               no export). Triggers at spot < 0. Requires a smart inverter with dynamic
+ *               power limiting; not all hardware supports this.
+ *
+ * "uit" mode  — inverter shuts off completely (binary). Two separate thresholds:
+ *   - Export stops at spot < 0 (any negative spot makes exporting loss-making).
+ *   - Self-consumption is only removed (dynImp = currentHouseLoad) when the all-in
+ *     grid import cost also goes negative: spot + markupBtw + eb < 0 (≈ −0.135 €/kWh
+ *     at default settings). Above that threshold, free solar self-consumption is still
+ *     cheaper than grid, so pulling ALL load to the grid would increase the bill (e.g.
+ *     because the EV was charging from solar and would have to pay EB on grid import).
+ *
+ * @param {string} solarDimmingMode - "off" | "dim" | "uit"
+ * @param {number} spot       - EPEX spot price incl. VAT excl. EB (€/kWh)
+ * @param {number} impDyn     - Dynamic grid import after HP/EV/battery adjustments (kWh)
+ * @param {number} expDyn     - Dynamic grid export after HP/EV/battery adjustments (kWh)
+ * @param {number} solar_yield - Solar production this hour (kWh), or null if no sensor
+ * @param {number} markupBtw  - Dynamic contract markup incl. VAT (€/kWh)
+ * @param {number} eb         - Energy tax (€/kWh)
  */
-export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_yield) {
+export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_yield, markupBtw, eb) {
   let dynImp = impDyn;
   let dynExp = expDyn;
   const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
@@ -371,15 +391,20 @@ export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_
       const brutoOverschot = solar - currentHouseLoad;
 
       if (solarDimmingMode === "dim") {
+        // Throttle inverter output to house load: no export, self-consumption intact.
         dynImp = brutoOverschot < 0 ? Math.abs(brutoOverschot) : 0;
         dynExp = 0;
       } else if (solarDimmingMode === "uit") {
-        dynImp = currentHouseLoad;
+        // Always stop export when spot < 0 (exporting is loss-making).
         dynExp = 0;
+        // Only pull ALL load to grid when grid import is actually cheaper than free solar
+        // (all-in cost < 0). At moderately negative prices, EB still makes grid expensive.
+        const allInNegative = spot + markupBtw + eb < 0;
+        if (allInNegative) dynImp = currentHouseLoad;
       }
     } else {
+      // No solar sensor: can only stop export, import is unchanged.
       dynExp = 0;
-      if (solarDimmingMode === "uit") dynImp = impDyn;
     }
   }
   return { dynImp, dynExp };

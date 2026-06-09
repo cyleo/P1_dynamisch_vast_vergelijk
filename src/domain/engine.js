@@ -116,8 +116,6 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   const eb = ctx.eb;
   const epexHistory = ctx.epexHistory;   // lokaal: alle .has/.get hieronder binden hieraan
   const simData = ctx.simData;
-  const dimmingActive = solarDimmingMode && solarDimmingMode !== "off";
-
   // ── PRE-COMPUTATION CAPTURE: Bereken EV Profielen ÉÉNMAAL (Vector 3 & 5 Fix) ──
   const dayRows = getDayRows(simData);
   const { evScheduleCacheDyn, evScheduleCacheFx } = precomputeEVSchedules(cfg, ctx, dayRows, markupBtw);
@@ -290,7 +288,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     else { fxDalImp += impFx; fxDalExp += expFx; }
 
     // ── Slimme Omvormer Interventie bij Negatieve Spot (Vector 1 Fix) ──
-    const dimRes = applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solarYield);
+    const dimRes = applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solarYield, markupBtw, eb);
     const dynImp = dimRes.dynImp;
     const dynExp = dimRes.dynExp;
 
