@@ -81,6 +81,15 @@ server {
 }
 ```
 
+**Wat zet je op de server?** Bouw eerst de bundle en kopieer dan deze bestanden/mappen naar de webroot:
+
+```bash
+npm install && npm run build
+# → index.html, app.js (de zojuist gebouwde bundle), style.css, demo-year.js, assets/
+```
+
+`assets/` moet mee: de social-media-preview (`og:image`) verwijst naar `assets/geavanceerd_view.png` op je eigen domein. De mappen `src/`, `_validate/` en `docs/` zijn niet nodig op de server.
+
 ---
 
 ## Home Assistant koppelen
