@@ -515,6 +515,13 @@ function setupEventListeners() {
   document.getElementById('p1-help-backdrop')?.addEventListener('click', (e) => {
     if (e.target === e.currentTarget) document.getElementById('p1-help-backdrop').style.display = 'none';
   });
+
+  // User Guide (Handleiding)
+  document.getElementById('btn-show-guide')?.addEventListener('click', showUserGuide);
+  document.getElementById('guide-close')?.addEventListener('click', closeUserGuide);
+  document.getElementById('guide-backdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeUserGuide();
+  });
   // --- End Dynamic Bindings ---
 
   // Wegklik-knoppen voor uitleg/waarschuwingen adviseren
@@ -2699,4 +2706,125 @@ if (typeof window !== "undefined") {
       activeSimulation
     };
   };
+}
+
+// User Guide (Handleiding) Modal Handlers
+function showUserGuide() {
+  const backdrop = document.getElementById('guide-backdrop');
+  const content = document.getElementById('guide-content');
+  if (!backdrop || !content) return;
+
+  backdrop.style.display = 'flex';
+  content.innerHTML = '<p style="text-align:center; color:var(--text-muted);">Handleiding laden...</p>';
+
+  // Fetch and parse the markdown guide
+  fetch('/docs/GEBRUIKERSHANDLEIDING.md')
+    .then(resp => {
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp.text();
+    })
+    .then(md => {
+      content.innerHTML = markdownToHtml(md);
+      // Smooth scroll to top of modal
+      const modal = backdrop.querySelector('.modal-box');
+      if (modal) modal.scrollTop = 0;
+    })
+    .catch(err => {
+      console.error('Failed to load guide:', err);
+      content.innerHTML = `<p style="color:var(--accent-orange);">Handleiding kon niet worden geladen. Zorg dat <code>/docs/GEBRUIKERSHANDLEIDING.md</code> bestaat.</p>`;
+    });
+}
+
+function closeUserGuide() {
+  const backdrop = document.getElementById('guide-backdrop');
+  if (backdrop) backdrop.style.display = 'none';
+}
+
+// Simple markdown to HTML converter (handles basic Markdown used in the guide)
+function markdownToHtml(markdown) {
+  let html = markdown
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Headers: # ## ### etc.
+  html = html.replace(/^### (.*?)$/gm, '<h3 style="font-size:0.95rem; color:var(--accent-cyan); margin:1.2rem 0 0.5rem; font-weight:600;">$1</h3>');
+  html = html.replace(/^## (.*?)$/gm, '<h2 style="font-size:1.1rem; color:var(--accent-cyan); margin:1.5rem 0 0.6rem; font-weight:700;">$1</h2>');
+  html = html.replace(/^# (.*?)$/gm, '<h1 style="font-size:1.3rem; color:var(--accent-blue); margin:2rem 0 1rem; font-weight:700;">$1</h1>');
+
+  // Blockquotes: > text
+  html = html.replace(/^> (.*?)$/gm, (match, text) => {
+    return `<div style="background:rgba(0,242,254,0.06); border-left:3px solid var(--accent-cyan); padding:0.8rem 1rem; margin:1rem 0; border-radius:6px;"><strong>${text}</strong></div>`;
+  });
+
+  // Bold: **text**
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text* or _text_
+  html = html.replace(/\*(.*?)\*/g, (match, text) => {
+    if (match.startsWith('**')) return match; // Skip if part of bold
+    return `<em>${text}</em>`;
+  });
+  html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+
+  // Code: `code`
+  html = html.replace(/`(.*?)`/g, '<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:3px; font-family:monospace; font-size:0.85em;">$1</code>');
+
+  // Lists: - item or * item
+  html = html.replace(/^\s*[-*] (.*?)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
+    return `<ul style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ul>`;
+  });
+
+  // Numbered lists: 1. 2. etc
+  html = html.replace(/^\s*(\d+)\. (.*?)$/gm, '<li>$2</li>');
+  html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
+    if (match.includes('<ol')) return match; // Already wrapped
+    return `<ol style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ol>`;
+  });
+
+  // Links: [text](url)
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-cyan); text-decoration:underline;">$1</a>');
+
+  // Horizontal rule: --- or *** or ___
+  html = html.replace(/^(---|___|\\*\\*\\*)\s*$/gm, '<hr style="border:none; border-top:1px solid rgba(255,255,255,0.1); margin:1.5rem 0;">');
+
+  // Line breaks: convert double newlines to paragraphs
+  const lines = html.split('\n');
+  let inList = false;
+  let inBlockquote = false;
+  let result = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Track list state
+    if (trimmed.startsWith('<ul') || trimmed.startsWith('<ol')) {
+      inList = true;
+    } else if (trimmed === '</ul>' || trimmed === '</ol>') {
+      inList = false;
+    }
+
+    // Track blockquote state
+    if (trimmed.startsWith('<div style="background:rgba(0,242,254,0.06)')) {
+      inBlockquote = true;
+    } else if (inBlockquote && trimmed.endsWith('</div>')) {
+      inBlockquote = false;
+    }
+
+    // Don't wrap tags, blockquotes, lists, or headers in paragraphs
+    if (trimmed === '' || trimmed.startsWith('<') || inList || inBlockquote) {
+      result.push(line);
+    } else {
+      result.push(trimmed ? `<p style="margin:0.5rem 0; line-height:1.7;">${trimmed}</p>` : '');
+    }
+  }
+
+  html = result.join('\n');
+
+  // Clean up excessive whitespace
+  html = html.replace(/<\/p>\n<p/g, '</p>\n<p');
+  html = html.replace(/\n\n+/g, '\n');
+
+  return html;
 }
