@@ -181,6 +181,7 @@ function setViewMode(mode) {
 // Initialize Application
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
+  restoreDismissedElements();
   restoreHACredentials();
   
   if (typeof window !== "undefined" && window.innerWidth <= 800) {
@@ -279,6 +280,20 @@ function initDismissHandlers() {
     if (el) el.style.display = "none";
     const flag = DISMISS_FLAG[targetId];
     if (flag) appStore.setState({ [flag]: true });
+    // localStorage persistence voor elements met data-persist attribuut
+    if (btn.hasAttribute("data-persist")) {
+      localStorage.setItem(`dismissed_${targetId}`, "true");
+    }
+  });
+}
+
+function restoreDismissedElements() {
+  document.querySelectorAll("[data-persist]").forEach(btn => {
+    const targetId = btn.getAttribute("data-dismiss");
+    if (targetId && localStorage.getItem(`dismissed_${targetId}`) === "true") {
+      const el = document.getElementById(targetId);
+      if (el) el.style.display = "none";
+    }
   });
 }
 
@@ -291,6 +306,8 @@ function setupEventListeners() {
       // Leid eenheid (€-prefix, kWh/%/x-suffix) + decimalen één keer af uit de HTML-badge,
       // zodat slepen, presets én handmatige invoer dezelfde opmaak gebruiken.
       initBadgeUnit(slider, initBadge);
+      // Bij browser form-state restore: zet badge text naar huidige slider.value (niet HTML-default)
+      initBadge.textContent = formatBadgeValue(slider, initBadge);
       slider.setAttribute('aria-valuetext', initBadge.textContent.trim());
       // A11y fase 2: maak de badge klik-/tikbaar om de waarde handmatig te typen.
       makeBadgeEditable(slider, initBadge);

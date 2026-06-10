@@ -120,6 +120,10 @@ header {
   margin-top: 0.2rem;
 }
 
+.header-nav a:hover {
+  opacity: 1;
+}
+
 /* Main Grid Layout */
 .dashboard-grid {
   display: grid;
