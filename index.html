@@ -6,19 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P1 Energiecontracten Analysator | Dynamisch vs Vast</title>
   <meta name="description"
-    content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract in 2027 het goedkoopste is voor jouw situatie.">
+    content="Bereken op basis van jouw P1 smart meter stroomgegevens of een dynamisch of vast energiecontract het goedkoopste is — doorgerekend met de fiscale regels van 2026 (saldering) én 2027 (einde saldering).">
 
   <!-- Open Graph / LinkedIn preview -->
   <meta property="og:type" content="website">
   <meta property="og:locale" content="nl_NL">
   <meta property="og:title" content="P1 Energiecontracten Analysator — Dynamisch vs Vast">
-  <meta property="og:description" content="Laad je eigen P1 smart meter data en bereken direct hoeveel je bespaart met een dynamisch energiecontract versus een vast tarief in 2027. Inclusief simulaties voor zonnepanelen, thuisbatterij, warmtepomp en elektrische auto.">
-  <meta property="og:image" content="https://raw.githubusercontent.com/cyleo/P1_dynamisch_vast_vergelijk/main/assets/geavanceerd_view.png">
+  <meta property="og:description" content="Laad je eigen P1 smart meter data en bereken direct hoeveel je bespaart met een dynamisch energiecontract versus een vast tarief — in 2026 (saldering) of 2027 (einde saldering). Inclusief simulaties voor zonnepanelen, thuisbatterij, warmtepomp en elektrische auto.">
+  <meta property="og:image" content="https://energie.vulpini.nl/assets/geavanceerd_view.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=83">
+  <link rel="stylesheet" href="/style.css?v=84">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -1027,7 +1027,7 @@
             </div>
             <div class="switch-control" style="padding: 0.5rem; margin-bottom: 0;">
               <div class="switch-label-desc">
-                <strong>Zonne-laden inschakelen <span class="info-icon" tabindex="0">i<span class="info-tooltip">Opgewekte zonnestroom stroomt volgens de zonne-waterval: eerst naar het huisverbruik, dan pas naar de EV, daarna naar de thuisaccu, en het resterende overschot naar het net.</span></span></strong>
+                <strong>Zonne-laden inschakelen <span class="info-icon" tabindex="0">i<span class="info-tooltip">Opgewekte zonnestroom stroomt volgens de zonne-waterval: eerst naar het huisverbruik, dan naar de warmtepomp, dan pas naar de EV, daarna naar de thuisaccu, en het resterende overschot naar het net.</span></span></strong>
                 <span>Laad overdag slim bij zonne-overschot</span>
               </div>
               <label class="toggle-switch">
@@ -1222,13 +1222,15 @@
               <li><strong>Dynamisch contract</strong> — de prijs volgt elk uur de stroombeurs (EPEX): 's nachts en bij
                 veel zon/wind goedkoop, in de avondpiek duur.</li>
             </ul>
-            <p style="margin:0 0 0.6rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange); margin-right: 0.35rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <strong>Dit is een 2027-model.</strong> Vanaf 1 januari 2027 vervalt de
+            <p style="margin:0 0 0.6rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange); margin-right: 0.35rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <strong>Standaard rekenen we met het 2027-model.</strong> Vanaf 1 januari 2027 vervalt de
               <em>salderingsregeling</em> — je mag teruggeleverde zonnestroom niet meer wegstrepen tegen je afname.
               Daarom rekenen we energiebelasting over je <em>bruto</em> afname en krijg je een aparte, lagere
-              terugleververgoeding. Met de regels van vandaag zou de uitkomst er anders uitzien.</p>
+              terugleververgoeding. Wil je het laatste salderingsjaar doorrekenen? Kies dan <strong>2026</strong> bij
+              <em>Fiscaal scenario</em> in Stap 2.</p>
             <p style="margin: 0.8rem 0 0.4rem; font-weight: 700; color: var(--text-main);"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.3rem;"><path d="M2 6c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 12c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path><path d="M2 18c.6.5 1.2 1 2.5 1s2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1 1.2 1 2.5 1 2-.5 2.5-1 1.2-1 2.5-1 2 .5 2.5 1"></path></svg> Prioriteit van zonnestroom-verdeling (De Zonne-waterval):</p>
             <ol style="margin: 0 0 0.8rem 1.1rem; padding: 0; list-style-type: decimal;">
-              <li><strong>Huisverbruik:</strong> Zonnestroom gaan eerst naar de actieve apparaten in je woning.</li>
+              <li><strong>Huisverbruik:</strong> Zonnestroom gaat eerst naar de actieve apparaten in je woning.</li>
+              <li><strong>Warmtepomp:</strong> Een gesimuleerde warmtepomp eet het overschot als eerste op.</li>
               <li><strong>Elektrische auto (EV):</strong> Wat over is, gaat naar de EV (indien zonne-laden actief is).</li>
               <li><strong>Thuisaccu:</strong> Wat daarna nog over is, laadt de thuisaccu op.</li>
               <li><strong>Elektriciteitsnet:</strong> Het resterende overschot gaat naar het net (en kan gedimd worden bij negatieve prijzen).</li>
@@ -1694,7 +1696,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=83"></script>
+  <script src="/app.js?v=84"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

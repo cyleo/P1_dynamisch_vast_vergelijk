@@ -1,6 +1,6 @@
 # P1 Energie Contract Analysator
 
-> **Dynamisch vs. vast energiecontract** — bereken op basis van jouw eigen P1 smart meter data welk contract goedkoper is, gerekend met de fiscale regels van **2027** (einde saldering).
+> **Dynamisch vs. vast energiecontract** — bereken op basis van jouw eigen P1 smart meter data welk contract goedkoper is, gerekend met de fiscale regels van **2027** (einde saldering) of het laatste salderingsjaar **2026**.
 
 [![npm test](https://img.shields.io/badge/tests-passing-brightgreen)](#lokaal-draaien)
 [![Licentie: MIT](https://img.shields.io/badge/licentie-MIT-blue)](#licentie)
@@ -12,10 +12,11 @@
 Upload je P1-data (of koppel Home Assistant) en zie direct:
 
 - **Jaarkosten vast vs. dynamisch** — tarieven instelbaar, leverancier-presets ingebouwd
-- **2027-model** — energiebelasting over bruto afname, geen saldering, vermindering energiebelasting verwerkt
-- **Hardware-simulaties** — warmtepomp, elektrische auto, thuisbatterij, zonnepanelen dimmen
+- **Fiscaal scenario 2026/2027** — standaard het 2027-model (energiebelasting over bruto afname, geen saldering); schakel naar 2026 voor het laatste salderingsjaar (jaarverrekening, EB over netto afname). Vermindering energiebelasting en netbeheerkosten verwerkt
+- **Hardware-simulaties** — warmtepomp, elektrische auto, thuisbatterij, zonnepanelen dimmen — accu-strategie rekent per scenariojaar met de juiste teruglever-economie
 - **Sweet Spot Finder** — optimaal accuformaat met degradatie-gecorrigeerde terugverdientijd (~2%/jr, levensduur-check)
 - **Jaarprognose** — minder dan een jaar data? Een seizoensprofiel vult de rest aan
+- **Brede importsteun** — HA-statistieken (WebSocket/CSV/JSON), HomeWizard- en netbeheerder-CSV; uur- én kwartierdata (kwartieren worden per uur gesommeerd)
 
 ### Werking van de app (animatie)
 
@@ -35,7 +36,7 @@ Upload je P1-data (of koppel Home Assistant) en zie direct:
 
 ## Lokaal draaien
 
-Puur HTML/CSS/JavaScript — geen build-stap, geen database, geen tracking.
+Puur HTML/CSS/JavaScript — geen framework, geen database, geen tracking. (`npm start` bundelt de modulaire broncode automatisch met esbuild naar één `app.js`.)
 
 ### Optie 1 — npm (aanbevolen)
 
@@ -53,6 +54,7 @@ npm test
 ### Optie 2 — Python
 
 ```bash
+npm install && npm run build   # eenmalig: genereert app.js (de bundle staat niet in de repo)
 python3 -m http.server 8080
 # open http://localhost:8080/
 ```
@@ -113,14 +115,20 @@ Koppel je eigen apparaten (laadpaal, warmtepomp, accu) om hun verbruik uit de P1
 
 ---
 
-## Het 2027-model
+## Fiscaal scenario: 2027 (standaard) of 2026
 
-Vanaf **1 januari 2027** vervalt de salderingsregeling:
+Vanaf **1 januari 2027** vervalt de salderingsregeling. Het standaard-scenario rekent daarmee:
 
 - **Energiebelasting** over **bruto afname** — teruglevering verlaagt de EB-grondslag niet meer
 - **Geen saldering** — je krijgt alleen het teruglevertarief voor teruggeleverde stroom
 - **Vermindering energiebelasting (heffingskorting)** (€628,96/jaar incl. BTW, 2026-tarief) wordt van beide totalen afgetrokken
 - **Netbeheerkosten** (€480,00/jaar incl. BTW, 2026-gemiddelde) worden bij beide totalen opgeteld voor een compleet beeld van de jaarrekening
+
+Kies je **2026** (dropdown *Fiscaal scenario*, Stap 2), dan geldt de wettelijke jaarverrekening:
+EB over de **netto** afname, salderbare teruglevering verrekend tegen het volle (all-in) tarief,
+overschot-export tegen het teruglevertarief — en de accu-strategie rekent met die hogere
+teruglever-waarde. Terugleverkosten (VTK) gaan in beide jaren over de bruto teruglevering,
+zoals leveranciers ze daadwerkelijk factureren.
 
 > ⚠️ Het EB-tarief 2027 is nog niet vastgesteld (verwacht Prinsjesdag, september 2026). De standaardwaarde is een 2026-benadering (~11,1 ct/kWh) en is instelbaar.
 
@@ -144,7 +152,8 @@ Kies een **leverancier-preset** bovenaan of stel handmatig in:
 
 | Instelling | Standaard |
 |------------|-----------|
-| Opslag boven EPEX | €0,018/kWh |
+| Inkoop-opslag boven EPEX (incl. BTW) | €0,024/kWh |
+| Teruglever-opslag (incl. BTW) | €0,020/kWh |
 | Vastrecht | €6,00/mnd |
 | Energiebelasting | €0,111/kWh |
 
@@ -181,18 +190,22 @@ De app start met een realistisch jaarprofiel (`demo-year.js`): een prosument met
 index.html      — UI
 build.sh        — build script voor esbuild bundeling
 src/            — modulaire broncode
-  ├── app.js             — applicatie orchestrator, UI en charting
-  └── domain/            — pure domeinlogica
-      ├── constants.js   — tarieven, belastingen en factoren
-      ├── energyMath.js  — simulatiemodellen (accu, EV, warmtepomp)
-      └── parser.js      — Home Assistant en CSV parsing logic
-dist/           — output map voor gebundelde productiecode
-  └── app.bundle.js
+  ├── app.js             — applicatie orchestrator (events, import, state-wiring)
+  ├── domain/            — pure domeinlogica
+  │   ├── constants.js   — tarieven, belastingen, fiscale jaarmodellen
+  │   ├── engine.js      — simulatie-engine (_simulateCore, 8760-uurs loop)
+  │   ├── energyMath.js  — simulatiemodellen (accu, EV, warmtepomp, dimmen)
+  │   ├── parser.js      — Home Assistant- en CSV-parsing (uur-normalisatie)
+  │   └── store.js       — centraal pub/sub state management
+  └── ui/                — charts (custom SVG), modals, DOM-helpers
+app.js          — gebundelde applicatie (root, gegenereerd; niet in de repo)
 style.css       — styling
 demo-year.js    — jaarprofiel (OPSD CC-BY)
+serve.json      — lokale preview-config (SPA-fallback)
 package.json    — dependencies (esbuild) en NPM scripts
-_validate/      — Node.js validatietests
+_validate/      — Node.js validatietests (npm test)
 .gitea/         — Gitea Actions CI/CD workflows
+docs/           — engineering practices, code review, agent-taken
 CLAUDE.md       — technische context voor ontwikkelaars/AI
 ```
 

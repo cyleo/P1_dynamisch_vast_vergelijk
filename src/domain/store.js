@@ -98,7 +98,7 @@ export const appStore = new Store({
   untangle: { active: false },
   dataQuality: null,
   
-  // Dismssal Flags
+  // Dismissal Flags
   epexWarnDismissed: false,
   prognosisDismissed: false,
   dataQualityDismissed: false

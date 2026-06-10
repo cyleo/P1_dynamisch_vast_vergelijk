@@ -286,16 +286,20 @@ function setupEventListeners() {
   // Slider input reactive badges
   const sliders = document.querySelectorAll('input[type="range"]');
   sliders.forEach(slider => {
-    // Set initial aria-valuetext from the badge already rendered in HTML
     const initBadge = document.getElementById(`${slider.id}-val`);
-    if (initBadge) slider.setAttribute('aria-valuetext', initBadge.textContent.trim());
+    if (initBadge) {
+      // Leid eenheid (€-prefix, kWh/%/x-suffix) + decimalen één keer af uit de HTML-badge,
+      // zodat slepen, presets én handmatige invoer dezelfde opmaak gebruiken.
+      initBadgeUnit(slider, initBadge);
+      slider.setAttribute('aria-valuetext', initBadge.textContent.trim());
+      // A11y fase 2: maak de badge klik-/tikbaar om de waarde handmatig te typen.
+      makeBadgeEditable(slider, initBadge);
+    }
 
     slider.addEventListener("input", (e) => {
       const badge = document.getElementById(`${e.target.id}-val`);
-      if (badge) {
-        let prefix = e.target.dataset.prefix || "";
-        let suffix = e.target.dataset.suffix || "";
-        badge.textContent = `${prefix}${e.target.value}${suffix}`;
+      if (badge && !badge.querySelector("input")) {   // niet overschrijven tijdens inline-edit
+        badge.textContent = formatBadgeValue(e.target, badge);
         e.target.setAttribute('aria-valuetext', badge.textContent.trim());
       }
       scheduleSim();
@@ -1396,16 +1400,102 @@ async function autoFetchEpex() {
   if (epexHistory.size > before) runSimulation();   // herbereken met echte prijzen
 }
 
+/**
+ * Leid één keer de eenheid (prefix/suffix) en het aantal decimalen af uit de
+ * initiële badge-tekst (bv. "€ 0.27", "365 dagen", "1.0x", "€450/kWh") en bewaar
+ * ze als data-attributen op de badge. Zo formatteren slepen, presets en handmatige
+ * invoer allemaal identiek — en blijft de €/eenheid behouden i.p.v. te verdwijnen.
+ */
+function initBadgeUnit(slider, badge) {
+  const m = badge.textContent.trim().match(/^(\D*)(-?\d+(?:\.\d+)?)(.*)$/s);
+  badge.dataset.unitPrefix = m ? m[1] : "";
+  badge.dataset.unitSuffix = m ? m[3] : "";
+  badge.dataset.unitDecimals = String(m && m[2].includes(".") ? m[2].split(".")[1].length : 0);
+}
+
+/** Formatteer de huidige sliderwaarde met de bewaarde eenheid + decimalen. */
+function formatBadgeValue(slider, badge) {
+  if (badge.dataset.unitDecimals === undefined) initBadgeUnit(slider, badge);
+  const dec = parseInt(badge.dataset.unitDecimals, 10) || 0;
+  const num = parseFloat(slider.value);
+  return `${badge.dataset.unitPrefix || ""}${num.toFixed(dec)}${badge.dataset.unitSuffix || ""}`;
+}
+
+/**
+ * A11y fase 2 — maak een waarde-badge inline bewerkbaar. Klikken/tikken (of Enter/Spatie
+ * met toetsenbordfocus) vervangt de badge tijdelijk door een <input type="number"> met de
+ * min/max/step van de slider. Enter/blur commit (waarde geklemd op [min,max] en op de step
+ * gerond, teruggeschreven naar de slider + simulatie hertekend); Escape annuleert.
+ */
+function makeBadgeEditable(slider, badge) {
+  badge.classList.add("val-editable");
+  badge.setAttribute("role", "button");
+  badge.setAttribute("tabindex", "0");
+  badge.setAttribute("aria-label", "Waarde handmatig invoeren");
+  badge.title = "Klik om de waarde te typen";
+
+  const beginEdit = () => {
+    if (badge.querySelector("input")) return; // al in bewerk-modus
+    if (badge.dataset.unitDecimals === undefined) initBadgeUnit(slider, badge);
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "val-edit-input";
+    input.min = slider.min;
+    input.max = slider.max;
+    input.step = slider.step;
+    input.value = parseFloat(slider.value);
+    input.setAttribute("aria-label", "Nieuwe waarde");
+    badge.textContent = "";
+    badge.appendChild(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = (commit) => {
+      if (done) return;
+      done = true;
+      if (commit) {
+        let v = parseFloat(input.value);
+        if (!Number.isNaN(v)) {
+          const min = parseFloat(slider.min);
+          const max = parseFloat(slider.max);
+          const step = parseFloat(slider.step) || 0;
+          v = Math.min(max, Math.max(min, v));
+          if (step > 0) v = Math.round(v / step) * step;
+          slider.value = v; // de range-input klemt zelf ook op min/max/step
+        }
+      }
+      badge.textContent = formatBadgeValue(slider, badge);
+      slider.setAttribute("aria-valuetext", badge.textContent.trim());
+      if (commit) scheduleSim();
+    };
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+    input.addEventListener("click", (e) => e.stopPropagation()); // niet de badge-click herhalen
+  };
+
+  badge.addEventListener("click", beginEdit);
+  badge.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !badge.querySelector("input")) {
+      e.preventDefault();
+      beginEdit();
+    }
+  });
+}
+
 // Helper: update slider + badge atomically
 function setSlider(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
   el.value = value;
   const badge = document.getElementById(`${id}-val`);
-  if (badge) {
-    const suffix = el.dataset.suffix || "";
-    const num = parseFloat(value);
-    badge.textContent = `€ ${num.toFixed(num < 0.1 ? 3 : 2)}${suffix}`;
+  if (badge && !badge.querySelector("input")) {
+    badge.textContent = formatBadgeValue(el, badge);
     el.setAttribute('aria-valuetext', badge.textContent.trim());
   }
 }
@@ -1936,7 +2026,7 @@ function renderBatteryOptimization(rows, type, resEl) {
   const beyondLife = Number.isFinite(sweetPayback) && sweetPayback > BATTERY_LIFETIME_YEARS;
   const verdict = sweet && Number.isFinite(sweetPayback)
     ? `<strong style="color:var(--accent-green);">Sweet spot: ${sweet.cap} kWh</strong> — accu-meerwaarde ${eur(sweetExtra)}/jaar, terugverdiend in ${yrs(sweetPayback)} (bij €${currentCostPerKwh}/kWh).`
-      + (beyondLife ? ` <span style="color:var(--accent-orange);">⚠ Dat is lánger dan de verwachte levensduur (~${BATTERY_LIFETIME_YEARS} jr) — de accu verdient zichzelf binnen z'n leven waarschijnlijk niet terug.</span>` : "")
+      + (beyondLife ? ` <span style="color:var(--accent-orange);">${ICON_WARN} Dat is lánger dan de verwachte levensduur (~${BATTERY_LIFETIME_YEARS} jr) — de accu verdient zichzelf binnen z'n leven waarschijnlijk niet terug.</span>` : "")
     : `Binnen dit scenario verdient geen enkele accu zichzelf terug op een ${contractLabel} contract (meerwaarde ≤ €0/jaar).`;
 
   const tabDynActive = type === "dyn" ? "active" : "";
@@ -2105,7 +2195,7 @@ function renderDataQualityBanner() {
   }
   el.style.display = "";
   el.innerHTML =
-    `📋 <strong>Data gecontroleerd:</strong> ${q.realHours.toLocaleString("nl-NL")} van ${q.expectedHours.toLocaleString("nl-NL")} uren waren echte metingen (${q.completenessPct}%). `
+    `<svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right:0.25rem;"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg> <strong>Data gecontroleerd:</strong> ${q.realHours.toLocaleString("nl-NL")} van ${q.expectedHours.toLocaleString("nl-NL")} uren waren echte metingen (${q.completenessPct}%). `
     + parts.join("; ") + "."
     + ` <span style="opacity:0.85;">De ingevulde periodes tellen mee als gemiddeld gebruik, niet als gemeten data.</span>`
     + `<button type="button" class="dismiss-x" data-dismiss="data-quality-banner" title="Verberg deze melding">×</button>`;
