@@ -49,7 +49,8 @@ let {
   energyData, sankeyInterval, sankeyValue, activeSimulation,
   epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled,
   isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta,
-  prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta
+  prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta,
+  untangle, dataQuality,
 } = appStore.getState();
 
 appStore.subscribe(state => {
@@ -64,6 +65,7 @@ appStore.subscribe(state => {
   prognosisDismissed = state.prognosisDismissed;
   dataQualityDismissed = state.dataQualityDismissed; calibratedProfile = state.calibratedProfile;
   calibrationMeta = state.calibrationMeta;
+  untangle = state.untangle; dataQuality = state.dataQuality;
 });
 
 // Global exports for backwards compat in other files during migration
@@ -214,6 +216,24 @@ document.addEventListener("DOMContentLoaded", () => {
 // tekenen (hoofdthread, niet offloadbaar). Daarom is de throttle de juiste fix, niet een worker.
 const SIM_MIN_INTERVAL_MS = 80;
 let _simRaf = 0, _simTrailing = 0, _simLastRun = 0;
+
+// Debounce voor de optimizer: traag (~6 engine-passes), trailed 300 ms na de laatste sim.
+let _optDebounce = 0;
+function scheduleOptimize() {
+  clearTimeout(_optDebounce);
+  _optDebounce = setTimeout(() => optimizeBatterySize(true), 300);
+}
+
+// rAF-gate voor resize: herrendert 5 SVG-grafieken maar mag de main-thread niet flooden.
+let _resizeRaf = 0;
+function scheduleResize() {
+  if (_resizeRaf) return;
+  _resizeRaf = requestAnimationFrame(() => {
+    _resizeRaf = 0;
+    renderChart(); renderOverviewChart(); renderMonthlyChart(); renderSimChart(); renderHwChart();
+  });
+}
+
 function scheduleSim() {
   const since = Date.now() - _simLastRun;
   const fire = () => {
@@ -225,6 +245,19 @@ function scheduleSim() {
   } else if (!_simTrailing) {
     _simTrailing = setTimeout(() => { _simTrailing = 0; fire(); }, SIM_MIN_INTERVAL_MS - since);
   }
+}
+
+// Gedelegeerde handler voor `data-action`-links die buiten het normale event-systeem
+// vallen (bijv. links gerenderd via innerHTML in statusberichten).
+function initActionHandlers() {
+  document.addEventListener("click", (e) => {
+    const el = e.target?.closest?.("[data-action]");
+    if (!el) return;
+    e.preventDefault();
+    const action = el.getAttribute("data-action");
+    if (action === "show-setup-manual") showSetupModal("manual");
+    else if (action === "show-setup-direct") showSetupModal("direct");
+  });
 }
 
 // Sluitknoppen ("×") op de info-/waarschuwingsbanners. Eén gedelegeerde document-listener
@@ -465,6 +498,7 @@ function setupEventListeners() {
 
   // Wegklik-knoppen voor uitleg/waarschuwingen adviseren
   initDismissHandlers();
+  initActionHandlers();
 
   // Listen for changes to the Home Assistant sensor selectors for auto-fetch/collapse
   ["sel-imp1", "sel-imp2", "sel-exp1", "sel-exp2"].forEach(id => {
@@ -642,12 +676,13 @@ function processFile(file) {
         for (const r of mergeBase) merged.set(r.timestamp, r);
         for (const r of parsed) merged.set(r.timestamp, r);
 
-        const oldUntangle = mergeBase.untangle;
+        const oldUntangle = untangle;
         const sorted = Array.from(merged.values())
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        sorted.untangle = parsed.untangle || oldUntangle;
-        
-        appStore.setState({ energyData: sorted });
+        appStore.setState({
+          energyData: sorted,
+          untangle: parsed.untangle || oldUntangle || { active: false },
+        });
 
         const span = energyData.length > 0
           ? ` (${new Date(energyData[0].timestamp).toLocaleDateString("nl-NL")} t/m ${new Date(energyData[energyData.length - 1].timestamp).toLocaleDateString("nl-NL")})`
@@ -655,9 +690,7 @@ function processFile(file) {
         document.getElementById("data-status").innerHTML =
           `${ICON_CHECK} <span>${file.name} — ${parsed.length} records · ${energyData.length} totaal${span}</span>`;
         
-        const untangle = energyData.untangle || { active: false };
         updateDigitalTwinBanner(untangle);
-        
         runSimulation();
       } catch (error) {
         // Door de gebruiker geannuleerde koppelmodal is geen fout → stille, nette reset.
@@ -832,8 +865,8 @@ async function handleHAConnect() {
       `Je bezoekt deze site via HTTPS, maar probeert te verbinden met een onbeveiligde Home Assistant (HTTP). De browser blokkeert dit om veiligheidsredenen.<br><br>` +
       `<strong>Oplossingen:</strong><br>` +
       `1. Gebruik een <code>https://</code> adres voor Home Assistant (bijv. via Nabu Casa of reverse proxy).<br>` +
-      `2. Start de app lokaal via HTTP (bijv. via <code>npm start</code> of Python server) en open <a href="http://localhost:3000/energie/" style="color:var(--accent-cyan); font-weight:600;">http://localhost:3000/energie/</a>.<br>` +
-      `3. Exporteer handmatig je data uit HA en upload het CSV/JSON bestand. <a href="#" onclick="showSetupModal('manual'); return false;" style="color:var(--accent-cyan); font-weight:600;">Gids →</a>`;
+      `2. Start de app lokaal via HTTP (bijv. via <code>npm start</code> of Python server) en open <a href="http://localhost:3000/" style="color:var(--accent-cyan); font-weight:600;">http://localhost:3000/</a>.<br>` +
+      `3. Exporteer handmatig je data uit HA en upload het CSV/JSON bestand. <a href="#" data-action="show-setup-manual" style="color:var(--accent-cyan); font-weight:600;">Gids →</a>`;
     statusEl.style.color = "var(--accent-orange)";
     return;
   }
@@ -853,7 +886,7 @@ async function handleHAConnect() {
       statusEl.innerHTML =
         `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Verbinding mislukt (CORS preflight geweigerd).<br>` +
         `Voeg <code>${window.location.origin}</code> toe aan <code>cors_allowed_origins</code> in HA en herstart. ` +
-        `<a href="#" onclick="showSetupModal('direct'); return false;" style="color:var(--accent-cyan);">Gids →</a>`;
+        `<a href="#" data-action="show-setup-direct" style="color:var(--accent-cyan);">Gids →</a>`;
       statusEl.style.color = "var(--accent-orange)";
       return;
     }
@@ -950,32 +983,44 @@ async function handleHAConnect() {
         else other.push(s);
       });
 
-      const opt = (s) => {
+      const makeOpt = (s) => {
         const isLive = s.unit === "kW" || s.unit === "W";
-        const label = isLive 
-          ? `${s.id} [${s.unit} - live vermogen fallback]` 
+        const label = isLive
+          ? `${s.id} [${s.unit} - live vermogen fallback]`
           : (s.unit === "Wh" ? `${s.id} [Wh → kWh]` : s.id);
-        return `<option value="${s.id}" data-unit="${s.unit}"${s.id === selectedId ? " selected" : ""}>${label}${s.unavailable ? " [offline]" : ""}</option>`;
+        const o = document.createElement("option");
+        o.value = s.id;
+        o.textContent = label + (s.unavailable ? " [offline]" : "");
+        o.dataset.unit = s.unit;
+        if (s.id === selectedId) o.selected = true;
+        return o;
       };
 
-      const groupOpts = (arr) => {
+      const makeGroup = (label, arr) => {
+        const g = document.createElement("optgroup");
+        g.label = label;
+        arr.forEach(s => g.appendChild(makeOpt(s)));
+        return g;
+      };
+
+      const appendGrouped = (arr) => {
         const kwh = arr.filter(s => s.unit === "kWh");
         const wh = arr.filter(s => s.unit === "Wh");
         const kw = arr.filter(s => s.unit === "kW");
         const w = arr.filter(s => s.unit === "W");
-
-        let html = "";
-        if (kwh.length) html += `<optgroup label="kWh sensoren">` + kwh.map(opt).join("") + `</optgroup>`;
-        if (wh.length) html += `<optgroup label="Wh sensoren (omvormers/laders)">` + wh.map(opt).join("") + `</optgroup>`;
-        if (kw.length) html += `<optgroup label="kW sensoren (live vermogen fallback)">` + kw.map(opt).join("") + `</optgroup>`;
-        if (w.length) html += `<optgroup label="W sensoren (live vermogen fallback)">` + w.map(opt).join("") + `</optgroup>`;
-        return html;
+        if (kwh.length) sel.appendChild(makeGroup("kWh sensoren", kwh));
+        if (wh.length) sel.appendChild(makeGroup("Wh sensoren (omvormers/laders)", wh));
+        if (kw.length) sel.appendChild(makeGroup("kW sensoren (live vermogen fallback)", kw));
+        if (w.length) sel.appendChild(makeGroup("W sensoren (live vermogen fallback)", w));
       };
 
-      sel.innerHTML =
-        `<option value="">${defaultLabel}</option>` +
-        (rec.length ? `<optgroup label="Aanbevolen (op basis van naam)">` + rec.map(opt).join("") + `</optgroup>` : "") +
-        (other.length ? groupOpts(other) : "");
+      sel.textContent = "";
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = defaultLabel;
+      sel.appendChild(blank);
+      if (rec.length) sel.appendChild(makeGroup("Aanbevolen (op basis van naam)", rec));
+      if (other.length) appendGrouped(other);
     };
 
     // Invullen van select boxes
@@ -1021,12 +1066,18 @@ async function handleHAConnect() {
 
 function populateSensorSelect(selectId, options, selectedValue) {
   const sel = document.getElementById(selectId);
-  sel.innerHTML = `<option value="">— Niet gebruiken —</option>` +
-    options.map(s =>
-      `<option value="${s.id}"${s.id === selectedValue ? " selected" : ""}>` +
-      `${s.id}${s.unavailable ? " [offline]" : ""}` +
-      `</option>`
-    ).join("");
+  sel.textContent = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "— Niet gebruiken —";
+  sel.appendChild(blank);
+  options.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.id + (s.unavailable ? " [offline]" : "");
+    if (s.id === selectedValue) opt.selected = true;
+    sel.appendChild(opt);
+  });
 }
 
 // ── Stap 2: data importeren met gekozen sensoren ──────────────────────────────
@@ -1131,12 +1182,14 @@ async function handleHAImport() {
 
     const stats = await fetchHAStatisticsWS(wsUrl, tokenInput, uniqueEntities, startTime, endTime, statusEl);
 
-    appStore.setState({ _lastHAStats: stats });
-    appStore.setState({ _lastRoleMap: roleMap });
-    appStore.setState({ energyData: processHAStatistics(stats, roleMap, digitalTwinEnabled) });
-    appStore.setState({ isDemoData: false });   // echte HA-data: verdere uploads mergen erbij
-
-    const untangle = energyData.untangle || { active: false };
+    const haParsed = processHAStatistics(stats, roleMap, digitalTwinEnabled);
+    appStore.setState({
+      _lastHAStats: stats,
+      _lastRoleMap: roleMap,
+      energyData: haParsed,
+      untangle: haParsed.untangle || { active: false },
+      isDemoData: false,
+    });
     updateDigitalTwinBanner(untangle);
 
     statusEl.innerHTML = `${ICON_CHECK} <span>${energyData.length} uurrecords geladen · EPEX prijzen ophalen…</span>`;
@@ -1233,9 +1286,12 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 function toggleDigitalTwin(enabled) {
   appStore.setState({ digitalTwinEnabled: enabled });
   if (!_lastHAStats || !_lastRoleMap) return;
-  appStore.setState({ energyData: processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled) });
-  appStore.setState({ isDemoData: false });
-  const untangle = energyData.untangle || { active: false };
+  const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled);
+  appStore.setState({
+    energyData: dtParsed,
+    untangle: dtParsed.untangle || { active: false },
+    isDemoData: false,
+  });
   updateDigitalTwinBanner(untangle);
   appStore.setState({ fullYearStamp: "" });   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
   runSimulation();
@@ -1279,11 +1335,7 @@ async function fetchTarieven() {
       setSlider("dynamic-markup", avgOpslag.toFixed(4));
 
       // Store today's Frank prices in epexHistory (prices incl BTW excl EB+opslag = market+tax)
-      prices.forEach(p => {
-        const dt = new Date(p.from);
-        const marketInclBtw = p.marketPrice + p.marketPriceTax;
-        epexHistory.set(epexKey(dt), marketInclBtw);
-      });
+      appStore.updateEpexHistory(prices.map(p => [epexKey(new Date(p.from)), p.marketPrice + p.marketPriceTax]));
 
       status.innerHTML = `${ICON_CHECK} <span>Frank: EB = €${eb.toFixed(5)}/kWh · opslag = €${avgOpslag.toFixed(4)}/kWh · ${prices.length} uurprijzen geladen</span>`;
     }
@@ -1320,13 +1372,13 @@ async function fetchEPEXHistory(fromISO, tillISO) {
   if (!resp.ok) throw new Error(`energyzero HTTP ${resp.status}`);
   const data = await resp.json();
 
-  (data.Prices || []).forEach(p => {
+  const newEntries = (data.Prices || []).map(p => {
     const dt = new Date(p.readingDate);
     // FIX: EnergyZero levert de prijs incl. BTW, maar EXCLUSIEF Energiebelasting.
     // We mogen de belasting er dus niet vanaf trekken, anders verdwijnt hij uit de hele rekensom!
-    const pureEpex = p.price;
-    epexHistory.set(epexKey(dt), pureEpex);
+    return [epexKey(dt), p.price];
   });
+  if (newEntries.length) appStore.updateEpexHistory(newEntries);
 }
 
 // Best-effort: probeer ALTIJD echte EPEX-historie te laden voor de geladen periode.
@@ -1391,7 +1443,7 @@ const HOUR_MS = 3600 * 1000;
 // uit de eigen data. dataQuality houdt de samenvatting bij voor de gebruiker.
 // ════════════════════════════════════════════════════════════════════════════
 const GAP_SMALL_MAX_HOURS = 6;   // ≤6u = interpoleren, >6u = standaardprofiel
-let dataQuality = null;          // { expectedHours, realHours, interpHours, profileHours, completenessPct, largePeriods[], spanFrom, spanTo }
+// dataQuality is nu een store-mirror (zie let { ..., dataQuality } boven).
 
 let _cleanedRef = null;          // referentie naar de laatst-opgeschoonde energyData-array (idempotentie)
 
@@ -1405,7 +1457,7 @@ function _rowTotals(r) {
 
 // Roept cleanAndFillEnergyData() aan zodra een nieuwe (nog niet opgeschoonde) array is geladen.
 function ensureCleanData() {
-  if (!energyData || energyData.length < 2) { dataQuality = null; return; }
+  if (!energyData || energyData.length < 2) { appStore.setState({ dataQuality: null }); return; }
   if (energyData === _cleanedRef) return;   // al opgeschoond
   cleanAndFillEnergyData();
   _cleanedRef = energyData;
@@ -1420,7 +1472,7 @@ function cleanAndFillEnergyData() {
     byHour.set(Math.floor(t / HOUR_MS) * HOUR_MS, r);
   });
   const keys0 = [...byHour.keys()].sort((a, b) => a - b);
-  if (keys0.length < 2) { dataQuality = null; return; }
+  if (keys0.length < 2) { appStore.setState({ dataQuality: null }); return; }
 
   const first = keys0[0], last = keys0[keys0.length - 1];
   const expectedHours = Math.round((last - first) / HOUR_MS) + 1;
@@ -1492,13 +1544,15 @@ function cleanAndFillEnergyData() {
   // 5. Terugschrijven als gatenloze, gesorteerde reeks
   appStore.setState({ energyData: [...byHour.keys()].sort((a, b) => a - b).map(ms => byHour.get(ms)) });
 
-  dataQuality = {
-    expectedHours, realHours, interpHours, profileHours,
-    completenessPct: expectedHours > 0 ? Math.round(realHours / expectedHours * 100) : 100,
-    largePeriods,
-    spanFrom: new Date(first).toISOString(), spanTo: new Date(last).toISOString(),
-  };
-  appStore.setState({ dataQualityDismissed: false });   // nieuwe import → samenvatting weer tonen
+  appStore.setState({
+    dataQuality: {
+      expectedHours, realHours, interpHours, profileHours,
+      completenessPct: expectedHours > 0 ? Math.round(realHours / expectedHours * 100) : 100,
+      largePeriods,
+      spanFrom: new Date(first).toISOString(), spanTo: new Date(last).toISOString(),
+    },
+    dataQualityDismissed: false,   // nieuwe import → samenvatting weer tonen
+  });
 }
 
 /**
@@ -1783,7 +1837,7 @@ const BATTERY_LIFETIME_YEARS = 15;
 const BATTERY_DEGRADATION_PER_YEAR = 0.02;
 const BATTERY_AVG_CAPACITY_FACTOR = 1 - (BATTERY_DEGRADATION_PER_YEAR * BATTERY_LIFETIME_YEARS) / 2;   // ≈ 0,85
 
-function optimizeBatterySize() {
+function optimizeBatterySize(_skipPrep = false) {
   const resEl = document.getElementById("battery-optimization-result");
   if (!resEl) return;
   if (energyData.length === 0) {
@@ -1795,9 +1849,12 @@ function optimizeBatterySize() {
   // EB + jaarprojectie synchroon met de hoofdsimulatie (read-only voor activeSimulation).
   // De engine leest de EB uit de appStore (buildSimContext) — dus via setState, niet via
   // een bare mirror-assignment (zie B1-fix: anders haalt de schuif de engine nooit).
-  const ebEl = document.getElementById("energy-tax");
-  if (ebEl) appStore.setState({ liveEnergyTax: parseFloat(ebEl.value) });
-  ensureFullYearData();
+  // _skipPrep=true als we vanuit scheduleOptimize() komen: runSimulation() deed dit al.
+  if (!_skipPrep) {
+    const ebEl = document.getElementById("energy-tax");
+    if (ebEl) appStore.setState({ liveEnergyTax: parseFloat(ebEl.value) });
+    ensureFullYearData();
+  }
 
   const baseCfg = readSimConfig();
 
@@ -1888,8 +1945,8 @@ function renderBatteryOptimization(rows, type, resEl) {
   resEl.style.display = "";
   resEl.innerHTML = `
     <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:0.75rem; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:0.6rem;">
-      <button type="button" class="btn-toggle ${tabDynActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('dyn')">Dynamisch contract</button>
-      <button type="button" class="btn-toggle ${tabFixActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" onclick="window.setOptContract('fix')">Vast contract</button>
+      <button type="button" class="btn-toggle ${tabDynActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" data-opt-contract="dyn">Dynamisch contract</button>
+      <button type="button" class="btn-toggle ${tabFixActive}" style="font-size:0.72rem; padding:0.25rem 0.5rem; border-radius:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-main);" data-opt-contract="fix">Vast contract</button>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
       <thead><tr style="color:var(--text-muted);border-bottom:1px solid rgba(255,255,255,0.12);">
@@ -1914,6 +1971,10 @@ function renderBatteryOptimization(rows, type, resEl) {
       Terugverdientijd is gecorrigeerd voor ~${(BATTERY_DEGRADATION_PER_YEAR * 100).toFixed(0)}%/jaar degradatie
       (gemiddeld ~${(BATTERY_AVG_CAPACITY_FACTOR * 100).toFixed(0)}% capaciteit over ${BATTERY_LIFETIME_YEARS} jaar).
     </p>`;
+
+  resEl.querySelectorAll("[data-opt-contract]").forEach(btn => {
+    btn.addEventListener("click", () => window.setOptContract(btn.getAttribute("data-opt-contract")));
+  });
 }
 
 window.setOptContract = function(type) {
@@ -1978,6 +2039,7 @@ function runSimulation() {
   // ── activeSimulation bijwerken ────────────────────────────────────────────
   appStore.setState({ activeSimulation: {
     ...sim,
+    cfg,
     hwEffects: {
       base,
       hp: { fixed: withHp.fixedBill - base.fixedBill, dyn: withHp.dynBill - base.dynBill, enabled: cfg.hasHeatPump, cfg: { hpWinterBaseload: cfg.hpWinterBaseload } },
@@ -2010,10 +2072,11 @@ function runSimulation() {
   renderDynPriceExample();
   renderDataQualityBanner();
 
-  // Recalculate ROI Sweet Spot if currently displayed
+  // Recalculate ROI Sweet Spot if currently displayed (debounced: 6 extra engine-passes,
+  // EB-setState + ensureFullYearData al gedaan door runSimulation)
   const resEl = document.getElementById("battery-optimization-result");
   if (resEl && resEl.style.display !== "none") {
-    optimizeBatterySize();
+    scheduleOptimize();
   }
 }
 
@@ -2053,7 +2116,7 @@ function renderDataQualityBanner() {
 function renderDynPriceExample() {
   const box = document.getElementById("dynprice-example");
   if (!box) return;
-  const markup = parseFloat(document.getElementById("dynamic-markup")?.value) || 0.024;
+  const markup = activeSimulation?.cfg?.dynamicMarkup ?? parseFloat(document.getElementById("dynamic-markup")?.value) ?? 0.024;
   const eb = liveEnergyTax;
 
   let spot = null;
@@ -2141,9 +2204,9 @@ function updateUIElements() {
   // de piek/dal-rijen worden dan hergebruikt als "gesaldeerde afname" + "weggestreept"
   // (de oude bruto-weergave telde in 2026 níét op tot de kopregel).
   const salderen = !!sim.salderen;
-  const fixedPeakRate = parseFloat(document.getElementById("fixed-peak").value);
-  const fixedDalRate = parseFloat(document.getElementById("fixed-dal").value);
-  const feedRate = parseFloat(document.getElementById("fixed-feedin-rate").value);
+  const fixedPeakRate = sim.cfg?.fixedPeakRate ?? parseFloat(document.getElementById("fixed-peak").value);
+  const fixedDalRate = sim.cfg?.fixedDalRate ?? parseFloat(document.getElementById("fixed-dal").value);
+  const feedRate = sim.cfg?.fixedFeedInRate ?? parseFloat(document.getElementById("fixed-feedin-rate").value);
   const setLbl = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
   if (salderen) {
@@ -2220,12 +2283,35 @@ function updateUIElements() {
   document.getElementById("tbl-dyn-rebate").textContent = `− € ${(sim.taxRebate ?? 0).toFixed(2)}`;
   document.getElementById("tbl-dyn-grid-fees").textContent = `€ ${(sim.gridFees ?? 0).toFixed(2)}`;
   document.getElementById("tbl-dyn-total").textContent = `€ ${sim.dynamicTotalBill.toFixed(2)}`;
+
+  // Scenario-afhankelijke teksten: wisselen met het fiscale jaar.
+  const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+  setLbl("tooltip-feedin-rate", salderen
+    ? "De vaste vergoeding voor teruglevering boven de salderingsgrens (overschot-export). Het saldeerbare deel wordt verrekend tegen het volle retail-tarief. Typisch €0,04–€0,05/kWh."
+    : "De vaste vergoeding die je ontvangt per teruggeleverde kWh. Geen saldering meer — dit is het enige wat je terugkrijgt voor zonne-energie. Typisch €0,04–€0,05/kWh in 2027.");
+
+  setLbl("tooltip-feedin-fee", salderen
+    ? "Leveranciers rekenen VTK in 2026 al over álle teruggeleverde kWh — ook het saldeerbare deel. Hierdoor kost terugleveren je netto geld per kWh. Typisch €0,01–€0,045/kWh (standaard: geen VTK)."
+    : "Veel leveranciers rekenen per 2027 een VTK (Vaste Terugleverkosten) per teruggeleverde kWh — bovenop het netwerk. Hierdoor kost terugleveren jou geld per kWh in plaats van dat je er voor wordt betaald. Typisch €0,01–€0,045/kWh (standaard: geen VTK).");
+
+  setHtml("tooltip-dyn-badge", salderen
+    ? "Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Saldeerbare teruglevering wordt verrekend tegen de all-in import-prijs; energiebelasting over je netto afname."
+    : "Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Teruglevering wordt vergoed tegen de spotprijs van dat uur, energiebelasting over je bruto afname.");
+
+  setHtml("dynprice-li-feedin", salderen
+    ? "<strong>Teruglevering (saldeerbaar deel)</strong> wordt verrekend tegen de all-in import-prijs van dat uur (incl. energiebelasting + BTW). Overschot boven de salderingsgrens krijgt de kale EPEX-prijs minus teruglever-opslag."
+    : "<strong>Teruglevering</strong> wordt vergoed tegen de kale EPEX-prijs van dat uur (zonder energiebelasting), minus de teruglever-opslag van je leverancier. Bij een negatieve prijs betaal je juist bij om terug te leveren.");
+
+  setHtml("dynprice-li-eb", salderen
+    ? "<strong>Energiebelasting (2026):</strong> je betaalt EB alleen over je netto afname (import minus saldeerbare export). Zolang je evenveel exporteert als importeert, is de EB op het gesaldeerde deel nul."
+    : "<strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle afgenomen kWh — je teruglevering wordt er niet meer van afgetrokken.");
 }
 
 // Custom responsive SVG Chart Renderer
 
 // Window resizing
-window.addEventListener("resize", () => { renderChart(); renderOverviewChart(); renderMonthlyChart(); renderSimChart(); renderHwChart(); });
+window.addEventListener("resize", scheduleResize);
 
 // ── Sim chart mode/drill-down controls ───────────────────────────────────────
 function setSimMode(mode) {

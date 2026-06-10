@@ -10,6 +10,9 @@ p1_sample.json
 !serve.json
 !package.json
 !package-lock.json
+# Synthetische (CC-BY demo-data) golden snapshot — geen privacy-data, MOET mee in de repo
+# zodat CI altijd een regression guard heeft zonder een lokale privacy-fixture te vereisen.
+!_validate/snapshot_synthetic_golden.json
 
 # Claude project bestanden — negeer alles ONDER .claude (lokale settings) ...
 .claude/*

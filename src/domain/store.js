@@ -35,6 +35,16 @@ class Store {
   }
 
   /**
+   * Mutates the epexHistory Map in place and notifies subscribers.
+   * Routes all EPEX writes through the store so subscribers stay in sync.
+   * @param {Iterable<[string, number]>} entries - key/value pairs to set.
+   */
+  updateEpexHistory(entries) {
+    for (const [k, v] of entries) this.state.epexHistory.set(k, v);
+    this.notify();
+  }
+
+  /**
    * Manually triggers a re-render for all listeners.
    */
   notify() {
@@ -85,6 +95,8 @@ export const appStore = new Store({
   yearScale: 1.0,
   dataMeta: { mode: "none", synthesized: false, realDays: 0, realHours: 0, synthHours: 0, yearScale: 1 },
   activeSimulation: {},
+  untangle: { active: false },
+  dataQuality: null,
   
   // Dismssal Flags
   epexWarnDismissed: false,

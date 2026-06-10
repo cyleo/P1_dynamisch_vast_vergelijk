@@ -440,16 +440,25 @@ export function applySmartDimming(solarDimmingMode, spot, impDyn, expDyn, solar_
 }
 
 /**
- * ISO week number helper (ISO 8601)
+ * ISO week number helper (ISO 8601).
+ * Uses the Thursday-of-week to determine the ISO year, so late-December dates
+ * that belong to week 1 of the next year are labelled correctly, and early-January
+ * dates that belong to the last week of the previous year are also correct.
  */
 export function isoWeek(dateStr) {
   const d = new Date(dateStr + "T12:00:00Z");
-  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  // Find Thursday of this ISO week (Mon=0 … Sun=6 in ISO day numbering).
+  const isoDay = (d.getUTCDay() + 6) % 7; // Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+  const thu = new Date(d);
+  thu.setUTCDate(d.getUTCDate() + (3 - isoDay));
+  // The ISO year is the calendar year of that Thursday.
+  const isoYear = thu.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
   const startOfWeek1 = new Date(jan4);
   startOfWeek1.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
-  const diff = d - startOfWeek1;
+  const diff = thu - startOfWeek1;
   const week = Math.floor(diff / (7 * 86400000)) + 1;
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
 }
 
 

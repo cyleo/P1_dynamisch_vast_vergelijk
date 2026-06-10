@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=79">
+  <link rel="stylesheet" href="/style.css?v=83">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -864,16 +864,16 @@
           </div>
           <div class="form-group">
             <label for="fixed-feedin-rate">Teruglevertarief / kWh <span class="info-icon" tabindex="0">i<span
-                  class="info-tooltip">De vaste vergoeding die je ontvangt per teruggeleverde kWh. Geen saldering meer —
-                  dit is het enige wat je terugkrijgt voor zonne-energie. Typisch €0,05–€0,10/kWh in 2027.</span></span>
+                  id="tooltip-feedin-rate" class="info-tooltip">De vaste vergoeding die je ontvangt per teruggeleverde kWh. Geen saldering meer —
+                  dit is het enige wat je terugkrijgt voor zonne-energie. Typisch €0,04–€0,05/kWh in 2027.</span></span>
               <span class="val-badge" id="fixed-feedin-rate-val">€ 0.070</span></label>
             <input type="range" id="fixed-feedin-rate" min="0.00" max="0.25" step="0.005" value="0.070" data-suffix="">
           </div>
           <div class="form-group advanced-only">
             <label for="fixed-feedin-fee">Vaste Terugleverkosten (VTK) / kWh <span class="info-icon" tabindex="0">i<span
-                  class="info-tooltip">Veel leveranciers rekenen per 2027 een VTK (Vaste Terugleverkosten) per
+                  id="tooltip-feedin-fee" class="info-tooltip">Veel leveranciers rekenen een VTK (Vaste Terugleverkosten) per
                   teruggeleverde kWh — bovenop het netwerk. Hierdoor kost terugleveren jou geld per kWh in plaats van
-                  dat je er voor wordt betaald. Typisch €0,05–€0,10/kWh.</span></span>
+                  dat je er voor wordt betaald. Typisch €0,01–€0,045/kWh (standaard: geen VTK).</span></span>
               <span class="val-badge" id="fixed-feedin-fee-val">€ 0.000</span></label>
             <input type="range" id="fixed-feedin-fee" min="0.00" max="0.15" step="0.005" value="0.000" data-suffix="">
           </div>
@@ -1555,7 +1555,7 @@
           <section class="glass-panel table-panel">
             <div class="panel-header-badge">
               <h2 style="font-size: 1rem; font-weight: 700; font-family: var(--font-display);">Specificatie dynamisch contract</h2>
-              <span class="badge dynamic">Beurs model</span> <span class="info-icon" tabindex="0">i<span class="info-tooltip">Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Teruglevering wordt vergoed tegen de spotprijs van dat uur, energiebelasting over je bruto afname.</span></span>
+              <span class="badge dynamic">Beurs model</span> <span class="info-icon" tabindex="0">i<span id="tooltip-dyn-badge" class="info-tooltip">Berekening voor een <strong>dynamisch contract</strong>: de prijs volgt elk uur de stroombeurs (EPEX). Teruglevering wordt vergoed tegen de spotprijs van dat uur, energiebelasting over je bruto afname.</span></span>
             </div>
             <table class="detail-table">
               <thead>
@@ -1627,7 +1627,7 @@
 
                 <tr class="total-row" style="border-top:1px dashed rgba(255,255,255,0.15);">
                   <td>Totale jaarrekening</td>
-                  <td>Netto + EB + vast − korting</td>
+                  <td>Netto + EB + vast − korting + netbeheer</td>
                   <td id="tbl-dyn-total" style="color:var(--accent-cyan);" aria-live="polite">-</td>
                 </tr>
               </tbody>
@@ -1662,8 +1662,8 @@
               <em style="color:var(--text-muted);font-family:var(--font-body);">Voorbeeld verschijnt zodra een simulatie is gedraaid…</em>
             </div>
             <ul style="margin:0 0 0.4rem 1.1rem;padding:0;">
-              <li><strong>Teruglevering</strong> wordt vergoed tegen de kale EPEX-prijs van dat uur (zonder energiebelasting), minus de teruglever-opslag van je leverancier. Bij een negatieve prijs betaal je juist bij om terug te leveren.</li>
-              <li><strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle
+              <li id="dynprice-li-feedin"><strong>Teruglevering</strong> wordt vergoed tegen de kale EPEX-prijs van dat uur (zonder energiebelasting), minus de teruglever-opslag van je leverancier. Bij een negatieve prijs betaal je juist bij om terug te leveren.</li>
+              <li id="dynprice-li-eb"><strong>Energiebelasting (2027):</strong> sinds het einde van de saldering betaal je deze over álle
                 afgenomen kWh — je teruglevering wordt er niet meer van afgetrokken.</li>
             </ul>
             <p style="margin:0;font-size:0.78rem;"><svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.35rem; color: var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="15" y2="17"></line></svg> De volledige uur-voor-uur-uitwerking staat in de tabel
@@ -1694,7 +1694,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=79"></script>
+  <script src="/app.js?v=83"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
