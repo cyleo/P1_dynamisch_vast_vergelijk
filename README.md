@@ -41,9 +41,9 @@ Puur HTML/CSS/JavaScript — geen framework, geen database, geen tracking. (`npm
 ### Optie 1 — npm (aanbevolen)
 
 ```bash
-git clone https://github.com/peterjan/DynOfVast.git
-cd DynOfVast
-npm start          # start op http://localhost:3000/
+git clone https://github.com/cyleo/P1_dynamisch_vast_vergelijk.git
+cd P1_dynamisch_vast_vergelijk
+npm start          # bouwt de bundle en start op http://localhost:3000/
 ```
 
 Tests draaien:
