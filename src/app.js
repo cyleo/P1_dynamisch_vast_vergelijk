@@ -1472,6 +1472,7 @@ function makeBadgeEditable(slider, badge) {
     };
 
     input.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // niet doorborrelen naar de badge-keydown (zou direct heropenen)
       if (e.key === "Enter") { e.preventDefault(); finish(true); }
       else if (e.key === "Escape") { e.preventDefault(); finish(false); }
     });
@@ -1479,8 +1480,9 @@ function makeBadgeEditable(slider, badge) {
     input.addEventListener("click", (e) => e.stopPropagation()); // niet de badge-click herhalen
   };
 
-  badge.addEventListener("click", beginEdit);
+  badge.addEventListener("click", (e) => { if (e.target === badge) beginEdit(); });
   badge.addEventListener("keydown", (e) => {
+    if (e.target !== badge) return; // alleen reageren op focus op de badge zelf
     if ((e.key === "Enter" || e.key === " ") && !badge.querySelector("input")) {
       e.preventDefault();
       beginEdit();

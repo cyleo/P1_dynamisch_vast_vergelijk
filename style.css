@@ -175,6 +175,55 @@ header {
   font-weight: 600;
 }
 
+/* A11y fase 2: klik-/tikbare waarde-badge → handmatige invoer */
+.val-badge.val-editable {
+  cursor: text;
+  border-bottom: 1px dashed rgba(0, 242, 254, 0.45);
+  padding: 0 1px;
+  min-height: 20px;
+  min-width: 28px;
+  display: inline-block;
+  text-align: right;
+  position: relative;
+}
+/* Touch: vergroot het tikbare oppervlak naar ~44px zonder de lay-out te verschuiven
+   (zelfde patroon als de info-icon hit-area). */
+@media (pointer: coarse) {
+  .val-badge.val-editable::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 44px;
+    min-width: 44px;
+  }
+  .val-badge.val-editable:focus-within::after { display: none; } /* niet over het invoerveld */
+}
+.val-badge.val-editable:hover,
+.val-badge.val-editable:focus-visible {
+  background: rgba(0, 242, 254, 0.08);
+  border-radius: 4px;
+  outline: none;
+}
+.val-edit-input {
+  width: 5.5em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: inherit;
+  color: var(--accent-cyan);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 4px;
+  padding: 1px 4px;
+  text-align: right;
+}
+/* verberg de number-spinners (eigen styling, smaller) */
+.val-edit-input::-webkit-outer-spin-button,
+.val-edit-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.val-edit-input { -moz-appearance: textfield; }
+
 /* Styled Sliders */
 input[type="range"] {
   -webkit-appearance: none;

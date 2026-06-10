@@ -12,6 +12,32 @@ window.setAfnameView = setAfnameView;
 export const fmtMoney = v => "€ " + (v || 0).toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const fmtKwh = v => (v || 0).toLocaleString("nl-NL", { maximumFractionDigits: 0 }) + " kWh";
 
+// ── Touch-vriendelijke tooltips voor de staaf-grafieken ─────────────────────────
+// Muis-events (mouseenter/mouseleave) vuren niet op touch-toestellen → de tooltips
+// waren daar onbereikbaar. _bindTouchTip koppelt een staaf-overlay aan dezelfde
+// show/hide-closures via een tik: tik op een staaf = tooltip tonen, tik ergens
+// anders = sluiten. Er is hooguit één tooltip tegelijk actief (`_activeTouchTip`).
+let _activeTouchTip = null; // de hide-functie van de momenteel getoonde touch-tooltip
+function _bindTouchTip(overlay, show, hide) {
+  overlay.setAttribute("data-charttip", "1"); // markeert "tik hier sluit niet zelf"
+  overlay.addEventListener("touchstart", () => {
+    if (_activeTouchTip && _activeTouchTip !== hide) _activeTouchTip();
+    show();
+    _activeTouchTip = hide;
+  }, { passive: true });
+}
+// Eénmalig: een tik buiten élke staaf-overlay sluit de actieve touch-tooltip.
+if (typeof document !== "undefined" && !document._chartTipDismissBound) {
+  document._chartTipDismissBound = true;
+  document.addEventListener("touchstart", (e) => {
+    if (!_activeTouchTip) return;
+    const t = e.target;
+    if (t && t.getAttribute && t.getAttribute("data-charttip") === "1") return; // staaf handelt zelf
+    _activeTouchTip();
+    _activeTouchTip = null;
+  }, { passive: true });
+}
+
 // Premium inline SVG icons to replace emojis
 const ICON_CHECK = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-green);"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 const ICON_WARN = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
@@ -332,11 +358,12 @@ export function renderChart() {
   overlay.setAttribute("height", chartHeight);
   overlay.setAttribute("fill", "transparent");
   overlay.style.cursor = "crosshair";
+  overlay.style.touchAction = "none"; // verticale veeg scrubt de grafiek i.p.v. te scrollen
   svg.appendChild(overlay);
 
-  overlay.addEventListener("mousemove", (e) => {
+  const moveTo = (clientX) => {
     const rect = svg.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
+    const mouseX = clientX - rect.left;
 
     // Convert mouseX to hour index
     const relativeX = (mouseX - paddingLeft) / chartWidth;
@@ -424,14 +451,22 @@ export function renderChart() {
     if (tx < 0) tx = 5;
     tooltip.style.left = `${tx}px`;
     tooltip.style.top = `${getYEnergy(impVal) - 40}px`;
-  });
+  };
 
-  overlay.addEventListener("mouseleave", () => {
+  const hideAll = () => {
     hoverLine.style.display = "none";
     dotImp.style.display = "none";
     dotExp.style.display = "none";
     tooltip.style.display = "none";
-  });
+  };
+
+  overlay.addEventListener("mousemove", (e) => moveTo(e.clientX));
+  overlay.addEventListener("mouseleave", hideAll);
+  // Touch: scrubben met de vinger toont dezelfde uur-tooltip; loslaten verbergt 'm.
+  const touchScrub = (e) => { if (e.touches[0]) { e.preventDefault(); moveTo(e.touches[0].clientX); } };
+  overlay.addEventListener("touchstart", touchScrub, { passive: false });
+  overlay.addEventListener("touchmove", touchScrub, { passive: false });
+  overlay.addEventListener("touchend", hideAll);
 }
 
 function _updateSimHeader() {
@@ -581,7 +616,7 @@ function _renderSimDrill() {
   // Hover overlays
   for (let h = 0; h < 24; h++) {
     const ov = mk("rect", { x: PAD_L + h * barSlot, y: PAD_T, width: barSlot, height: cH, fill: "transparent", cursor: "crosshair" });
-    ov.addEventListener("mouseenter", () => {
+    const show = () => {
       const dyn = dynVals[h], fx = fixedVals[h], diff = dyn - fx;
       document.getElementById("sim-tt-hour").textContent = `${String(h).padStart(2, "0")}:00–${String(h + 1).padStart(2, "0")}:00`;
       document.getElementById("sim-tt-dyn").textContent = `€ ${Math.abs(dyn).toFixed(4)}/uur${dyn < 0 ? " (opbrengst)" : ""}`;
@@ -595,8 +630,11 @@ function _renderSimDrill() {
       let tx = xOf(h) + 12; if (tx + 200 > W) tx = xOf(h) - 210;
       tooltip.style.left = tx + "px"; tooltip.style.top = (PAD_T + 10) + "px";
       ov.setAttribute("fill", "rgba(255,255,255,0.04)");
-    });
-    ov.addEventListener("mouseleave", () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); });
+    };
+    const hide = () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); };
+    ov.addEventListener("mouseenter", show);
+    ov.addEventListener("mouseleave", hide);
+    _bindTouchTip(ov, show, hide);
     svg.appendChild(ov);
   }
 }
@@ -701,7 +739,7 @@ export function renderSimChart() {
 
   for (let i = 0; i < N; i++) {
     const ov = mk("rect", { x: PAD_L + i * barSlot, y: PAD_T, width: barSlot, height: cH, fill: "transparent", cursor: "pointer" });
-    ov.addEventListener("mouseenter", () => {
+    const show = () => {
       const diff = dyns[i] - fixeds[i];
       const label = isWeekMode ? keys[i] : (() => { const d = new Date(keys[i] + "T12:00:00"); return d.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }); })();
       document.getElementById("sim-tt-hour").textContent = label + (isWeekMode ? "" : " · klik voor uurdetail");
@@ -715,8 +753,11 @@ export function renderSimChart() {
       let tx = xOf(i) + 12; if (tx + 200 > W) tx = xOf(i) - 210;
       tooltip.style.left = tx + "px"; tooltip.style.top = (PAD_T + 10) + "px";
       ov.setAttribute("fill", "rgba(255,255,255,0.04)");
-    });
-    ov.addEventListener("mouseleave", () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); });
+    };
+    const hide = () => { tooltip.style.display = "none"; ov.setAttribute("fill", "transparent"); };
+    ov.addEventListener("mouseenter", show);
+    ov.addEventListener("mouseleave", hide);
+    _bindTouchTip(ov, show, hide);
     // Drill-down on click (day mode only — week mode drills to the first day of that week)
     ov.addEventListener("click", () => {
       if (!isWeekMode) {
@@ -1582,7 +1623,7 @@ export function renderOverviewChart() {
       fill: "transparent", cursor: "crosshair"
     });
     
-    overlay.addEventListener("mouseenter", (e) => {
+    const show = () => {
       const key = days[i];
       const val = bucketMap.get(key);
       
@@ -1661,13 +1702,16 @@ export function renderOverviewChart() {
       }
       tooltip.style.top = Math.max(0, yRef - 20) + "px";
       overlay.setAttribute("fill", "rgba(255,255,255,0.06)");
-    });
-    
-    overlay.addEventListener("mouseleave", () => {
+    };
+
+    const hide = () => {
       tooltip.style.display = "none";
       overlay.setAttribute("fill", "transparent");
-    });
-    
+    };
+    overlay.addEventListener("mouseenter", show);
+    overlay.addEventListener("mouseleave", hide);
+    _bindTouchTip(overlay, show, hide);
+
     svg.appendChild(overlay);
   });
 }
