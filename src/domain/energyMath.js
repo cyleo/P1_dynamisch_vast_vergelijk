@@ -132,8 +132,11 @@ export function precomputeEVSchedules(cfg, ctx, dayRows, markupBtw) {
 /**
  * Pre-computes battery boundary values (store capacity, reserve) per day.
  * Determines when to charge from the grid vs discharge based on daily EPEX spreads.
+ * `salderen` (2026-model): teruglevering binnen de salderingsgrens is de all-in
+ * import-prijs van het export-uur waard (spot + opslag), niet de kale 2027-waarde
+ * (spot/1.21 − teruglever-opslag) — de export-gate rekent dan met die hogere waarde.
  */
-export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport) {
+export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport, salderen = false) {
   const {
     hasBattery, batCapacity, batPower, batEfficiency, stressMultiplier = 1.0,
     hasHeatPump, hpWinterBaseload, hasEv, evWeeklyDist, evConsumption,
@@ -192,7 +195,13 @@ export function precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMa
     let drawnBudget = Math.max(0, selfNeed - fromSolar) / batEfficiency;
 
     if (gridExport) {
-      const expHrs = expensive.filter(e => ((e.spot / 1.21) - exportMarkup) * batEfficiency > loAllin);
+      // Export-waarde per fiscaal model: salderen = all-in import-prijs van het uur
+      // (BTW + inkoopvergoeding terug); 2027 = kale spot minus teruglever-opslag.
+      // NB: de gate met loAllin (incl. EB) is onder saldering conservatief — de EB op
+      // het geladen volume wordt deels genetto — maar conservatief schendt de
+      // winst ≥ kosten-invariant niet (geborgd in test11, beide jaren).
+      const expValue = (sp) => salderen ? (sp + markupBtw) : ((sp / 1.21) - exportMarkup);
+      const expHrs = expensive.filter(e => expValue(e.spot) * batEfficiency > loAllin);
       const exportRoom = Math.min(expHrs.length * batPower, Math.max(0, batCapacity - selfNeed));
       if (exportRoom > 0) {
         batDischargeHrs[dk] = new Set(expHrs.map(e => e.hour));
@@ -270,6 +279,7 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
  * @param {number}  ctx.exportMarkup   - teruglever-opslag €/kWh (incl. BTW)
  * @param {boolean} ctx.gridCharge     - mag van het net laden (kosten/winst-modus)
  * @param {boolean} ctx.gridExport     - mag aan het net verkopen (winst-modus)
+ * @param {boolean} ctx.salderen       - fiscaal 2026-model: export-gate op all-in waarde
  * @param {string}  ctx.dayKey         - lokale dagsleutel YYYY-MM-DD
  * @param {number}  ctx.hour           - uur 0–23
  * @param {number}  ctx.spot           - spotprijs dit uur (incl. BTW, excl. EB)
@@ -287,7 +297,7 @@ export function applyEVLoad(hasEv, evScheduleCacheDyn, evScheduleCacheFx, dayKey
  */
 export function applyBatteryState(ctx) {
   const {
-    cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+    cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport, salderen = false,
     dayKey, hour, spot,
     batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
     batGridDrawnVal,
@@ -339,7 +349,12 @@ export function applyBatteryState(ctx) {
       batDischargeToHouseVal += toHouse;
 
       const loAllin = batDayMinAllin[dayKey] || (markupBtw + eb);
-      const minExportSpot = ((loAllin / cfg.batEfficiency) + exportMarkup) * 1.21;
+      // Drempel-spot waarboven verkopen loont, per fiscaal model (spiegel van de
+      // precompute-gate): salderen → exportwaarde = spot + opslag ⇒ spot > loAllin/η − opslag;
+      // 2027 → exportwaarde = spot/1.21 − teruglever-opslag ⇒ spot > (loAllin/η + opslag)×1.21.
+      const minExportSpot = salderen
+        ? (loAllin / cfg.batEfficiency) - markupBtw
+        : ((loAllin / cfg.batEfficiency) + exportMarkup) * 1.21;
       const reserve = batSelfReserve[dayKey] ?? 0;
       const exportable = Math.min(d, Math.max(0, batSoC - reserve));
       if (gridExport && exportable > 0 && spot > minExportSpot) {

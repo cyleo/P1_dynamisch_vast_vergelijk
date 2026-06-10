@@ -76,5 +76,35 @@ ok(Math.abs(fz - fk) < 0.01 && Math.abs(fz - fw) < 0.01, `vast contract invarian
 // 4. Accu verlaagt altijd de dynamische rekening (meerwaarde > 0)
 ok((noBat.dynBill - bat(5, "zelf").dynBill) > 0, `accu verlaagt de dynamische rekening`);
 
+// 5. Zelfde invarianten onder het 2026-SALDERINGSMODEL (de export-gate rekent dan met de
+//    all-in waarde van het export-uur i.p.v. de kale spot → winst exporteert vaker; de
+//    kernregels — monotonie, vrijheids-ordening, vast-invariantie — moeten blijven gelden).
+console.log("\n--- fiscaal 2026 (saldering) ---");
+const bat26 = (cap, mode) => run({ ...base, fiscalYear: 2026, hasBattery: true, batCapacity: cap, batPower: cap * 0.5, batEfficiency: 0.90, batMode: mode });
+const noBat26 = run({ ...base, fiscalYear: 2026 });
+for (const mode of ["zelf", "kosten", "winst"]) {
+  let prev = -Infinity, mono = true, worst = 0;
+  const meer = {};
+  for (const cap of CAPS) {
+    const m = noBat26.dynBill - bat26(cap, mode).dynBill;
+    meer[cap] = m;
+    if (m < prev - TOL) { mono = false; worst = Math.min(worst, m - prev); }
+    prev = m;
+  }
+  ok(mono, `2026 modus "${mode}": meerwaarde monotoon niet-dalend ` +
+    `(2→30 kWh: ${CAPS.map(c => "€" + meer[c].toFixed(0)).join(" → ")})` +
+    (mono ? "" : `  [grootste dip €${worst.toFixed(2)}]`));
+}
+for (const cap of [5, 10, 20]) {
+  const z = noBat26.dynBill - bat26(cap, "zelf").dynBill;
+  const k = noBat26.dynBill - bat26(cap, "kosten").dynBill;
+  const w = noBat26.dynBill - bat26(cap, "winst").dynBill;
+  ok(k >= z - TOL && w >= k - WINST_TOL, `2026 ${cap} kWh: winst (€${w.toFixed(0)}) ≥ kosten (€${k.toFixed(0)}) ≥ zelf (€${z.toFixed(0)})`);
+}
+{
+  const fz26 = bat26(10, "zelf").fixedBill, fk26 = bat26(10, "kosten").fixedBill, fw26 = bat26(10, "winst").fixedBill;
+  ok(Math.abs(fz26 - fk26) < 0.01 && Math.abs(fz26 - fw26) < 0.01, `2026 vast contract invariant voor modus (€${fz26.toFixed(2)} = €${fk26.toFixed(2)} = €${fw26.toFixed(2)})`);
+}
+
 console.log(`\n${fail === 0 ? "✅ ALLE" : "❌ " + fail + "/" + (pass + fail)} checks` + (fail === 0 ? " geslaagd" : " GEFAALD") + ` (${pass} pass)`);
 if (fail > 0) process.exitCode = 1;

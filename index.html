@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=78">
+  <link rel="stylesheet" href="/style.css?v=79">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -1499,17 +1499,17 @@
                 </tr>
                 <!-- Sub-rows under Netto energiekosten -->
                 <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Piekafname</td>
+                  <td id="tbl-fixed-peak-label">Piekafname</td>
                   <td id="tbl-fixed-peak-imp">-</td>
                   <td id="tbl-fixed-peak-cost">-</td>
                 </tr>
                 <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Dalafname</td>
+                  <td id="tbl-fixed-dal-label">Dalafname</td>
                   <td id="tbl-fixed-dal-imp">-</td>
                   <td id="tbl-fixed-dal-cost">-</td>
                 </tr>
                 <tr class="fixed-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td style="color:var(--accent-green);">Teruglevering (vergoeding)</td>
+                  <td id="tbl-fixed-exp-label" style="color:var(--accent-green);">Teruglevering (vergoeding)</td>
                   <td id="tbl-fixed-exp">-</td>
                   <td id="tbl-fixed-feedin-credit" style="color:var(--accent-green);">-</td>
                 </tr>
@@ -1587,12 +1587,12 @@
                   </td>
                 </tr>
                 <tr class="dyn-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td style="color:var(--accent-green);">Teruglevering (EPEX spotprijs)</td>
+                  <td id="tbl-dyn-exp-label" style="color:var(--accent-green);">Teruglevering (EPEX spotprijs)</td>
                   <td id="tbl-dyn-exp-kwh">-</td>
                   <td id="tbl-dyn-raw-exp" style="color:var(--accent-green);">-</td>
                 </tr>
                 <tr class="dyn-net-detail sub-row" style="display:none; background:rgba(255,255,255,0.015);">
-                  <td>Energiebelasting <span style="font-size:0.68rem;color:var(--text-muted);">(bruto afname)</span></td>
+                  <td>Energiebelasting <span id="tbl-dyn-tax-note" style="font-size:0.68rem;color:var(--text-muted);">(bruto afname)</span></td>
                   <td id="tbl-dyn-tax-vol">-</td>
                   <td id="tbl-dyn-tax">-</td>
                 </tr>
@@ -1694,7 +1694,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=78"></script>
+  <script src="/app.js?v=79"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

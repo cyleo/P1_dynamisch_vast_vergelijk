@@ -110,6 +110,15 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   const gridCharge = mode === "kosten" || mode === "winst";   // van het net mogen laden
   const gridExport = mode === "winst";                        // aan het net mogen verkopen
 
+  // ── FISCAAL JAARMODEL (scenario-selector) ── één object per jaar bundelt álle
+  // verschillen; de engine takt alléén op `salderen`. Hier al opgehaald (niet pas bij de
+  // eindtotalen) omdat óók de per-uur HARDWARE-BESLISSINGEN erop takken: onder saldering
+  // (2026) is teruglevering binnen de salderingsgrens de all-in import-prijs waard
+  // (spot + opslag, consistent met dynExpRevSalder) i.p.v. de kale 2027-waarde
+  // (spot/1.21 − opslag) — dat verschuift de accu-export-gates wezenlijk.
+  const model = FISCAL_MODELS[cfg.fiscalYear] || FISCAL_MODELS[DEFAULT_FISCAL_YEAR];
+  const salderen = model.salderen;
+
   const markupBtw = dynamicMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks gebruiken
   const exportMarkup = dynamicExportMarkup;   // slider is incl. BTW (Pad 1): rechtstreeks van de kale prijs af
   // Markt-/dataset-inputs uit de context i.p.v. module-globals (DOM-vrij, worker-klaar).
@@ -121,8 +130,8 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   const { evScheduleCacheDyn, evScheduleCacheFx } = precomputeEVSchedules(cfg, ctx, dayRows, markupBtw);
 
   // ── Accu-arbitrage: per dag de goedkoopste laad- en duurste ontlaad-uren bepalen.
-  const { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve } = 
-    precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport);
+  const { batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve } =
+    precomputeBatterySchedule(cfg, ctx, dayRows, markupBtw, exportMarkup, gridCharge, gridExport, salderen);
 
   // Accumulatoren
   let fxPeakImp = 0, fxDalImp = 0, fxPeakExp = 0, fxDalExp = 0;
@@ -275,7 +284,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
 
     // Thuisaccu processing (Volledig lineair, Vector 2 Fix) — context-object i.p.v. 18 args.
     const batRes = applyBatteryState({
-      cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport,
+      cfg, eb, markupBtw, exportMarkup, gridCharge, gridExport, salderen,
       dayKey, hour, spot,
       batChargeHrs, batDischargeHrs, batDayMinAllin, batGridBudget, batStoreCap, batSelfReserve,
       batSoC, batSoCFx, batGridDrawnVal: batGridDrawn[dayKey] || 0,
@@ -317,10 +326,8 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   fxPeakImp *= ys; fxDalImp *= ys; fxPeakExp *= ys; fxDalExp *= ys;
   dynImpCost *= ys; dynExpRev *= ys; dynExpRevSalder *= ys; dynImpKwh *= ys; dynExpKwh *= ys;
 
-  // ── FISCAAL JAARMODEL (scenario-selector) ──
-  // Eén object per jaar bundelt álle verschillen; de engine takt alléén op `salderen`.
+  // ── EINDTOTALEN per fiscaal jaarmodel (`model`/`salderen` zijn bovenaan bepaald) ──
   // 2027 = huidige gedrag (geen saldering); 2026 = wettelijke jaarverrekening.
-  const model = FISCAL_MODELS[cfg.fiscalYear] || FISCAL_MODELS[DEFAULT_FISCAL_YEAR];
   // Heffingskorting + netbeheer komen uit het jaarmodel — identiek voor beide contracten
   // (comparison-neutraal), maar nodig voor realistische jaartotalen.
   const ebRebate = model.ebRebate;
@@ -334,19 +341,26 @@ export function _simulateCore(cfg, full = false, ctx = null) {
   // NIET stil herprijzen.
   let fxImpCost, fxFeedCredit, fxFeedPenalt, fixedBill, dynEB, effExpRev, dynTaxableKwh, dynBill;
 
+  // Salderings-presentatievelden — in béide takken berekend (goedkoop) zodat de UI de
+  // 2026-breakdown kan tonen met rijen die exact optellen tot de kopregel.
+  const fxImpKwh = fxPeakImp + fxDalImp;
+  const fxExpKwh = fxPeakExp + fxDalExp;
+  const fxNetImp = Math.max(0, fxImpKwh - fxExpKwh);
+  const fxSurplusExp = Math.max(0, fxExpKwh - fxImpKwh);
+  const peakShare = fxImpKwh > 0 ? fxPeakImp / fxImpKwh : 0;
+  const fxSalderTariff = peakShare * fixedPeakRate + (1 - peakShare) * fixedDalRate;
+
   if (model.salderen) {
     // ── 2026 · SALDERING (wettelijke jaarverrekening, salderingsgrens = jaarafname) ──
     // Vast contract: afname ↔ teruglevering wordt netto verrekend tégen het retail-tarief.
     // De netto import betaalt het volume-gewogen piek/dal-tarief; het overschot (teruglevering
     // bóven de afname) krijgt het teruglevertarief (− VTK).
-    const fxImpKwh = fxPeakImp + fxDalImp;
-    const fxExpKwh = fxPeakExp + fxDalExp;
-    const fxNetImp = Math.max(0, fxImpKwh - fxExpKwh);
-    const fxSurplusExp = Math.max(0, fxExpKwh - fxImpKwh);
-    const peakShare = fxImpKwh > 0 ? fxPeakImp / fxImpKwh : 0;
-    fxImpCost = fxNetImp * (peakShare * fixedPeakRate + (1 - peakShare) * fixedDalRate);
+    fxImpCost = fxNetImp * fxSalderTariff;
     fxFeedCredit = fxSurplusExp * fixedFeedInRate;
-    fxFeedPenalt = fxSurplusExp * fixedFeedInFee;
+    // VTK over de BRUTO teruglevering — saldering streept alléén de energie weg, niet de
+    // terugleverkosten: leveranciers rekenen die in 2026 over álle teruggeleverde kWh
+    // (Eneco: ct/kWh over alle teruglevering; Vattenfall: staffel op jaarteruglevering).
+    fxFeedPenalt = fxExpKwh * fixedFeedInFee;
 
     // Dynamisch contract: EB over de NETTO afname; salderbare teruglevering (tot de
     // salderingsgrens = totale afname) krijgt BTW + inkoopvergoeding terug (all-in waarde),
@@ -379,6 +393,12 @@ export function _simulateCore(cfg, full = false, ctx = null) {
       dynamicNetTax: dynEB, dynamicTaxableKwh: dynTaxableKwh,
       dynamicSubscription: dynSub, dynamicTotalBill: dynBill,
       taxRebate: ebRebate, gridFees: gridFees,
+      // Fiscale presentatievelden: de UI tekent de 2026-breakdown (gesaldeerde afname ×
+      // gewogen tarief / weggestreept volume / overschot-export) zó dat de detailrijen
+      // exact optellen tot de kopregel. In 2027 informatief (UI gebruikt ze dan niet).
+      salderen,
+      fixedNetImportKwh: fxNetImp, fixedSurplusExportKwh: fxSurplusExp,
+      fixedSalderedKwh: Math.min(fxImpKwh, fxExpKwh), fixedSalderTariff: fxSalderTariff,
       fixedPeakImport: fxPeakImp, fixedPeakExport: fxPeakExp,
       fixedDalImport: fxDalImp, fixedDalExport: fxDalExp,
       fixedImportCost: fxImpCost, fixedFeedInCredit: fxFeedCredit,

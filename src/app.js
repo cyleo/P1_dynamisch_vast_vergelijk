@@ -11,7 +11,7 @@ import { getFallbackSpot, buildSimContext, _simulateCore } from "./domain/engine
 import {
   parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync,
   parseLongCSV, parseLongCSVWithMapping, guessColumnRoles,
-  processHAStatistics
+  processHAStatistics, normalizeToHourly
 } from "./domain/parser.js";
 
 /* Core Dashboard Logic & Simulation Engine */
@@ -295,6 +295,7 @@ function setupEventListeners() {
   // Fiscaal scenariojaar: hertekent de hele simulatie + werkt het jaar-label bij.
   document.getElementById("scenario-year")?.addEventListener("change", () => {
     updateScenarioYearTag();
+    updateBatModeHint();   // winst-modus-hint is jaar-afhankelijk (saldering ↔ bruto-EB)
     runSimulation();
   });
   updateScenarioYearTag();
@@ -558,10 +559,15 @@ function updateBatModeHint() {
   const el = document.getElementById("bat-mode-hint");
   if (!el) return;
   const mode = document.getElementById("bat-mode")?.value || "zelf";
+  // De winst-economie verschilt per fiscaal scenariojaar: onder saldering (2026) is
+  // teruglevering bijna evenveel waard als zelfverbruik → de export-gate triggert vaker.
+  const is2026 = (document.getElementById("scenario-year")?.value || "2027") === "2026";
+  const winst2026 = `Met saldering (2026) is teruglevering binnen je jaarverbruik bijna evenveel waard als zelfverbruik — net-laden en terugverkopen bij prijspieken kan dan écht lonen.`;
+  const winst2027 = `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Onder bruto-EB (2027) levert teruglevering minder op dan zelfverbruik, dus op normale prijzen komt dit vrijwel gelijk uit met "Kostenbewust". Echt voordeel pas bij flinke prijspieken.`;
   const hints = {
     zelf: `Alléén zon opslaan en ontladen voor eigen verbruik — robuust en voorspelbaar.`,
     kosten: `Laadt óók goedkoop van het net, maar alleen voor eigen verbruik (geen teruglevering).`,
-    winst: `<svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-orange);margin-right:0.25rem;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Onder bruto-EB (2027) levert teruglevering minder op dan zelfverbruik, dus op normale prijzen komt dit vrijwel gelijk uit met "Kostenbewust". Echt voordeel pas bij flinke prijspieken.`,
+    winst: is2026 ? winst2026 : winst2027,
   };
   el.innerHTML = hints[mode] || "";
   el.style.display = el.innerHTML ? "block" : "none";
@@ -700,7 +706,7 @@ async function parseAutoCSVAsync(text) {
   if (headers[0].toLowerCase() === "entity_id" &&
     headers[1].toLowerCase() === "type" &&
     headers[2].toLowerCase() === "unit") {
-    return await parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal);
+    return await parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal, digitalTwinEnabled);
   }
 
   if (headers.some(h => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
@@ -2129,20 +2135,42 @@ function updateUIElements() {
   document.getElementById("stat-fixed-val").textContent = `${sim.fixedTotalBill.toFixed(2)}`;
   document.getElementById("stat-dynamic-val").textContent = `${sim.dynamicTotalBill.toFixed(2)}`;
 
-  // Fixed breakdown table — show gross costs AND saldering credits separately
+  // Fixed breakdown table — rijen moeten in BÉIDE fiscale jaren exact optellen tot de
+  // kopregel "Netto energiekosten". 2027: bruto piek/dal-kosten − vergoeding + VTK.
+  // 2026 (saldering): gesaldeerde afname × gewogen tarief − overschot-vergoeding + VTK;
+  // de piek/dal-rijen worden dan hergebruikt als "gesaldeerde afname" + "weggestreept"
+  // (de oude bruto-weergave telde in 2026 níét op tot de kopregel).
+  const salderen = !!sim.salderen;
   const fixedPeakRate = parseFloat(document.getElementById("fixed-peak").value);
   const fixedDalRate = parseFloat(document.getElementById("fixed-dal").value);
-  const peakImpCost = sim.fixedPeakImport * fixedPeakRate;
-  const dalImpCost = sim.fixedDalImport * fixedDalRate;
-
-  const totalFixedExp = sim.fixedPeakExport + sim.fixedDalExport;
   const feedRate = parseFloat(document.getElementById("fixed-feedin-rate").value);
+  const setLbl = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
-  document.getElementById("tbl-fixed-peak-imp").innerHTML = `${sim.fixedPeakImport.toFixed(1)} kWh × €${fixedPeakRate.toFixed(2)}${synthTag}`;
-  document.getElementById("tbl-fixed-peak-cost").textContent = `€ ${peakImpCost.toFixed(2)}`;
-  document.getElementById("tbl-fixed-dal-imp").textContent = `${sim.fixedDalImport.toFixed(1)} kWh × €${fixedDalRate.toFixed(2)}`;
-  document.getElementById("tbl-fixed-dal-cost").textContent = `€ ${dalImpCost.toFixed(2)}`;
-  document.getElementById("tbl-fixed-exp").textContent = `${totalFixedExp.toFixed(1)} kWh × €${feedRate.toFixed(3)}`;
+  if (salderen) {
+    setLbl("tbl-fixed-peak-label", "Gesaldeerde afname (piek+dal)");
+    document.getElementById("tbl-fixed-peak-imp").innerHTML =
+      `${(sim.fixedNetImportKwh ?? 0).toFixed(1)} kWh × €${(sim.fixedSalderTariff ?? 0).toFixed(3)} (gewogen)${synthTag}`;
+    document.getElementById("tbl-fixed-peak-cost").textContent = `€ ${sim.fixedImportCost.toFixed(2)}`;
+    setLbl("tbl-fixed-dal-label", "Weggestreept (saldering)");
+    document.getElementById("tbl-fixed-dal-imp").textContent =
+      `${(sim.fixedSalderedKwh ?? 0).toFixed(1)} kWh teruglevering ↔ afname`;
+    document.getElementById("tbl-fixed-dal-cost").textContent = `€ 0.00`;
+    setLbl("tbl-fixed-exp-label", "Overschot-teruglevering (vergoeding)");
+    document.getElementById("tbl-fixed-exp").textContent =
+      `${(sim.fixedSurplusExportKwh ?? 0).toFixed(1)} kWh × €${feedRate.toFixed(3)}`;
+  } else {
+    const peakImpCost = sim.fixedPeakImport * fixedPeakRate;
+    const dalImpCost = sim.fixedDalImport * fixedDalRate;
+    const totalFixedExp = sim.fixedPeakExport + sim.fixedDalExport;
+    setLbl("tbl-fixed-peak-label", "Piekafname");
+    document.getElementById("tbl-fixed-peak-imp").innerHTML = `${sim.fixedPeakImport.toFixed(1)} kWh × €${fixedPeakRate.toFixed(2)}${synthTag}`;
+    document.getElementById("tbl-fixed-peak-cost").textContent = `€ ${peakImpCost.toFixed(2)}`;
+    setLbl("tbl-fixed-dal-label", "Dalafname");
+    document.getElementById("tbl-fixed-dal-imp").textContent = `${sim.fixedDalImport.toFixed(1)} kWh × €${fixedDalRate.toFixed(2)}`;
+    document.getElementById("tbl-fixed-dal-cost").textContent = `€ ${dalImpCost.toFixed(2)}`;
+    setLbl("tbl-fixed-exp-label", "Teruglevering (vergoeding)");
+    document.getElementById("tbl-fixed-exp").textContent = `${totalFixedExp.toFixed(1)} kWh × €${feedRate.toFixed(3)}`;
+  }
   document.getElementById("tbl-fixed-feedin-credit").textContent = `− € ${sim.fixedFeedInCredit.toFixed(2)}`;
   document.getElementById("tbl-fixed-vtk-cost").textContent = `€ ${sim.fixedFeedInFee.toFixed(2)}`;
 
@@ -2184,6 +2212,8 @@ function updateUIElements() {
   // (max(0, import − export)). `dynamicTaxableKwh` valt terug op de import als de engine
   // het veld (nog) niet levert, zodat oudere snapshots blijven kloppen.
   const ebVol = sim.dynamicTaxableKwh ?? sim.totalImportKwh;
+  setLbl("tbl-dyn-tax-note", salderen ? "(netto afname na saldering)" : "(bruto afname)");
+  setLbl("tbl-dyn-exp-label", salderen ? "Teruglevering (gesaldeerde waarde)" : "Teruglevering (EPEX spotprijs)");
   document.getElementById("tbl-dyn-tax-vol").textContent = `${ebVol.toFixed(1)} kWh × €${liveEnergyTax.toFixed(5)}`;
   document.getElementById("tbl-dyn-tax").textContent = `€ ${sim.dynamicNetTax.toFixed(2)}`;
   document.getElementById("tbl-dyn-subcost").textContent = `€ ${sim.dynamicSubscription.toFixed(2)}`;
@@ -2439,6 +2469,10 @@ if (typeof window !== "undefined") {
   window.parseHAHistoryExportCSV = parseHAHistoryExportCSV;
   window.guessRolesFromEntities = guessRolesFromEntities;
   window.DEMO_ROLEMAP = DEMO_ROLEMAP;
+  window.parseLongCSV = parseLongCSV;
+  window.parseLongCSVWithMapping = parseLongCSVWithMapping;
+  window.parseHAStatisticsWideCSVAsync = parseHAStatisticsWideCSVAsync;
+  window.normalizeToHourly = normalizeToHourly;
 
   
   window.__setTestState = function(state) {

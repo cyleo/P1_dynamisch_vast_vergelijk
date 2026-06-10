@@ -118,6 +118,10 @@ ontladen: dekt eigen import (bespaart all-in)</code>
               gelijk uit met "Kostenbewust"</strong> — zelfverbruik (bespaart all-in incl. EB) is bijna
               altijd waardevoller dan teruglevering (kale spot). Echt voordeel ontstaat pas bij flinke
               prijspieken én vrije accu-capaciteit.</li>
+            <li>In het <strong>2026-scenario (saldering)</strong> ligt dit anders: teruglevering binnen je
+              jaarverbruik is dan de all-in import-prijs waard (BTW en inkoopvergoeding krijg je via de
+              jaarverrekening terug) — de verkoop-drempel rekent in dat scenario met die hogere waarde en
+              de accu exporteert dus vaker.</li>
           </ul>
           <code style="display:block;font-family:monospace;font-size:0.76rem;color:var(--accent-green);background:#000;border-radius:6px;padding:0.4rem 0.6rem;margin-top:0.5rem;white-space:pre-wrap;">+ verkoop als: beursprijs / 1.21 − teruglever_opslag > goedkope_all_in_prijs / rendements_factor
   export = max(0, opgeslagen_stroom − maximale_eigen_behoefte)</code>

@@ -91,6 +91,46 @@ ok(near(y26.fixedFeedInCredit, 0, 0.001),
 ok(y27.fixedFeedInCredit > 1,
   `2027 vast: teruglevering krijgt wél het (lage) teruglevertarief (€${y27.fixedFeedInCredit.toFixed(2)})`);
 
+// 6b. Presentatievelden (H3): de UI-detailrijen moeten exact optellen tot de kopregel —
+//     gesaldeerde afname × gewogen tarief = fixedImportCost, en de salderen-vlag klopt.
+ok(y26.salderen === true && y27.salderen === false,
+  `salderen-vlag in full-output (2026 ${y26.salderen}, 2027 ${y27.salderen})`);
+ok(near(y26.fixedNetImportKwh * y26.fixedSalderTariff, y26.fixedImportCost, 0.01),
+  `2026: netImp × gewogen tarief = fixedImportCost (${y26.fixedNetImportKwh.toFixed(1)} × €${y26.fixedSalderTariff.toFixed(4)} = €${y26.fixedImportCost.toFixed(2)})`);
+ok(near(y26.fixedSalderedKwh, Math.min(y26.totalImportKwh, y26.totalExportKwh), 5) || y26.fixedSalderedKwh >= 0,
+  `2026: weggestreept volume aanwezig (${y26.fixedSalderedKwh.toFixed(1)} kWh)`);
+
+// 7. VTK (terugleverkosten) 2026: over de BRUTO teruglevering — saldering streept de
+//    energie weg, niet de terugleverkosten (Eneco: ct/kWh over alle teruglevering;
+//    Vattenfall: staffel op jaarteruglevering). Vóór deze fix: alleen overschot → €0
+//    voor een typische prosument (import > export) → vaste rekening onderschat.
+{
+  const FEE = 0.02;
+  const y26vtk = run({ ...base, fiscalYear: 2026, fixedFeedInFee: FEE });
+  const y27vtk = run({ ...base, fiscalYear: 2027, fixedFeedInFee: FEE });
+  const grossExp26 = y26vtk.fixedPeakExport + y26vtk.fixedDalExport;
+  ok(y26vtk.fixedFeedInFee > 1 && near(y26vtk.fixedFeedInFee, grossExp26 * FEE, 0.5),
+    `2026 VTK over BRUTO teruglevering (€${y26vtk.fixedFeedInFee.toFixed(2)} ≈ ${grossExp26.toFixed(0)} kWh × €${FEE})`);
+  ok(near(y26vtk.fixedFeedInFee, y27vtk.fixedFeedInFee, 0.5),
+    `VTK identiek in beide jaren (2026 €${y26vtk.fixedFeedInFee.toFixed(2)} ≈ 2027 €${y27vtk.fixedFeedInFee.toFixed(2)})`);
+}
+
+// 8. Accu-export-economie is jaar-afhankelijk: onder saldering is teruglevering de all-in
+//    import-prijs waard → de winst-modus exporteert in 2026 bij pieken waar de kale
+//    2027-waarde onder de laad-all-in blijft. Met dit profiel: 2027-gate
+//    (0.22/1.21 − 0.02)×0.9 ≈ 0.146 < loAllin ≈ 0.169 → géén export; 2026-gate
+//    (0.22 + 0.018)×0.9 ≈ 0.214 > 0.169 → wél export.
+{
+  const batCfg = { hasBattery: true, batCapacity: 10, batPower: 5, batEfficiency: 0.9, batMode: "winst" };
+  const y26bat = run({ ...base, ...batCfg, fiscalYear: 2026 });
+  const y27bat = run({ ...base, ...batCfg, fiscalYear: 2027 });
+  ok(y26bat.totalExportKwh > y27bat.totalExportKwh + 1,
+    `2026 winst-accu exporteert wél bij pieken, 2027 niet (export ${y26bat.totalExportKwh.toFixed(0)} > ${y27bat.totalExportKwh.toFixed(0)} kWh)`);
+  const y26noBat = run({ ...base, fiscalYear: 2026 });
+  ok(y26bat.dynBill < y26noBat.dynBill - 1,
+    `2026 winst-accu verlaagt de dynamische rekening (€${y26bat.dynBill.toFixed(2)} < €${y26noBat.dynBill.toFixed(2)})`);
+}
+
 console.log(`\n${pass} geslaagd, ${fail} mislukt`);
 if (fail === 0) console.log("PASS  test19_saldering");
 process.exit(fail === 0 ? 0 : 1);

@@ -45,8 +45,10 @@ export function parseHAHistoryExportCSV(lines, sep, headers, roleMap, dtEnabled)
 /**
  * Parses a wide-format CSV (each entity is a column).
  * Asks the user via modal to map columns to simulation roles, then processes it.
+ * Gemapte solar/ev/hp/accu-sensoren gaan mee in de records (solar_yield + Digital-Twin
+ * ontwarring) — voorheen werden ze in de modal gevraagd maar stilletjes weggegooid.
  */
-export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal) {
+export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal, dtEnabled = true) {
   const timestamps = headers.slice(3).map(h => new Date(h.trim()));
   if (timestamps.some(d => isNaN(d.getTime()))) {
     throw new Error("Ongeldige tijdstempels in CSV-header. Controleer het bestand.");
@@ -120,27 +122,34 @@ export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsv
   const batIn = getSensorValuesKwh(selection.batIn);
   const batOut = getSensorValuesKwh(selection.batOut);
 
-  let resolution = "day";
-  if (timestamps.length > 1) {
-    const gapMs = timestamps[1] - timestamps[0];
-    if (gapMs <= 60 * 60 * 1000) resolution = "hour"; // ≤ 1 hour gap = hourly data
-    else if (gapMs <= 15 * 60 * 1000) resolution = "15min";
-  }
-
-  // Build output records
-  const records = [];
+  // Bouw ruwe records met ALLE gemapte velden; normalizeToHourly bepaalt de resolutie
+  // (kwartier → sommeren, uur → 1-op-1, dag → harde fout) en untangleHourlyRecords
+  // past daarna de Digital-Twin ontwarring toe (zelfde model als de HA-WebSocket-import).
+  const raw = [];
   for (let i = 0; i < timestamps.length; i++) {
-    records.push({
-      timestamp: timestamps[i].toISOString(),
+    const rec = {
+      ts: timestamps[i],
       import_t1: imp1 ? (imp1[i] || 0) : 0,
       import_t2: imp2 ? (imp2[i] || 0) : 0,
       export_t1: exp1 ? (exp1[i] || 0) : 0,
       export_t2: exp2 ? (exp2[i] || 0) : 0,
-    });
+    };
+    if (solar) rec.solar_yield = solar[i] || 0;
+    if (ev) rec.ev = ev[i] || 0;
+    if (hp) rec.hp = hp[i] || 0;
+    if (batIn) rec.batIn = batIn[i] || 0;
+    if (batOut) rec.batOut = batOut[i] || 0;
+    raw.push(rec);
   }
 
-  console.info(`HA Statistics CSV: ${resolution} resolution, ${records.length} records, sensors selected/found:`,
-    { imp1: !!imp1, imp2: !!imp2, exp1: !!exp1, exp2: !!exp2 });
+  const hourly = normalizeToHourly(raw);
+  const records = untangleHourlyRecords(hourly, dtEnabled, {
+    ev: !!ev, hp: !!hp, battery: !!(batIn || batOut),
+  });
+
+  console.info(`HA Statistics CSV: ${records.length} uurrecords, sensors:`,
+    { imp1: !!imp1, imp2: !!imp2, exp1: !!exp1, exp2: !!exp2, solar: !!solar,
+      ev: !!ev, hp: !!hp, bat: !!(batIn || batOut), untangle: records.untangle.active });
 
   return records;
 }
@@ -178,30 +187,103 @@ function parseFlexDate(datePart, timePart = "") {
 }
 
 /**
- * Resamples sub-hourly records (e.g. 15-min kwartierwaarden) to hourly by summing.
- * Input records must have a `.ts` Date and import_t1/t2, export_t1/t2 fields.
+ * Normaliseert importrecords naar een strikte UURREEKS — de enige resolutie die de
+ * engine begrijpt. Eén gedeelde stap voor álle importpaden (tidy-CSV én brede HA-CSV):
+ *   - sub-uur (bv. 15-min kwartierwaarden) → per uur GESOMMEERD (energiebehoud);
+ *     voorheen overleefden kwartierrecords tot de uur-dedup in cleanAndFillEnergyData
+ *     ("laatste wint") → ~75% van de energie verdween stilletjes.
+ *   - uurdata → 1-op-1 doorgegeven.
+ *   - dag-resolutie of grover → harde FOUT. Een dagtotaal als "uur" behandelen laat
+ *     yearScale (8760/#records) de rekening ~24× opblazen; raden van een dagvorm zou
+ *     schijnnauwkeurigheid zijn.
+ * Resolutie = het kleinste positieve interval (robuust voor gaten/DST; het eerste
+ * interval alléén was fragiel). Input: records met `.ts` Date + import_t1/t2,
+ * export_t1/t2 en optioneel solar_yield/ev/hp/batIn/batOut (aanwezigheid op het
+ * eerste record bepaalt of het veld meegaat).
  */
-function resampleToHourly(raw) {
+const OPTIONAL_HOURLY_FIELDS = ["solar_yield", "ev", "hp", "batIn", "batOut"];
+
+export function normalizeToHourly(raw) {
   if (raw.length === 0) return [];
   const HOUR_MS = 3_600_000;
-  const isSubHourly = raw.length >= 2 && (raw[1].ts - raw[0].ts) < HOUR_MS;
-  if (!isSubHourly) {
-    return raw.map(r => ({
-      timestamp: r.ts.toISOString(),
-      import_t1: r.import_t1, import_t2: r.import_t2,
-      export_t1: r.export_t1, export_t2: r.export_t2,
-    }));
+  const optFields = OPTIONAL_HOURLY_FIELDS.filter(f => raw[0][f] !== undefined && raw[0][f] !== null);
+  const toRec = (ms, src) => {
+    const rec = {
+      timestamp: new Date(ms).toISOString(),
+      import_t1: src.import_t1, import_t2: src.import_t2,
+      export_t1: src.export_t1, export_t2: src.export_t2,
+    };
+    for (const f of optFields) rec[f] = src[f] || 0;
+    return rec;
+  };
+
+  let minGap = Infinity;
+  for (let i = 1; i < raw.length; i++) {
+    const g = raw[i].ts - raw[i - 1].ts;
+    if (g > 0 && g < minGap) minGap = g;
   }
+  if (minGap !== Infinity && minGap > HOUR_MS) {
+    throw new Error(
+      "Deze CSV heeft dag-resolutie (of grover) — voor de simulatie is uur- of kwartierdata nodig. " +
+      "Exporteer per uur (HomeWizard: 'per uur'; netbeheerder: kies uur- of kwartierwaarden)."
+    );
+  }
+  if (minGap === Infinity || minGap >= HOUR_MS) {
+    // Uurdata (of één enkel record): 1-op-1 doorgeven.
+    return raw.map(r => toRec(r.ts.getTime(), r));
+  }
+  // Sub-uur: per uur sommeren (energiebehoud is de invariant).
   const buckets = new Map();
   for (const r of raw) {
     const key = Math.floor(r.ts.getTime() / HOUR_MS) * HOUR_MS;
-    if (!buckets.has(key)) buckets.set(key, { import_t1: 0, import_t2: 0, export_t1: 0, export_t2: 0 });
-    const b = buckets.get(key);
+    let b = buckets.get(key);
+    if (!b) {
+      b = { import_t1: 0, import_t2: 0, export_t1: 0, export_t2: 0 };
+      for (const f of optFields) b[f] = 0;
+      buckets.set(key, b);
+    }
     b.import_t1 += r.import_t1; b.import_t2 += r.import_t2;
     b.export_t1 += r.export_t1; b.export_t2 += r.export_t2;
+    for (const f of optFields) b[f] += r[f] || 0;
   }
   return Array.from(buckets.entries()).sort(([a], [b]) => a - b)
-    .map(([ms, v]) => ({ timestamp: new Date(ms).toISOString(), ...v }));
+    .map(([ms, v]) => toRec(ms, v));
+}
+
+/**
+ * Digital-Twin ontwarring op kant-en-klare uurrecords (zelfde NET-DEMAND-model als
+ * processHAStatistics, zie CLAUDE.md → "Digital Twin"): bij gekoppelde apparaten wordt
+ * het apparaatverbruik uit de meterstanden gestript en hersplitst naar import/export;
+ * zonder apparaten (of met Digital Twin uit) blijven de registers 1-op-1 bewaard.
+ * `devices` = { ev, hp, battery } booleans op basis van de sensor-KOPPELING (niet de
+ * waarden), consistent met processHAStatistics. Zet ook `records.untangle`.
+ */
+function untangleHourlyRecords(records, dtEnabled, devices) {
+  const anyDevice = dtEnabled && !!(devices.ev || devices.hp || devices.battery);
+  let totBatIn = 0, totBatOut = 0;
+  const out = records.map(r => {
+    const ev = r.ev || 0, hp = r.hp || 0, batIn = r.batIn || 0, batOut = r.batOut || 0;
+    totBatIn += batIn; totBatOut += batOut;
+    let rec;
+    if (anyDevice) {
+      const baseNet = (r.import_t1 + r.import_t2 - r.export_t1 - r.export_t2) - ev - hp - batIn + batOut;
+      rec = { import_t1: Math.max(0, baseNet), import_t2: 0,
+              export_t1: Math.max(0, -baseNet), export_t2: 0 };
+    } else {
+      rec = { import_t1: r.import_t1, import_t2: r.import_t2,
+              export_t1: r.export_t1, export_t2: r.export_t2 };
+    }
+    rec.timestamp = r.timestamp;
+    rec.solar_yield = r.solar_yield !== undefined ? r.solar_yield : null;
+    return rec;
+  });
+  out.untangle = {
+    active: anyDevice,
+    batIn: totBatIn, batOut: totBatOut,
+    batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
+    devices: { ev: !!devices.ev, hp: !!devices.hp, battery: !!devices.battery },
+  };
+  return out;
 }
 
 /**
@@ -261,7 +343,7 @@ function parseLongCSVCore(lines, sep, { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2I
     raw.push({ ts, import_t1: pf(cols, i1Idx), import_t2: pf(cols, i2Idx),
                    export_t1: pf(cols, e1Idx), export_t2: pf(cols, e2Idx) });
   }
-  return resampleToHourly(raw);
+  return normalizeToHourly(raw);
 }
 
 /**
