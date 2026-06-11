@@ -4100,6 +4100,27 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     });
     document.getElementById("hdr-dyn-vaste-lasten")?.addEventListener("click", () => toggleTableDetail("hdr-dyn-vaste-lasten", "dyn-lasten-detail"));
     document.getElementById("btn-download-csv")?.addEventListener("click", downloadDataWithPrices);
+    document.querySelectorAll(".btn-chart-export").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wrap = btn.closest(".chart-export-wrap");
+        const isOpen = wrap.classList.contains("open");
+        _closeExportDropdowns(null);
+        if (!isOpen) wrap.classList.add("open");
+      });
+    });
+    document.querySelectorAll(".chart-export-dropdown button").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wrap = btn.closest(".chart-export-wrap");
+        const svgId = wrap.dataset.chartSvg;
+        const chartName = wrap.dataset.chartName;
+        wrap.classList.remove("open");
+        if (btn.dataset.format === "svg") exportChartAsSvg(svgId, chartName);
+        else if (btn.dataset.format === "png") exportChartAsPng(svgId, chartName);
+      });
+    });
+    document.addEventListener("click", () => _closeExportDropdowns(null));
     document.getElementById("btn-p1-help")?.addEventListener("click", () => {
       document.getElementById("p1-help-backdrop").style.display = "flex";
     });
@@ -5934,5 +5955,73 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     html = html.replace(/<\/p>\n<p/g, "</p>\n<p");
     html = html.replace(/\n\n+/g, "\n");
     return html;
+  }
+  function _resolveCssVars(str) {
+    const cs = getComputedStyle(document.documentElement);
+    return str.replace(/var\(--([^),\s]+)[^)]*\)/g, (_, name) => {
+      return cs.getPropertyValue("--" + name.trim()).trim() || "transparent";
+    });
+  }
+  function _triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  }
+  function _buildExportSvg(svgEl) {
+    const clone = svgEl.cloneNode(true);
+    const vb = svgEl.viewBox.baseVal;
+    const rect = svgEl.getBoundingClientRect();
+    const w = vb.width || Math.round(rect.width);
+    const h = vb.height || Math.round(rect.height);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", w);
+    clone.setAttribute("height", h);
+    const bgColor = getComputedStyle(document.documentElement).getPropertyValue("--bg-primary").trim() || "#0f1117";
+    const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bg.setAttribute("width", "100%");
+    bg.setAttribute("height", "100%");
+    bg.setAttribute("fill", bgColor);
+    clone.insertBefore(bg, clone.firstChild);
+    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    style.textContent = 'text, tspan { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }';
+    clone.insertBefore(style, clone.firstChild);
+    const raw = new XMLSerializer().serializeToString(clone);
+    return { svg: _resolveCssVars(raw), w, h };
+  }
+  function exportChartAsSvg(svgId, chartName) {
+    const el = document.getElementById(svgId);
+    if (!el) return;
+    const { svg } = _buildExportSvg(el);
+    _triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), chartName + ".svg");
+  }
+  function exportChartAsPng(svgId, chartName) {
+    const el = document.getElementById(svgId);
+    if (!el) return;
+    const scale = 2;
+    const { svg, w, h } = _buildExportSvg(el);
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((b) => _triggerDownload(b, chartName + ".png"), "image/png");
+    };
+    img.src = url;
+  }
+  function _closeExportDropdowns(except) {
+    document.querySelectorAll(".chart-export-wrap.open").forEach((w) => {
+      if (w !== except) w.classList.remove("open");
+    });
   }
 })();

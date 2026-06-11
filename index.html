@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=88">
+  <link rel="stylesheet" href="/style.css?v=89">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -1303,6 +1303,13 @@
           </div>
           <div class="svg-chart-container" id="chart-svg-container">
             <svg id="chart-svg"></svg>
+            <div class="chart-export-wrap" data-chart-svg="chart-svg" data-chart-name="energieprofiel">
+              <button type="button" class="btn-chart-export" title="Grafiek exporteren"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporteer</button>
+              <div class="chart-export-dropdown">
+                <button type="button" data-format="svg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg> SVG</button>
+                <button type="button" data-format="png"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PNG</button>
+              </div>
+            </div>
             <!-- Tooltip container inside chart -->
             <div class="chart-tooltip" id="chart-tooltip">
               <h4 id="tt-hour">12:00 uur</h4>
@@ -1393,6 +1400,13 @@
           </div>
           <div class="svg-chart-container" id="overview-svg-container" style="height:250px;">
             <svg id="overview-svg"></svg>
+            <div class="chart-export-wrap" data-chart-svg="overview-svg" data-chart-name="analyse">
+              <button type="button" class="btn-chart-export" title="Grafiek exporteren"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporteer</button>
+              <div class="chart-export-dropdown">
+                <button type="button" data-format="svg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg> SVG</button>
+                <button type="button" data-format="png"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PNG</button>
+              </div>
+            </div>
             <div class="chart-tooltip" id="overview-tooltip">
               <!-- Dynamisch gevuld door JS -->
             </div>
@@ -1419,6 +1433,13 @@
           </div>
           <div class="svg-chart-container" id="monthly-svg-container" style="height:230px;">
             <svg id="monthly-svg"></svg>
+            <div class="chart-export-wrap" data-chart-svg="monthly-svg" data-chart-name="maandkosten">
+              <button type="button" class="btn-chart-export" title="Grafiek exporteren"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporteer</button>
+              <div class="chart-export-dropdown">
+                <button type="button" data-format="svg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg> SVG</button>
+                <button type="button" data-format="png"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PNG</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1453,6 +1474,13 @@
           </div>
           <div class="svg-chart-container" id="sim-svg-container" style="height:220px;">
             <svg id="sim-svg"></svg>
+            <div class="chart-export-wrap" data-chart-svg="sim-svg" data-chart-name="dynamisch-vs-vast">
+              <button type="button" class="btn-chart-export" title="Grafiek exporteren"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporteer</button>
+              <div class="chart-export-dropdown">
+                <button type="button" data-format="svg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg> SVG</button>
+                <button type="button" data-format="png"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> PNG</button>
+              </div>
+            </div>
             <div class="chart-tooltip" id="sim-tooltip">
               <h4 id="sim-tt-hour">12:00</h4>
               <div class="tooltip-row">
@@ -1762,7 +1790,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=88"></script>
+  <script src="/app.js?v=89"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

@@ -624,10 +624,95 @@ input:checked + .slider-round:before {
   isolation: isolate;
 }
 
-.svg-chart-container svg {
+.svg-chart-container > svg {
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+
+/* Inline iconen in export-dropdown niet opblazen */
+.chart-export-wrap svg {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+/* ── Chart export button ─────────────────────────────────────────────────── */
+.chart-export-wrap {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 20;
+}
+
+.btn-chart-export {
+  background: rgba(15, 17, 23, 0.70);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  padding: 0.22rem 0.45rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.70rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  opacity: 0;
+  pointer-events: none;
+  font-family: var(--font-sans);
+}
+
+.svg-chart-container:hover .btn-chart-export,
+.chart-export-wrap.open .btn-chart-export {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-chart-export:hover,
+.chart-export-wrap.open .btn-chart-export {
+  background: rgba(15, 17, 23, 0.95);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-primary);
+}
+
+.chart-export-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #1a1d2e;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.25rem;
+  z-index: 200;
+  min-width: 130px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.chart-export-wrap.open .chart-export-dropdown {
+  display: block;
+}
+
+.chart-export-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.38rem 0.65rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  text-align: left;
+  border-radius: 5px;
+  transition: background 0.1s;
+  font-family: var(--font-sans);
+}
+
+.chart-export-dropdown button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Charts must sit above sibling glass-panels */
