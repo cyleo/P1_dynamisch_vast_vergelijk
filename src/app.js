@@ -258,6 +258,13 @@ function initActionHandlers() {
     const action = el.getAttribute("data-action");
     if (action === "show-setup-manual") showSetupModal("manual");
     else if (action === "show-setup-direct") showSetupModal("direct");
+    else if (action === "expand-upload") {
+      const p = document.getElementById("upload-panel");
+      if (p) { p.classList.remove("collapsed"); p.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+    } else if (action === "expand-tariffs") {
+      const p = document.getElementById("tariffs-config");
+      if (p) { p.classList.remove("collapsed"); p.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+    }
   });
 }
 
@@ -2311,6 +2318,8 @@ function updateUIElements() {
   const subEl = document.getElementById("stat-savings-sub");
   subEl.textContent = positive ? "▲ in het voordeel van dynamisch" : "▼ vast contract is goedkoper";
   subEl.style.color = col;
+  const demoNotice = document.getElementById("demo-notice");
+  if (demoNotice) demoNotice.style.display = isDemoData ? "" : "none";
   document.getElementById("stat-fixed-val").textContent = `${sim.fixedTotalBill.toFixed(2)}`;
   document.getElementById("stat-dynamic-val").textContent = `${sim.dynamicTotalBill.toFixed(2)}`;
 
