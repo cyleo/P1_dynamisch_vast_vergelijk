@@ -539,6 +539,33 @@ function setupEventListeners() {
   // Sluit export-dropdown bij klik buiten
   document.addEventListener('click', () => _closeExportDropdowns(null));
 
+  // ── Grafiek resize handles ────────────────────────────────────────────────
+  document.querySelectorAll('.chart-resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      const targetId = handle.dataset.resizeTarget;
+      const container = document.getElementById(targetId);
+      if (!container) return;
+      const startY = e.clientY;
+      const startH = container.clientHeight;
+      handle.classList.add('dragging');
+
+      const onMove = mv => {
+        const newH = Math.max(120, startH + mv.clientY - startY);
+        container.style.height = newH + 'px';
+      };
+      const onUp = () => {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        // Her-render alle grafieken zodat ze de nieuwe hoogte invullen
+        window.dispatchEvent(new Event('resize'));
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  });
+
   document.getElementById('btn-p1-help')?.addEventListener('click', () => {
     document.getElementById('p1-help-backdrop').style.display = 'flex';
   });

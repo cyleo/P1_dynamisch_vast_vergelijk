@@ -2740,17 +2740,19 @@
       item.innerHTML = `<span class="legend-color" style="background:${c.color}; width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:4px;"></span> ${c.label}`;
       legendContainer.appendChild(item);
     });
-    let maxAbs = 0;
+    let maxPosData = 0, maxNegData = 0;
     days.forEach((d) => {
       const e = bucketMap.get(d);
       if (overviewMetric === "energy") {
         const posSum = e.rawImp + (hasEv ? e.evKwh : 0) + (hasHp ? e.hpKwh : 0) + (hasBat ? e.batCharge : 0);
         const negSum = e.rawExp + (hasBat ? e.batDischarge : 0);
-        maxAbs = Math.max(maxAbs, posSum, negSum);
+        maxPosData = Math.max(maxPosData, posSum);
+        maxNegData = Math.max(maxNegData, negSum);
       } else if (overviewMetric === "cost") {
         const posSum = e.baseloadCost + (hasEv ? e.evCost : 0) + (hasHp ? e.hpCost : 0) + (hasBat ? e.batChargeCost : 0);
         const negSum = e.baseloadReturn + (hasBat ? e.batDischargeValue : 0);
-        maxAbs = Math.max(maxAbs, posSum, negSum);
+        maxPosData = Math.max(maxPosData, posSum);
+        maxNegData = Math.max(maxNegData, negSum);
       } else {
         let posSum = 0, negSum = 0;
         const cats = [
@@ -2764,11 +2766,13 @@
           if (c > 0) posSum += c;
           else negSum += Math.abs(c);
         });
-        maxAbs = Math.max(maxAbs, posSum, negSum);
+        maxPosData = Math.max(maxPosData, posSum);
+        maxNegData = Math.max(maxNegData, negSum);
       }
     });
-    if (maxAbs <= 0) maxAbs = 1;
-    const maxVal = maxAbs * 1.15;
+    const maxPos = (maxPosData > 0 ? maxPosData : 0.01) * 1.15;
+    const maxNeg = maxNegData > 0 ? maxNegData * 1.15 : maxPos * 0.06;
+    const totalRange = maxPos + maxNeg;
     const container = document.getElementById("overview-svg-container");
     const svg = document.getElementById("overview-svg");
     const tooltip = document.getElementById("overview-tooltip");
@@ -2782,24 +2786,32 @@
     const n = days.length;
     const barW = Math.max(1.5, chartW / n - 2);
     const xOf = (i) => PAD_L + i * (chartW / n) + 1;
-    const yOfZero = PAD_T + chartH / 2;
-    const yOfVal = (val) => yOfZero - val / maxVal * (chartH / 2);
+    const yOfZero = PAD_T + maxPos / totalRange * chartH;
+    const pxPerUnit = chartH / totalRange;
+    const yOfVal = (val) => yOfZero - val * pxPerUnit;
     const mk = (tag, attrs) => {
       const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
       Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
       return el;
     };
-    for (let t = -2; t <= 2; t++) {
-      const ratio = t / 2;
-      const y = yOfZero - ratio * (chartH / 2);
-      const val = ratio * maxVal;
+    const gridVals = [
+      { v: maxPosData, zero: false },
+      { v: maxPosData / 2, zero: false },
+      { v: 0, zero: true },
+      ...maxNegData > 0 ? [
+        { v: -maxNegData / 2, zero: false },
+        { v: -maxNegData, zero: false }
+      ] : []
+    ];
+    gridVals.forEach(({ v, zero }) => {
+      const y = yOfVal(v);
       svg.appendChild(mk("line", {
         x1: PAD_L,
         y1: y,
         x2: W - PAD_R,
         y2: y,
-        stroke: t === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.04)",
-        "stroke-dasharray": t === 0 ? "none" : "2,2"
+        stroke: zero ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)",
+        "stroke-dasharray": zero ? "none" : "2,2"
       }));
       const lbl = mk("text", {
         x: PAD_L - 6,
@@ -2808,15 +2820,13 @@
         fill: "var(--text-muted)",
         "font-size": 9
       });
-      let labelText = "";
       if (overviewMetric === "energy") {
-        labelText = (val >= 0 ? "+" : "") + val.toFixed(0) + " kWh";
+        lbl.textContent = (v > 0 ? "+" : "") + v.toFixed(0) + " kWh";
       } else {
-        labelText = (val >= 0 ? "+" : "-") + "\u20AC" + Math.abs(val).toFixed(0);
+        lbl.textContent = (v >= 0 ? "+" : "-") + "\u20AC" + Math.abs(v).toFixed(0);
       }
-      lbl.textContent = labelText;
       svg.appendChild(lbl);
-    }
+    });
     const drawSegment = (x, yStart, yEnd, color, rx = 0) => {
       const y = Math.min(yStart, yEnd);
       const height = Math.abs(yStart - yEnd);
@@ -4121,6 +4131,29 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       });
     });
     document.addEventListener("click", () => _closeExportDropdowns(null));
+    document.querySelectorAll(".chart-resize-handle").forEach((handle) => {
+      handle.addEventListener("mousedown", (e) => {
+        const targetId = handle.dataset.resizeTarget;
+        const container = document.getElementById(targetId);
+        if (!container) return;
+        const startY = e.clientY;
+        const startH = container.clientHeight;
+        handle.classList.add("dragging");
+        const onMove = (mv) => {
+          const newH = Math.max(120, startH + mv.clientY - startY);
+          container.style.height = newH + "px";
+        };
+        const onUp = () => {
+          handle.classList.remove("dragging");
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          window.dispatchEvent(new Event("resize"));
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        e.preventDefault();
+      });
+    });
     document.getElementById("btn-p1-help")?.addEventListener("click", () => {
       document.getElementById("p1-help-backdrop").style.display = "flex";
     });

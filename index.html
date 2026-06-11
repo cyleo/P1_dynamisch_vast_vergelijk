@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=89">
+  <link rel="stylesheet" href="/style.css?v=90">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -1328,6 +1328,7 @@
               <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.2rem;" id="tt-spot-breakdown"></div>
             </div>
           </div>
+          <div class="chart-resize-handle" data-resize-target="chart-svg-container" title="Sleep om hoogte aan te passen"></div>
         </section>
 
         <!-- Daily Overview Chart -->
@@ -1411,6 +1412,7 @@
               <!-- Dynamisch gevuld door JS -->
             </div>
           </div>
+          <div class="chart-resize-handle" data-resize-target="overview-svg-container" title="Sleep om hoogte aan te passen"></div>
         </section>
 
         <!-- Maandelijkse kostenvergelijking vast vs dynamisch -->
@@ -1441,6 +1443,7 @@
               </div>
             </div>
           </div>
+          <div class="chart-resize-handle" data-resize-target="monthly-svg-container" title="Sleep om hoogte aan te passen"></div>
         </section>
 
         <!-- Dynamic simulation per-hour cost chart -->
@@ -1498,6 +1501,7 @@
               <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.3rem;" id="sim-tt-spot"></div>
             </div>
           </div>
+          <div class="chart-resize-handle" data-resize-target="sim-svg-container" title="Sleep om hoogte aan te passen"></div>
         </section>
 
         <!-- Hardware effect breakdown -->
@@ -1790,7 +1794,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=89"></script>
+  <script src="/app.js?v=90"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

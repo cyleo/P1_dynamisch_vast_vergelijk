@@ -715,6 +715,36 @@ input:checked + .slider-round:before {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* ── Chart resize handle ─────────────────────────────────────────────────── */
+.chart-resize-handle {
+  height: 10px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.chart-resize-handle::before {
+  content: '';
+  width: 36px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.chart-card:hover .chart-resize-handle {
+  opacity: 1;
+}
+
+.chart-resize-handle:hover::before,
+.chart-resize-handle.dragging::before {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 /* Charts must sit above sibling glass-panels */
 .chart-card {
   position: relative;
