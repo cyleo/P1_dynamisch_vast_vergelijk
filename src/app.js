@@ -2795,7 +2795,7 @@ function showUserGuide() {
   if (!backdrop || !content) return;
 
   backdrop.style.display = 'flex';
-  content.innerHTML = '<p style="text-align:center; color:var(--text-muted);">Handleiding laden...</p>';
+  content.innerHTML = '<p class="guide-loading">Handleiding laden&hellip;</p>';
 
   // Fetch and parse the markdown guide
   fetch('/docs/GEBRUIKERSHANDLEIDING.md')
@@ -2811,7 +2811,7 @@ function showUserGuide() {
     })
     .catch(err => {
       console.error('Failed to load guide:', err);
-      content.innerHTML = `<p style="color:var(--accent-orange);">Handleiding kon niet worden geladen. Zorg dat <code>/docs/GEBRUIKERSHANDLEIDING.md</code> bestaat.</p>`;
+      content.innerHTML = `<p class="guide-error">Handleiding kon niet worden geladen. Zorg dat <code>/docs/GEBRUIKERSHANDLEIDING.md</code> bestaat.</p>`;
     });
 }
 
@@ -2820,93 +2820,143 @@ function closeUserGuide() {
   if (backdrop) backdrop.style.display = 'none';
 }
 
-// Simple markdown to HTML converter (handles basic Markdown used in the guide)
+/**
+ * Minimale, block-gebaseerde Markdown→HTML-omzetter voor de handleiding.
+ *
+ * Bewust geen externe library (zero-dependency-principe van dit project). De
+ * parser loopt regel-voor-regel en groepeert blokken (koppen, lijsten, GFM-
+ * tabellen, blockquotes, code-fences, regels). Alle styling zit in CSS onder
+ * `#guide-content` — hier worden alléén semantische elementen geproduceerd, geen
+ * inline-style-soep. Inhoud wordt ge-escaped vóór parsing, dus de Markdown-bron
+ * kan geen HTML injecteren.
+ */
 function markdownToHtml(markdown) {
-  let html = markdown
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  const esc = (s) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // Headers: # ## ### etc.
-  html = html.replace(/^### (.*?)$/gm, '<h3 style="font-size:0.95rem; color:var(--accent-cyan); margin:1.2rem 0 0.5rem; font-weight:600;">$1</h3>');
-  html = html.replace(/^## (.*?)$/gm, '<h2 style="font-size:1.1rem; color:var(--accent-cyan); margin:1.5rem 0 0.6rem; font-weight:700;">$1</h2>');
-  html = html.replace(/^# (.*?)$/gm, '<h1 style="font-size:1.3rem; color:var(--accent-blue); margin:2rem 0 1rem; font-weight:700;">$1</h1>');
+  // Inline-opmaak binnen één tekstregel (na escaping van het hele document).
+  const inline = (s) =>
+    s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>',
+      );
 
-  // Blockquotes: > text
-  html = html.replace(/^> (.*?)$/gm, (match, text) => {
-    return `<div style="background:rgba(0,242,254,0.06); border-left:3px solid var(--accent-cyan); padding:0.8rem 1rem; margin:1rem 0; border-radius:6px;"><strong>${text}</strong></div>`;
-  });
+  const lines = esc(markdown).split('\n');
+  const out = [];
+  let i = 0;
 
-  // Bold: **text**
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  const isTableSep = (s) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(s);
+  const splitRow = (s) =>
+    s.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
 
-  // Italic: *text* or _text_
-  html = html.replace(/\*(.*?)\*/g, (match, text) => {
-    if (match.startsWith('**')) return match; // Skip if part of bold
-    return `<em>${text}</em>`;
-  });
-  html = html.replace(/_(.*?)_/g, '<em>$1</em>');
-
-  // Code: `code`
-  html = html.replace(/`(.*?)`/g, '<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:3px; font-family:monospace; font-size:0.85em;">$1</code>');
-
-  // Lists: - item or * item
-  html = html.replace(/^\s*[-*] (.*?)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
-    return `<ul style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ul>`;
-  });
-
-  // Numbered lists: 1. 2. etc
-  html = html.replace(/^\s*(\d+)\. (.*?)$/gm, '<li>$2</li>');
-  html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
-    if (match.includes('<ol')) return match; // Already wrapped
-    return `<ol style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ol>`;
-  });
-
-  // Links: [text](url)
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-cyan); text-decoration:underline;">$1</a>');
-
-  // Horizontal rule: --- or *** or ___
-  html = html.replace(/^(---|___|\\*\\*\\*)\s*$/gm, '<hr style="border:none; border-top:1px solid rgba(255,255,255,0.1); margin:1.5rem 0;">');
-
-  // Line breaks: convert double newlines to paragraphs
-  const lines = html.split('\n');
-  let inList = false;
-  let inBlockquote = false;
-  let result = [];
-
-  for (const line of lines) {
+  while (i < lines.length) {
+    const line = lines[i];
     const trimmed = line.trim();
 
-    // Track list state
-    if (trimmed.startsWith('<ul') || trimmed.startsWith('<ol')) {
-      inList = true;
-    } else if (trimmed === '</ul>' || trimmed === '</ol>') {
-      inList = false;
+    // Lege regel → blok-scheiding.
+    if (trimmed === '') {
+      i++;
+      continue;
     }
 
-    // Track blockquote state
-    if (trimmed.startsWith('<div style="background:rgba(0,242,254,0.06)')) {
-      inBlockquote = true;
-    } else if (inBlockquote && trimmed.endsWith('</div>')) {
-      inBlockquote = false;
+    // Horizontale lijn.
+    if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
+      out.push('<hr>');
+      i++;
+      continue;
     }
 
-    // Don't wrap tags, blockquotes, lists, or headers in paragraphs
-    if (trimmed === '' || trimmed.startsWith('<') || inList || inBlockquote) {
-      result.push(line);
-    } else {
-      result.push(trimmed ? `<p style="margin:0.5rem 0; line-height:1.7;">${trimmed}</p>` : '');
+    // Code-fence (```), inhoud letterlijk.
+    if (/^```/.test(trimmed)) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i].trim())) buf.push(lines[i++]);
+      i++; // sluitende fence
+      out.push(`<pre><code>${buf.join('\n')}</code></pre>`);
+      continue;
     }
+
+    // Kop (# .. ######).
+    const h = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const lvl = h[1].length;
+      out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`);
+      i++;
+      continue;
+    }
+
+    // GFM-tabel: kopregel + scheidingsregel + databody.
+    if (trimmed.includes('|') && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const header = splitRow(trimmed);
+      i += 2; // sla kop + scheidingsregel over
+      const body = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+        body.push(splitRow(lines[i]));
+        i++;
+      }
+      const thead =
+        '<thead><tr>' + header.map((c) => `<th>${inline(c)}</th>`).join('') + '</tr></thead>';
+      const tbody =
+        '<tbody>' +
+        body
+          .map((r) => '<tr>' + r.map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>')
+          .join('') +
+        '</tbody>';
+      out.push(`<table>${thead}${tbody}</table>`);
+      continue;
+    }
+
+    // Blockquote (aaneengesloten > regels).
+    if (/^>\s?/.test(trimmed)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        buf.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      out.push(`<blockquote>${inline(buf.join(' '))}</blockquote>`);
+      continue;
+    }
+
+    // Geordende lijst.
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const buf = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        buf.push(`<li>${inline(lines[i].replace(/^\s*\d+\.\s+/, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ol>${buf.join('')}</ol>`);
+      continue;
+    }
+
+    // Ongeordende lijst.
+    if (/^[-*]\s+/.test(trimmed)) {
+      const buf = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        buf.push(`<li>${inline(lines[i].replace(/^\s*[-*]\s+/, ''))}</li>`);
+        i++;
+      }
+      out.push(`<ul>${buf.join('')}</ul>`);
+      continue;
+    }
+
+    // Paragraaf: verzamel opeenvolgende tekstregels.
+    const buf = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !/^(#{1,6}\s|>\s?|[-*]\s|\d+\.\s|```|(-{3,}|_{3,}|\*{3,})$)/.test(lines[i].trim())
+    ) {
+      buf.push(lines[i].trim());
+      i++;
+    }
+    out.push(`<p>${inline(buf.join(' '))}</p>`);
   }
 
-  html = result.join('\n');
-
-  // Clean up excessive whitespace
-  html = html.replace(/<\/p>\n<p/g, '</p>\n<p');
-  html = html.replace(/\n\n+/g, '\n');
-
-  return html;
+  return out.join('\n');
 }
 
 // ── Grafiek-export (SVG en PNG) ───────────────────────────────────────────────

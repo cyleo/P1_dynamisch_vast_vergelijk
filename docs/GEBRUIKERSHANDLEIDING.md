@@ -1,603 +1,303 @@
-# P1 Energie Contract Analysator — Gebruikershandleiding
+# Gebruikershandleiding
 
-> **Voor wie?** Dit document is voor iedereen die wil weten hoe deze app werkt, wat de getallen betekenen, en hoe je de beste resultaten krijgt. Voor technische details, zie [MODEL_DOCUMENTATION.md](./MODEL_DOCUMENTATION.md).
+> Deze handleiding legt uit hoe de app werkt, wat de getallen betekenen en hoe je er bruikbare resultaten uit haalt. Voor de rekenmodellen en aannames achter de schermen, zie [MODEL_DOCUMENTATION.md](./MODEL_DOCUMENTATION.md).
 
----
+## Inhoud
 
-## Inhoudsopgave
-
-1. [Wat doet deze app?](#wat-doet-deze-app)
-2. [Hoe begin je?](#hoe-begin-je)
-3. [Stap 1: Je verbruiksdata importeren](#stap-1-je-verbruiksdata-importeren)
-4. [Stap 2: Je huidige tarieven instellen](#stap-2-je-huidige-tarieven-instellen)
-5. [Stap 3: Hardware-opstellingen (optioneel)](#stap-3-hardware-opstellingen-optioneel)
-6. [De resultaten begrijpen](#de-resultaten-begrijpen)
-7. [Grafieken uitgelegd](#grafieken-uitgelegd)
-8. [Veelgestelde vragen](#veelgestelde-vragen)
-9. [Tips en best practices](#tips-en-best-practices)
-10. [Problemen oplossen](#problemen-oplossen)
+- Wat doet deze app?
+- Snel beginnen
+- Stap 1 — Verbruiksdata importeren
+- Stap 2 — Tarieven instellen
+- Stap 3 — Hardware (optioneel)
+- De resultaten lezen
+- De grafieken
+- Veelgestelde vragen
+- Tips
+- Problemen oplossen
 
 ---
 
 ## Wat doet deze app?
 
-Deze app vergelijkt **twee soorten elektriciteitscontracten** voor je woning, gebaseerd op jouw **echte verbruiksgegevens** van het afgelopen jaar:
+De app vergelijkt twee soorten elektriciteitscontracten voor jouw woning, op basis van je eigen verbruik van het afgelopen jaar.
 
-### 1. **Vaste contract** (Standaard abonnement)
-- Vaste prijs per kWh (piektarief + daltarief)
-- Vastrecht (maandelijks basisbedrag)
-- Teruglevertarief (wat je krijgt voor zonnepanelen die je teruggeeft)
-- Vaste terugleverkost (VTK)
+**Vast contract.** Een vaste prijs per kWh (piek en dal), een maandelijks vastrecht, een teruglevertarief voor je zonnestroom en eventuele vaste terugleverkosten (VTK).
 
-### 2. **Dynamisch contract** (Variabel abonnement)
-- Prijs volgt de beurs (EPEX markt) elk uur
-- Goedkoop in de nacht, duur rond 18:00u
-- Soms zelfs negatief (je krijgt geld om te verbruiken!)
-- Ideaal als je flexibel bent met laden/laden
+**Dynamisch contract.** De prijs volgt elk uur de stroombeurs (EPEX). Doorgaans goedkoop 's nachts en duur in de avondpiek rond 18:00 uur, en soms zelfs negatief. Aantrekkelijk als je flexibel bent met laden en verwarmen.
 
-### Wat berekent de app?
-✅ Je totale jaarlijkse energiekosten voor beide contracten  
-✅ Besparing (of meerkosten) bij overstap  
-✅ Effect van zonnepanelen, slimme accu, elektrische auto, warmtepomp  
-✅ Meer-/minderwaarde per dag, week en maand  
+De app berekent voor beide contracten je jaarlijkse energiekosten, het verschil tussen de twee, en het effect van zonnepanelen, een thuisbatterij, een elektrische auto en een warmtepomp — uitgesplitst per dag, week en maand.
 
-### Belangrijk: Geen data verzonden
-🔒 **Alles gebeurt in jouw browser.** Jouw verbruiksdata verlaat je computer nooit. Geen accounts, geen cloud, geen privacy-problemen.
+Alles draait lokaal in je browser. Je verbruiksdata verlaat je computer niet: geen account, geen cloud.
 
 ---
 
-## Hoe begin je?
+## Snel beginnen
 
-### Snelle start (3 stappen)
-1. **Stap 1**: Upload je verbruiksdata (Home Assistant of CSV-bestand)
-2. **Stap 2**: Vul je huidige tarieven in (of kies een leverancier)
-3. **Lees de resultaten**: Groene badge = dynamisch beter, rode badge = vast beter
+1. Importeer je verbruiksdata (Home Assistant of een CSV-bestand).
+2. Vul je huidige tarieven in, of kies een leverancier als startpunt.
+3. Lees de besparingskaart: groen betekent dat dynamisch goedkoper uitvalt, oranje dat vast goedkoper is.
 
-### Met geavanceerde opstellingen (4–5 minuten)
-1. Stap 1 + 2 (zie boven)
-2. **Stap 3**: Vink hardware aan (elektrische auto, accu, warmtepomp)
-3. Stel in hoeveel je ervan hebt en hoe je het gebruikt
-4. Kijk naar de besparing per opstelling
+Wil je hardware meenemen, ga dan naar Stap 3 en vink een elektrische auto, batterij of warmtepomp aan. Reken op vier tot vijf minuten voor een volledige analyse.
 
 ---
 
-## Stap 1: Je verbruiksdata importeren
+## Stap 1 — Verbruiksdata importeren
 
-### Optie A: Home Assistant (Aanbevolen)
-Home Assistant is een populair open-source thuisautomatiserings-platform. Veel mensen hebben al een P1-meter-integratie hiermee.
+### Optie A: Home Assistant (aanbevolen)
 
-**Voordelen:**
-- Directe verbinding, geen handmatig export
-- Jaren aan historische data (niet alleen laatste maand)
-- Automatische sensor-herkenning
+Heb je je P1-meter in Home Assistant, dan is dit de snelste route. Je haalt in één keer jaren aan historie op.
 
-**Hoe:**
-1. Klik op **"Home Assistant koppelen"** (Stap 1)
-2. Voer je HA-URL in (`http://192.168.1.x:8123` of je domein)
-3. Voer je Long-Lived Access Token in (uit HA-instellingen)
-4. Selecteer je import-, export- en zonnepaneel-sensoren
-5. Klik **"Gegevens ophalen"**
+1. Klik op **Home Assistant koppelen**.
+2. Vul je HA-URL in (`http://192.168.1.x:8123` of je eigen domein).
+3. Plak een Long-Lived Access Token uit je HA-profiel.
+4. Kies je import-, export- en zonnepaneelsensoren.
+5. Klik op **Gegevens ophalen**.
 
-**Problemen?**
-- **"Mixed Content" waarschuwing**: Je HA draait op `http://` maar de app op `https://`. Dit is beveiligd en werkt niet. Oplossing: Gebruik manuele export (Optie B) of zet HA op HTTPS.
-- **HA reageert niet / timeout**: Controleer je URL en token; zorg dat je toestemming hebt op het netwerk.
+Loopt het vast?
 
-### Optie B: Manuele CSV-export
-Exporteer je eigen verbruiksdata handmatig uit Home Assistant of je meter.
+- **Mixed Content-melding.** Je HA draait op `http://` terwijl de app op `https://` staat. Browsers blokkeren dat. Zet HA op HTTPS, of gebruik de handmatige export (optie B).
+- **Geen reactie of time-out.** Controleer de URL en het token, en of je op hetzelfde netwerk zit.
 
-**Formaten die werken:**
+### Optie B: CSV-export
+
+Exporteer je verbruik handmatig uit Home Assistant of je meter. De app herkent drie formaten:
+
 - Home Assistant lange CSV (`entity_id, state, last_changed`)
-- Home Assistant brede CSV (kolommen per sensor)
-- Custom CSV (jij selecteert welke kolom wat is)
+- Home Assistant brede CSV (een kolom per sensor)
+- Eigen CSV (je wijst zelf aan welke kolom wat is)
 
-**Hoe:**
-1. Klik op **"Bestand uploaden"** (Stap 1)
-2. Sleep je CSV hiernaartoe (of klik om te selecteren)
-3. De app detecteert kolommen automatisch
-4. Controleer de mapping (import = afname, export = teruglevering) en klik **"Importeren"**
+1. Klik op **Bestand uploaden**.
+2. Sleep je CSV erin, of klik om te kiezen.
+3. De app detecteert de kolommen en toont een koppelscherm.
+4. Controleer de toewijzing (import = afname, export = teruglevering) en bevestig.
 
-**Tips:**
-- **Eenheid**: Zorg dat je data in `kWh` is (niet `Wh`). De app converteert automatisch als nodig.
-- **Bereik**: Hoe meer gegevens, hoe nauwkeuriger. Minstens 2–3 maanden ideaal, liever een heel jaar.
-- **Gaten**: Als je data hiaten heeft, vult de app die automatisch in met je eigen seizoenspatroon.
+Let op de eenheid: kWh werkt het best, maar Wh wordt automatisch omgerekend. Hoe meer data, hoe nauwkeuriger — een heel jaar is ideaal, twee à drie maanden is het minimum. Ontbrekende uren vult de app aan met je eigen seizoenspatroon.
 
-### Optie C: Demo-data gebruiken
-Geen eigen data beschikbaar? Geen probleem.
+### Optie C: demo-data
 
-Bij je eerste bezoek laadt de app automatisch **voorbeeld-data**: een realistisch Nederlands huishouden (3200 kWh verbruik, 3600 kWh zon per jaar). Dit geeft je meteen inzicht hoe de app werkt.
-
-⚠️ **Herinner jezelf**: Dit zijn **niet jouw gegevens**. Upload je eigen data in Stap 1 voor je echte situatie.
+Zonder eigen data laadt de app bij het eerste bezoek een realistisch Nederlands voorbeeldhuishouden (circa 3200 kWh verbruik en 3600 kWh zon per jaar). Handig om rond te kijken, maar het zijn niet jouw cijfers — importeer in Stap 1 je eigen data voor een echte vergelijking.
 
 ### Data-kwaliteitsbanner
-Nadat je data geladen is, zie je een banner:
-- 🟢 **Groen**: Alle uren gemeten
-- 🟡 **Geel**: Kleine hiaten (interpolatie) of seizoensschatting
-- 🔴 **Rood**: Grote hiaten (> 6 uur) gevuld met gemiddelde
 
-Dit is normaal en accuraat. Geen actie nodig.
+Na het laden verschijnt een korte banner over de kwaliteit van je data:
+
+- **Groen** — alle uren gemeten.
+- **Geel** — kleine hiaten (geïnterpoleerd) of een seizoensschatting voor ontbrekende maanden.
+- **Rood** — grote hiaten (meer dan zes uur) opgevuld met een gemiddeld dagprofiel.
+
+Geel en rood zijn meestal prima; de schatting blijft realistisch zolang het grootste deel van het jaar gemeten is.
 
 ---
 
-## Stap 2: Je huidige tarieven instellen
+## Stap 2 — Tarieven instellen
 
-### Vaste contract
-Vul je huidige tarieven in uit je jaarrekening:
+### Vast contract
 
-| Veld | Voorbeeld | Wat betekent het |
-|------|-----------|------------------|
-| **Piektarief** | €0,27/kWh | Wat je betaalt voor stroom 08:00–23:00u |
-| **Daltarief** | €0,24/kWh | Wat je betaalt voor stroom 23:00–08:00u |
-| **Teruglevertarief** | €0,07/kWh | Wat je krijgt als je zonne-energie teruggeeft |
-| **Terugleverkost (VTK)** | €0,00/kWh | Extra kosten voor teruglevering (meestal €0,00–€0,05) |
-| **Vastrecht** | €7,50/maand | Je vaste maandelijks bedrag |
+Vul de tarieven van je huidige of beoogde contract in. Je vindt ze op je jaarafrekening of op de site van je leverancier.
 
-**Waar vind je deze?**
-- Je jaarrekening (of maandelijkse factuur)
-- Website van je leverancier
-- Contact met je leverancier
+| Veld | Voorbeeld | Betekenis |
+|------|-----------|-----------|
+| Piektarief | €0,27/kWh | Afname tussen 08:00 en 23:00 uur |
+| Daltarief | €0,24/kWh | Afname tussen 23:00 en 08:00 uur |
+| Teruglevertarief | €0,07/kWh | Vergoeding voor teruggeleverde zonnestroom |
+| Terugleverkosten (VTK) | €0,00/kWh | Eventuele kosten voor teruglevering (vaak €0,00–€0,05) |
+| Vastrecht | €7,50/maand | Vast maandbedrag |
 
-**Leverancier-snelkeuze:**
-Klik op "Leverancier kiezen" voor indicatieve tarieven van Vattenfall, Eneco, GreenChoice, enz. Dit zijn **grove richtlijnen**—controleer je echte contract voor nauwkeurigheid.
+Met **Leverancier kiezen** vul je in één klik indicatieve tarieven van bekende leveranciers in. Beschouw die als startpunt en controleer je eigen contract.
 
 ### Dynamisch contract
-| Veld | Voorbeeld | Wat betekent het |
-|------|-----------|------------------|
-| **Inkoop-opslag** | €0,024/kWh | Bovenop EPEX-prijs die je betaalt |
-| **Teruglever-opslag** | €0,020/kWh | Bovenop wat je voor teruglevering krijgt |
-| **Vastrecht** | €6,00/maand | Vaste maandelijkse kosten |
 
-**Energiebelasting (EB)**:
-- Glijdende schuif rechtsboven
-- Dit wordt automatisch opgehaald van Frank Energie (je leverancier)
-- Falls offline: gebruikt de 2026-waarde (~€0,111/kWh) als fallback
-- **2027 waarde nog onbekend** bij de regering → schuif aanpassen als je weet wat het wordt
+| Veld | Voorbeeld | Betekenis |
+|------|-----------|-----------|
+| Inkoop-opslag | €0,024/kWh | Opslag bovenop de EPEX-prijs (incl. btw) |
+| Teruglever-opslag | €0,020/kWh | Opslag op de terugleververgoeding (incl. btw) |
+| Vastrecht | €6,00/maand | Vast maandbedrag |
 
-### Waar krijg je dynamische tarieven?
-- Frank Energie, easyEnergy, Stroomversnellers
-- Controleer hun website voor actuele opslag-bedragen
-- Opslag kan per maand veranderen; deze app gebruikt een jaargemiddelde
+De energiebelasting stel je in met de schuif rechtsboven. De app haalt die waar mogelijk op bij Frank Energie; lukt dat niet, dan geldt de 2026-waarde (ongeveer €0,111/kWh) als terugval. Het tarief voor 2027 is nog niet vastgesteld — pas de schuif aan zodra dat bekend is.
+
+Dynamische opslagbedragen verschillen per leverancier (Frank Energie, easyEnergy, Tibber en anderen) en kunnen per maand wijzigen. De app rekent met één jaargemiddelde.
 
 ---
 
-## Stap 3: Hardware-opstellingen (Optioneel)
+## Stap 3 — Hardware (optioneel)
 
-Heb je (of overweeg je) elektrische apparatuur? Laat het weten en zie het effect op je kosten.
+Heb je elektrische apparatuur, of overweeg je die, vink het dan aan om het effect op je rekening te zien.
 
-### Elektrische auto (EV)
+### Elektrische auto
 
-**Wat vul je in?**
-- **Wekelijkse afstand**: Hoeveel km rij je per week? (bijv. 100 km)
-- **Verbruik**: Hoeveel kWh per 100 km? (bijv. Tesla: 15–18, Opel Corsa-E: 20–22)
-- **Zonne-match**: Hoeveel procent laden van je eigen zonnepanelen? (0–100%)
-- **Beschikbaarheid**: Thuis (altijd beschikbaar) of forenzen (werktijd niet thuis)?
+| Invoer | Toelichting |
+|--------|-------------|
+| Wekelijkse afstand | Aantal kilometer per week |
+| Verbruik | kWh per 100 km (richtwaarde 15–22) |
+| Zonne-match | Aandeel dat je uit eigen zon laadt (0–100%) |
+| Beschikbaarheid | Thuis (altijd) of forens (overdag op het werk) |
 
-**Hoe werkt het?**
-De app plant intelligente laadtijden:
-1. Eerst je zonnepanelen gebruiken (goedkoop, duurzaam)
-2. Dan de goedkoopste uren van het net (als dynamisch contract)
-3. Voorkomen: dure piektijden, hele nacht laden (inefficiënt)
+De app plant het laden: eerst uit eigen zonoverschot, dan in de goedkoopste uren van het net, en het vermijdt de dure avondpiek. Op een vast contract komt een auto er meestal als extra verbruik bij; op dynamisch valt dat met slim laden flink lager uit.
 
-**Effect op kosten:**
-- Vast: Meestal +€200–400/jaar (extra verbruik)
-- Dynamisch: Veel lager als je slim laadt (€100–200/jaar)
+### Thuisbatterij
 
-### Thuisbatterij (Accu)
+| Invoer | Toelichting |
+|--------|-------------|
+| Capaciteit | Opslag in kWh (bijv. 10 kWh) |
+| Vermogen | Laad-/ontlaadsnelheid in kW (bijv. 5 kW) |
+| Rendement | Verlies bij laden/ontladen (90% is gangbaar) |
+| Modus | Hoe de batterij beslist (zie hieronder) |
 
-**Wat vul je in?**
-- **Capaciteit**: Hoeveel kWh kan de accu opslaan? (bijv. 10 kWh)
-- **Vermogen**: Hoe snel kan ie laden/ontladen? (bijv. 5 kW)
-- **Rendement**: Hoeveel energie gaat verloren? (default 90%, goed)
-- **Modus**: Hoe wil je dat ie werkt?
+De batterij kent drie strategieën:
 
-**Drie accu-modus's:**
+- **Zelf — maximaal zelfverbruik.** Sla zonnestroom op voor 's avonds en gebruik die zelf. Geen handel met het net. Eenvoudig en voorspelbaar.
+- **Kosten — kostenbewust.** Naast zon laadt de batterij ook in de goedkoopste neturen, maar nooit meer dan je de volgende dag zelf verbruikt. Geen teruglevering.
+- **Winst — maximale winst.** Zoals kosten, plus verkopen bij hoge prijzen. Theoretisch de hoogste opbrengst, maar de marges zijn onzeker en hangen sterk af van de prijsschommelingen.
 
-#### 1. **Zelf** — Maximaal zelfverbruik (Standaard)
-- Sla zonne-energie op voor 's avonds
-- Gebruik het zelf; niet terugleveren
-- **Voordeel**: Veilig, geen complexiteit
-- **Besparing**: Vast: +€100–300/jaar; Dynamisch: +€50–150/jaar
-
-#### 2. **Kosten** — Kostenbewust
-- Sla zon op + koop de goedkoopste uren van het net
-- Sla niet meer op dan je morgen nodig hebt
-- Lever niet terug (alleen zelfverbruik)
-- **Voordeel**: Balans tussen besparing en eenvoud
-- **Besparing**: Dynamisch: +€200–500/jaar
-
-#### 3. **Winst** — Maximale winst
-- Sla zon + goedkope uren op
-- Verkoop terug als het duur is (hoge prijs → marge)
-- Risico: Lastig om geld te verdienen met extreme spreads
-- **Voordeel**: Maximale besparing (theoretisch)
-- **Besparing**: Dynamisch: +€300–700/jaar (afhankelijk van prijsvolatiliteit)
-
-**Wanneer loont een accu?**
-- Terugverdientijd: De app berekent dit (bovenaan Stap 3)
-- Typisch: 10–15 jaar voor 10 kWh (afhankelijk van kosten, energieprijzen)
-- Subsidies?: Controleer je gemeente/provincie (niet in app, maar relevant!)
+De terugverdientijd staat boven in Stap 3. Voor een batterij van 10 kWh is tien tot vijftien jaar gangbaar, afhankelijk van prijs en energietarieven. Reken eventuele subsidies van gemeente of provincie er zelf bij; die zitten niet in de app.
 
 ### Warmtepomp
 
-**Wat vul je in?**
-- **Wintervermogen**: Hoeveel kWh verbruikt je warmtepomp op een koude winterdag? (bijv. 20 kWh)
-  
-**Hoe werkt het?**
-- Winter (koud): Veel stroom (verwarmingsseizoen)
-- Zomer (warm): Weinig stroom (alleen warm water)
-- App berekent maandelijk met Nederlands klimaat (graaddagen, De Bilt normaal)
+Vul in hoeveel kWh je warmtepomp op een koude winterdag verbruikt (bijvoorbeeld 20 kWh). De app verdeelt dat over het jaar met een Nederlands klimaatprofiel (graaddagen, normaal De Bilt): veel in de winter, weinig in de zomer (alleen warm water).
 
-**Effect:**
-- Vast: +€600–1200/jaar (extra verbruik)
-- Dynamisch: Goedkoper als je 's nachts kunt verwarmen (stapelwerk)
-- Met accu: Veel goedkoper (kun je goedkope uren laden)
+Een warmtepomp verhoogt je verbruik fors. Op een dynamisch contract of in combinatie met een batterij valt dat het gunstigst uit, omdat je dan in de goedkopere uren kunt verwarmen.
 
-**Tip**: Een warmtepomp loont vooral op dynamische contracten of met een accu.
+### Zonnepanelen dimmen
 
-### Zonnepanelen — Dimmen/Uitschakelen
+Alleen relevant bij negatieve EPEX-prijzen: momenten waarop er zoveel aanbod is dat je geld toe krijgt om af te nemen. Je teruglevering levert dan niets op of kost zelfs geld. Je hebt drie keuzes:
 
-**Alleen relevant als je negatieve EPEX-prijzen hebt** (rare momenten).
+- **Niets doen** — altijd alles terugleveren.
+- **Dimmen** — de omvormer regelt terug: geen teruglevering, je huis blijft wel draaien.
+- **Uitschakelen** — de omvormer volledig uit; je huis trekt alles van het net.
 
-Soms is de stroomprijs **negatief** (te veel aanbod, geen vraag). Dan krijg je geld om te verbruiken. Jouw zonnepanelen blokkeren dit.
-
-**Drie opties:**
-1. **Niets doen** (default): Alles exporteren, alle uren
-2. **Dimmen**: Omvormer regelt automatisch af (geen export, huisverbruik wel)
-3. **Uitschakelen**: Omvormer helemaal uit (huisverbruik van het net)
-
-**Effect**: Slechts enkele uren per jaar (meestal niet relevant).
+In de praktijk gaat het om enkele uren per jaar en is het effect klein.
 
 ---
 
-## De resultaten begrijpen
+## De resultaten lezen
 
-### Besparingen-kaart (Grote rode/groene badge)
+### Besparingskaart
 
-Dit is het belangrijkste getal:
-- 🟢 **GROEN**: Dynamisch is goedkoper (besparing €XX per jaar)
-- 🔴 **ROOD**: Vast is goedkoper (extra kosten €XX per jaar)
+Het belangrijkste getal staat groot bovenaan:
 
-**Wat je verder ziet:**
-- **Percentage**: Hoeveel procent goedkoper/duurder
-- **Scenario**: 2026 (saldering) of 2027 (geen saldering)
+- **Groen** — dynamisch is goedkoper; het bedrag is je jaarlijkse besparing.
+- **Oranje** — vast is goedkoper; het bedrag zijn je jaarlijkse meerkosten.
 
-### Detailtabel: Vast contract
+Daaronder zie je het verschil in procenten en het gekozen fiscale scenario: 2026 (met saldering) of 2027 (zonder saldering).
 
-| Regel | Wat betekent het |
-|-------|------------------|
-| **Piekafname** | Verbruik 08:00–23:00u × piektarief |
-| **Dalafname** | Verbruik 23:00–08:00u × daltarief |
-| **Teruglevering** | Jouw teruggeleverde kWh × terulevtarief (AFTREK) |
-| **Terugleverkost** | Extra kosten voor teruglevering |
-| **Vastrecht** | 12 × je maandelijks bedrag |
-| **Totaal voor energiebelastingkorting** | Subtotaal |
-| **Energiebelastingkorting** | Teruggave van de regering (−€629/jaar in 2026) |
-| **Netbeheerkosten** | Kosten voor het distributienetwerk (±€480/jaar) |
-| **TOTAAL** | Je jaarlijkse factuur |
+### Detailtabel — vast contract
 
-### Detailtabel: Dynamisch contract
+| Regel | Betekenis |
+|-------|-----------|
+| Piekafname | Verbruik 08:00–23:00 uur × piektarief |
+| Dalafname | Verbruik 23:00–08:00 uur × daltarief |
+| Teruglevering | Teruggeleverde kWh × teruglevertarief (aftrek) |
+| Terugleverkosten | Eventuele VTK |
+| Vastrecht | 12 × het maandbedrag |
+| Subtotaal | Vóór korting en netbeheer |
+| Heffingskorting energiebelasting | Vermindering per aansluiting (circa −€629 in 2026) |
+| Netbeheerkosten | Transport en distributie (circa €480 per jaar) |
+| Totaal | Je jaarrekening |
 
-| Regel | Wat betekent het |
-|-------|------------------|
-| **Afname** | Totale import × gemiddelde EPEX-prijs + opslag |
-| **Teruglevering** | Totale export × gemiddelde EPEX-prijs − opslag (AFTREK) |
-| **Energiebelasting** | Alle import × energiebelasting (€/kWh) |
-| **Vastrecht** | 12 × je maandelijks bedrag |
-| **Energiebelastingkorting** | Teruggave (−€629/jaar) |
-| **Netbeheerkosten** | Distributienetwerk (±€480/jaar) |
-| **TOTAAL** | Je jaarlijkse factuur |
+### Detailtabel — dynamisch contract
+
+| Regel | Betekenis |
+|-------|-----------|
+| Afname | Totale import × gemiddelde EPEX-prijs plus opslag |
+| Teruglevering | Totale export × gemiddelde EPEX-prijs min opslag (aftrek) |
+| Energiebelasting | Belaste afname × energiebelasting per kWh |
+| Vastrecht | 12 × het maandbedrag |
+| Heffingskorting energiebelasting | Vermindering per aansluiting (circa −€629 in 2026) |
+| Netbeheerkosten | Transport en distributie (circa €480 per jaar) |
+| Totaal | Je jaarrekening |
+
+Heffingskorting en netbeheerkosten zijn voor beide contracten gelijk. Ze veranderen het verschil tussen vast en dynamisch dus niet, maar geven wel een realistischer jaartotaal.
 
 ---
 
-## Grafieken uitgelegd
+## De grafieken
 
-### 1. **24-uurs Gemiddeld Energieprofiel & Spotprijs**
-Bovenste grafiek (donkerblauw + groen + geel).
+### 24-uurs verbruiksprofiel en spotprijs
 
-- **Blauwe lijn**: Hoeveel stroom je gemiddeld per uur verbruikt
-- **Groene lijn**: Hoeveel je gemiddeld per uur teruggeeft (zonnepanelen)
-- **Gele stippellijn**: EPEX-prijs per uur (spot-markt)
-- **Waar kijken naar**:
-  - Piek rond 18:00u (ochtend-spits bij werken)
-  - Zonne-piek 12:00u (middag)
-  - Prijs 18:00–23:00u duur (vraag hoog)
+De bovenste grafiek toont een gemiddelde dag:
 
-### 2. **Gedetailleerde Analyse — Dag/Week/Maand**
-Tweede rij: drie staafgrafieken naast elkaar.
+- **Blauwe lijn** — gemiddeld verbruik per uur.
+- **Groene lijn** — gemiddelde teruglevering per uur (zonnepanelen).
+- **Gele stippellijn** — EPEX-spotprijs per uur.
 
-Kies links bovenaan "Dag", "Week" of "Maand":
+Je herkent doorgaans een zonnepiek rond het middaguur en een verbruiks- en prijspiek in de avond rond 18:00 uur.
 
-**Per Dag:**
-- Blauwe staaf = Vast contract kosten die dag
-- Groene staaf = Dynamisch contract kosten die dag
-- Rood/groen pictogram = Welke beter is
+### Gedetailleerde analyse — dag, week, maand
 
-**Per Week:**
-- Iso-weeknummering (week 1–52)
-- Zelfde vergelijking, brede staafpatroon
+Drie staafgrafieken naast elkaar. Kies linksboven tussen dag, week en maand. Per periode staat een blauwe staaf (vast) naast een groene staaf (dynamisch), zodat je ziet welk contract wanneer voordeliger is. De maandweergave laat het seizoenspatroon zien: winters zijn duurder.
 
-**Per Maand:**
-- Januari–december
-- Overzicht jaarlijks patroon (winter duurder)
+### Hardware-effecten
 
-### 3. **Hardware-effecten**
-Derde graafiek: gekleurde blokjes per apparat.
+Per onderdeel zie je de jaarimpact: batterij, elektrische auto, warmtepomp en zonnepanelen. Een besparing kleurt groen, meerkosten kleuren oranje of rood. De cumulatieve balk telt alles bij elkaar op.
 
-Elke hardware-installatie toont zijn/haar impact:
-- 🔋 **Accu**: Groene besparing (rood = duurder)
-- 🚗 **EV**: Roze besparing (afhankelijk van laadstrategie)
-- 🔥 **Warmtepomp**: Oranje extra verbruik
-- ☀️ **Zonnepanelen**: Geel besparing (tegen beide contracten)
+### Sankey-diagram (geavanceerde weergave)
 
-**Cumulatief**: Alle effecten tezamen (veel beter dan individueel).
-
-### 4. **Geavanceerd: Sankey-diagram**
-(Geavanceerde modus, overzicht aanpassen)
-
-Energiestroom visualisatie:
-- Links: Zon + Net
-- Midden: Huis, Accu, EV, Warmtepomp (allemaal verbonden)
-- Rechts: Accu, Net (teruglevering)
-
-Dikte lijnen = hoeveelheid energie. Dit geeft je inzicht hoe jouw energie beweegt.
+Een stroomdiagram van je energie: links de bronnen (zon en net), in het midden de verbruikers (huis, batterij, auto, warmtepomp) en rechts wat terug naar het net gaat. De dikte van de stromen geeft de hoeveelheid energie weer.
 
 ---
 
 ## Veelgestelde vragen
 
-### "Waarom zijn er verschillen tussen mijn rekening en wat de app zegt?"
+**Waarom wijkt de app af van mijn jaarrekening?**
+Meestal door een andere periode, een tariefwijziging halverwege het jaar, of de seizoenscorrectie waarmee de app korte meetperiodes naar een vol jaar schaalt. Deel je werkelijke factuurbedrag door de gemeten periode en vergelijk dat met het jaartotaal van de app.
 
-**Mogelijke redenen:**
-1. **Andere periode**: App rekent jaarlijks; je facturatie kan halfjaarlijks zijn
-2. **Tariefwijziging midyear**: Leverancier verhoogde prijzen; app gebruikt één tarief heel jaar
-3. **Seizoenscorrectie**: App annualiseert korte data-periodes
-4. **Vastrecht**: App telt volledige jaar; je facturatie kan gedeeltelijk jaar zijn
-5. **Energiebelasting**: 2027 is nog onbekend; app gebruikt 2026-proxy
+**Mijn leverancier staat niet in de keuzelijst.**
+Kies de dichtstbijzijnde en pas de tarieven daarna handmatig aan met de cijfers van je jaarafrekening.
 
-**Oplossing**: Verdeel je werkelijke factuurbedrag door je data-periode en vergelijk.
+**De app zegt dynamisch, een ander zegt vast. Wie heeft gelijk?**
+Beide kunnen kloppen — het hangt van je profiel af. Veel verbruik 's nachts pakt gunstig uit op dynamisch; veel dagverbruik met zonnepanelen leunt naar vast. De app rekent met jóuw data.
 
-### "Mijn vaste contract zit niet in de leveranciers-menu"
+**Kan de app de kosten voor volgend jaar voorspellen?**
+Nee. Het is een vergelijking onder de aanname dat verbruik en prijzen gelijk blijven. Energieprijzen schommelen sterk; gebruik de app jaarlijks opnieuw met actuele data.
 
-Kies de dichtstbijzijnde, of voer handmatig in:
-- Bel je leverancier voor exacte tarieven
-- Controleer je jaarrekening
-- Voer in: piek/dal/vastrecht/VTK
+**Hoe betrouwbaar is een prognose met maar drie maanden data?**
+Redelijk, maar met een slag om de arm. Ontbrekende maanden vult de app met een gemiddeld profiel van vergelijkbare maanden. Met zes maanden of meer wordt de seizoensdekking duidelijk beter.
 
-### "De app zegt dynamisch is goedkoper, maar mijn vrienden zeggen vast?"
+**Waarom staan er soms negatieve prijzen in de grafiek?**
+Dat gebeurt echt op EPEX: bij veel wind- en zonaanbod en weinig vraag wordt de prijs negatief. Het is zeldzaam (een paar procent van de uren) en wordt voor de volledigheid getoond.
 
-Ieder huishouden is anders:
-- **Veel 's nachts thuis**? Dynamisch wint (goedkoop nachtverbruik)
-- **Veel dagverbruik** (werk thuis, zonnepanelen)? Vast wint (stabiel)
-- **Veel elektrische apparaten** (EV, WP)? Hangt af van laadstrategie
-
-De app rekent **jouw profiel**. Gebruik demo-data om ook vrienden-profielen te testen.
-
-### "Kan de app voorspellen wat het gaat kosten volgende jaar?"
-
-Nee. Energieprijzen veranderen. De app laat zien: "**Als volgende jaar dezelfde prijzen en verbruik zijn**."
-
-Realiteit:
-- Energieprijzen fluctueren wildly (oorlog, weer, seizoen)
-- Jouw verbruik verandert (nieuw apparaat, gedrag, winter vs zomer)
-- Tariefen worden aangepast (leverancier)
-
-**Tip**: Gebruik de app jaarlijks opnieuw met actuele gegevens.
-
-### "Hoe nauwkeurig is de prognose als ik maar 3 maanden data heb?"
-
-Redelijk, met voorbehoud:
-- App vuilt gaten in met je eigen seizoenspatroon
-- Voor maanden zonder data: gemiddeld profiel (mediaan van soortgelijke maanden)
-- **Foutmarge**: ±10–15% voor gaten, ±5% voor berekening
-
-**Aanbeveling**: Wacht tot je 6+ maanden data hebt (betere seizoensdekking).
-
-### "Waarom toont de app soms negatieve prijzen in het schema?"
-
-Dit gebeurt echt op EPEX:
-- Te veel wind/zonne-aanbod op de markt
-- Niet genoeg vraag
-- Netbeheerder betaalt jou om stroom af te nemen (negatieve prijs)
-
-**Zeldzaam** (~3% van de uren in Nederland). App toont het voor volledigheid.
-
-### "Is dit open source?"
-
-Ja! GitHub: https://github.com/cyleo/P1_dynamisch_vast_vergelijk
-
-Je mag het kopiëren, aanpassen, en zelf draaien. Attributie (CC-BY) voor demo-data.
+**Is de app open source?**
+Ja. De broncode staat op [GitHub](https://github.com/cyleo/P1_dynamisch_vast_vergelijk). De demo-data valt onder CC-BY (attributie in de repo).
 
 ---
 
-## Tips en best practices
+## Tips
 
-### Voor het Beste Resultaat
+- Laad bij voorkeur minimaal zes maanden data, liefst een heel jaar, voor goede seizoensdekking.
+- Controleer je tarieven op je jaarafrekening in plaats van uit het hoofd; de leverancierskeuze is slechts een richtlijn.
+- Vul hardware realistisch in: werkelijke kilometers, echte batterijcapaciteit, het winterverbruik van je warmtepomp.
+- Hover over de (i)-icoontjes voor uitleg per veld; de uitleg-panelen geven meer detail.
+- Speel met scenario's — verschuif bijvoorbeeld de batterijcapaciteit en zie het effect direct.
 
-1. **Laad minstens 6 maanden data** (hoe meer, hoe beter)
-   - Seizoensverschillen (winter duurder)
-   - Typisch 1-jaar data is ideaal
+**Op een dynamisch contract** loont slim sturen: laad de auto en de batterij in de goedkope nachturen en verwarm zoveel mogelijk buiten de avondpiek. Dat scheelt fors ten opzichte van ongestuurd laden.
 
-2. **Controleer je leverancier-tarieven** (niet op geheugen afgaan)
-   - Jaarrekening checken
-   - Website leverancier
-   - Snelkeuze is slechts richtlijn
-
-3. **Vul hardware realistisch in**
-   - Echte maandelijkse afstanden (niet "wishful thinking")
-   - Werkelijke accu-capaciteit (niet marketing-getal)
-   - Wintervermogen WP (niet zomer-waarde)
-
-4. **Lees de tooltips** 
-   - Elk veld heeft een (i)-icoontje
-   - Uitleg-panelen geven detail
-
-5. **Probeer scenario's**
-   - "Wat als ik 10 kWh accu zou hebben?"
-   - Schuif het vermogen, zie het effect live
-
-### Voor Dynamische Contracten (Slim Laden)
-
-- **EV laden 's nachts** (goedkoopste uren)
-- **Accu opslaan** rond 23:00–08:00u
-- **Warmtepomp**: Voorkeur nacht-opwarming + overdag-afgifte
-- **Zonnepanelen**: Sla over op accu, niet direct teruggeven
-
-**Effect**: Tot **50% besparing** op dynamisch vs ongecontroleerd laden.
-
-### Voor Vaste Contracten
-
-- **Gedrag minder belangrijk** (tarief vast)
-- **Zonnepanelen**: Elke kWh teruggeleverd geeft dezelfde credit
-- **Accu**: Voor zelfverbruik (avondgebruik)
-- **Elektrische apparaten**: Kosten evenveel dag/nacht
-
-**Aanbeveling**: Met vaste tarief, "slimme" hardware helpt minder. Bespaar liever elektriciteit (isolatie, LED, etc.).
-
-### Herfreshment
-
-- **Maandelijks**: Check je werkelijk verbruik vs. verwacht
-- **Jaarlijks**: Herimporteer je data, controleer tariefen
-- **Bij groot gedrag/hardware-wijziging**: Run de app opnieuw
+**Op een vast contract** maakt het moment van verbruik niet uit. Een batterij helpt vooral voor zelfverbruik; verder loont besparen (isolatie, ledverlichting) meer dan slim sturen.
 
 ---
 
 ## Problemen oplossen
 
-### "Ik zie alleen demo-data, niet mijn eigen data"
+**Ik zie alleen demo-data, niet mijn eigen data.**
+Importeer je bestand opnieuw via Stap 1 en bevestig het koppelscherm. Helpt dat niet, doe dan een harde refresh (Ctrl+Shift+R) om een verouderde cache te omzeilen. Blijft het misgaan, kijk dan in de browserconsole (F12) naar rode foutmeldingen.
 
-**Stap 1: Herimporteer jouw bestand**
-1. Scroll naar Stap 1 ("Bestand uploaden" of "Home Assistant")
-2. Upload je CSV of verbind met HA opnieuw
-3. Klik "Importeren" / "Gegevens ophalen"
+**De Home Assistant-verbinding werkt niet.**
+Controleer de URL en het token (een Long-Lived Access Token uit je HA-profiel). Een app op HTTPS kan geen HA op HTTP bereiken (Mixed Content); zet HA op HTTPS of gebruik de handmatige export.
 
-**Stap 2: Refresh browser**
-- Druk F5 of Ctrl+Shift+R (harde refresh)
-- Cache kan oude data vasthouden
+**De CSV-import mislukt of herkent kolommen verkeerd.**
+Zorg dat de eerste regel kolomnamen bevat en dat er geen lege regels onderaan staan. Komma en puntkomma worden allebei herkend. In het koppelscherm corrigeer je zelf welke kolom welke rol heeft.
 
-**Stap 3: Check browser console**
-- Druk F12, ga naar "Console" tab
-- Zoek rode foutmeldingen (copy/paste in een issue)
+**De banner meldt veel hiaten of schatting.**
+Dat is meestal normaal: een sensor die even uitviel, de zomer-/wintertijdwissel of een meterherstart. Zolang minder dan circa 40% van het jaar geschat is, blijft het resultaat bruikbaar.
 
-### "Home Assistant-verbinding werkt niet"
+**De energiebelastingschuif lijkt vast te staan.**
+De waarde wordt automatisch opgehaald; offline geldt de 2026-terugval. Je kunt hem altijd handmatig aanpassen door op de schuif te klikken — dat is ook nodig zodra het 2027-tarief bekend is.
 
-**Controleer:**
-- ✅ Je HA-URL klopt (`http://192.168...` of je domein)
-- ✅ Je token is geldig (Long-Lived Access Token uit HA → Settings → Developer Tools)
-- ✅ HTTPS-siteuatie: HTTPS-app kan geen HTTP-HA bereiken (Mixed Content blok)
-  - Oplossing: Zet HA op HTTPS, of exporteer handmatig (Optie B)
+**De app ziet mijn zonnepanelen niet.**
+Controleer of je een zonnesensor in Home Assistant hebt en of die in de statistieken staat (recorder ingeschakeld). Bij een CSV-import wijs je in het koppelscherm aan welke kolom de zonopbrengst is.
 
-### "CSV uploaden mislukt / kolommen verkeerd herkend"
-
-**Check je CSV:**
-- ✅ Eerste rij = kolomnamen (bijv. `timestamp, entity_id, state`)
-- ✅ Geen lege rijen onderaan
-- ✅ Scheidingsteken: komma of puntkomma (app detecteert beide)
-- ✅ Datumformat: ISO (`2024-01-15T12:30:00`) of `DD-MM-YYYY`
-
-**Handmatig toewijzen:**
-- Upload sowieso: app toont mapping-scherm
-- Controleer/corrigeer kolom-rollen
-- Klik "Bevestigen"
-
-### "Data-kwaliteitsbanner zegt veel gaten/geschat"
-
-Dit is normaal. Oorzaken:
-- **HA-sensor kapot**: Vervangen door seizoensgemiddelde
-- **DST-spanning**: 1 uur weg (lente) / erbij (herfst)
-- **Meter-herstart**: Waarde teruggezet; gap tussen meting
-
-**Geen probleem als**:
-- Minder dan 40% van je jaar geschat
-- Grote gaten (> 1 week) niet in winter (verwarmingseizoen critiek)
-
-### "Waarom is de EB-schuif grijzaals? Kan ik niet aanpassen?"
-
-De waarde wordt auto-opgehaald van Frank Energie (je leverancier).
-- Offline → Gebruikt 2026-fallback
-- 2027 is nog onbekend (regering beslist)
-- Je mag handmatig aanpassen door op de schuif te klikken
-
-### "De app ziet de zonnepanelen niet"
-
-**Controle:**
-1. Heb je een zonnepaneel-sensor in Home Assistant?
-   - Bijv. `sensor.inverter_energy_production`
-2. Staat ie in je HA-statistieken (recorder ingeschakeld)?
-3. Eenheid: kWh of Wh? (App converteert beiden)
-
-**Handmatig CSV:**
-- Upload je verbruiks-CSV met een zonne-kolom
-- Geef aan welke kolom = zonne-opbrengst
-
-### "De besparingen lijken te hoog / laag"
-
-**Veelgestelde fouten:**
-1. ❌ Piektarief × daltarief omgewisseld
-2. ❌ VTK vergeten (voegt toe aan vast)
-3. ❌ Leverancier-opslag vergeten (voegt toe aan dynamisch)
-4. ❌ Energiebelasting uitgesloten (dringt door in beide)
-5. ❌ Vastrecht fout (÷12 als je maandelijks hebt)
-
-**Verificatie:**
-- Check je jaarrekening: Hoeveel betaalde je afgelopen jaar echt?
-- Trek daarvan de energiebelastingkorting af (−€629)
-- Trek netbeheerkosten af (−€480)
-- Vergelijk met app-totaal
-
-### "Sliders geven vreemde waarden / hangen vast"
-
-**Try:**
-- Refresh pagina (F5)
-- Zorg dat app.js niet gecached is (CTRL+SHIFT+Delete → cache leegmaken)
-
-**Geavanceerd:**
-- Open Developer Tools (F12 → Console)
-- Typ: `localStorage.clear()` en Enter
-- Refresh pagina
+**De besparing lijkt te hoog of te laag.**
+Veelvoorkomende oorzaken: piek- en daltarief verwisseld, VTK of leveranciersopslag vergeten, of het vastrecht verkeerd ingevuld. Vergelijk het jaartotaal van de app met je werkelijke afrekening minus de heffingskorting en de netbeheerkosten.
 
 ---
 
-## Contact & Feedback
-
-**Iets gevonden wat niet klopt?**
-- GitHub Issues: https://github.com/cyleo/P1_dynamisch_vast_vergelijk/issues
-- Zorg dat je screenshots/tarieven meegeeft
-
-**Privacykwesties?**
-- Alles in je browser; geen data ontvangen
-- Je data verlaat je computer nooit
-- Code is open source (controleerbaar)
-
-**Wil je bijdragen?**
-- Vertalingen, bug fixes, nieuwe features
-- See GitHub repo voor ontwikkelaars-info
-
----
-
-## Handige Links
-
-- **Live app**: https://energie.vulpini.nl
-- **GitHub repository**: https://github.com/cyleo/P1_dynamisch_vast_vergelijk
-- **Blog-artikel (NL)**: https://github.com/cyleo/P1_dynamisch_vast_vergelijk/blob/main/blogpost.md
-- **EPEX-prijzen (referentie)**: https://www.epexspot.com/en/market-data
-- **Frank Energie (prijs-data)**: https://frankenergie.nl
-- **Home Assistant**: https://www.home-assistant.io
-
----
-
-## Samenvatting: In 30 Seconden
-
-1. **Upload je jaar-data** (Home Assistant of CSV)
-2. **Vul je huidige tarieven in**
-3. **Lees de besparings-badge**:
-   - 🟢 Groen? → Dynamisch beter
-   - 🔴 Rood? → Vast beter
-4. **Probeer hardware** (optioneel): Zie effect accu/EV/WP
-5. **Plan actie**: Overstappen ja/nee?
-
----
-
-**Veel succes met jouw energiebeslissing! 🔋⚡**
-
----
-
-**Versie**: 2.0 (2026-06-10) | **Taal**: Nederlands | **Geldig tot**: Totdat energiewetten veranderen
+Live app: [energie.vulpini.nl](https://energie.vulpini.nl) · Referenties: [EPEX-marktdata](https://www.epexspot.com/en/market-data), [Frank Energie](https://frankenergie.nl), [Home Assistant](https://www.home-assistant.io)
