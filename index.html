@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=90">
+  <link rel="stylesheet" href="/style.css?v=91">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -594,6 +594,10 @@
 
       <!-- LEFT SIDEBAR: Configuration & Uploads -->
       <aside class="sidebar">
+        <button type="button" id="sidebar-toggle" class="sidebar-toggle-btn" title="Zijbalk verbergen">
+          <svg class="sidebar-toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <div class="sidebar-content">
 
         <!-- Progressive Disclosure View Toggle -->
         <div class="view-toggle-container glass-panel">
@@ -1147,6 +1151,7 @@
 
         </section>
 
+        </div><!-- /.sidebar-content -->
       </aside>
 
       <!-- RIGHT DASHBOARD: Charts & Metrics -->
@@ -1794,7 +1799,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=90"></script>
+  <script src="/app.js?v=91"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

@@ -539,6 +539,24 @@ function setupEventListeners() {
   // Sluit export-dropdown bij klik buiten
   document.addEventListener('click', () => _closeExportDropdowns(null));
 
+  // ── Sidebar inklapknop ───────────────────────────────────────────────────
+  const sidebarGrid = document.querySelector('.dashboard-grid');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  if (sidebarGrid && sidebarToggle) {
+    // Herstel vorige staat
+    if (localStorage.getItem('sidebarCollapsed') === '1') {
+      sidebarGrid.classList.add('sidebar-collapsed');
+      sidebarToggle.title = 'Zijbalk tonen';
+    }
+    sidebarToggle.addEventListener('click', () => {
+      const collapsed = sidebarGrid.classList.toggle('sidebar-collapsed');
+      sidebarToggle.title = collapsed ? 'Zijbalk tonen' : 'Zijbalk verbergen';
+      localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+      // Her-render grafieken zodat ze de nieuwe breedte benutten
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
+    });
+  }
+
   // ── Grafiek resize handles ────────────────────────────────────────────────
   document.querySelectorAll('.chart-resize-handle').forEach(handle => {
     handle.addEventListener('mousedown', e => {

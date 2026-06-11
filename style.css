@@ -170,6 +170,60 @@ header {
   display: grid;
   grid-template-columns: 360px 1fr;
   gap: 1.5rem;
+  transition: grid-template-columns 0.25s ease;
+}
+
+.dashboard-grid.sidebar-collapsed {
+  grid-template-columns: 28px 1fr;
+}
+
+/* ── Sidebar collapse ────────────────────────────────────────────────────── */
+.sidebar {
+  position: relative;
+}
+
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 0;
+  right: -14px;
+  z-index: 30;
+  width: 28px;
+  height: 28px;
+  background: #1a1d2e;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.sidebar-toggle-icon {
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+.dashboard-grid.sidebar-collapsed .sidebar-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.sidebar-content {
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.dashboard-grid.sidebar-collapsed .sidebar-content {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 @media (max-width: 1100px) {

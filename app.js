@@ -4131,6 +4131,20 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       });
     });
     document.addEventListener("click", () => _closeExportDropdowns(null));
+    const sidebarGrid = document.querySelector(".dashboard-grid");
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+    if (sidebarGrid && sidebarToggle) {
+      if (localStorage.getItem("sidebarCollapsed") === "1") {
+        sidebarGrid.classList.add("sidebar-collapsed");
+        sidebarToggle.title = "Zijbalk tonen";
+      }
+      sidebarToggle.addEventListener("click", () => {
+        const collapsed = sidebarGrid.classList.toggle("sidebar-collapsed");
+        sidebarToggle.title = collapsed ? "Zijbalk tonen" : "Zijbalk verbergen";
+        localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+        setTimeout(() => window.dispatchEvent(new Event("resize")), 260);
+      });
+    }
     document.querySelectorAll(".chart-resize-handle").forEach((handle) => {
       handle.addEventListener("mousedown", (e) => {
         const targetId = handle.dataset.resizeTarget;
