@@ -26,6 +26,13 @@ jobs:
       - name: Build the app
         run: npm run build
 
+      - name: Check bundle is up-to-date
+        run: |
+          if ! git diff --exit-code app.js; then
+            echo "❌ app.js is verouderd — draai 'npm run build' en commit de nieuwe bundle."
+            exit 1
+          fi
+
       - name: Run validation tests
         env:
           TZ: Europe/Amsterdam

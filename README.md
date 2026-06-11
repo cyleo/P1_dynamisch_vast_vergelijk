@@ -54,7 +54,6 @@ npm test
 ### Optie 2 — Python
 
 ```bash
-npm install && npm run build   # eenmalig: genereert app.js (de bundle staat niet in de repo)
 python3 -m http.server 8080
 # open http://localhost:8080/
 ```
@@ -81,11 +80,10 @@ server {
 }
 ```
 
-**Wat zet je op de server?** Bouw eerst de bundle en kopieer dan deze bestanden/mappen naar de webroot:
+**Wat zet je op de server?** Kopieer deze bestanden/mappen naar de webroot:
 
-```bash
-npm install && npm run build
-# → index.html, app.js (de zojuist gebouwde bundle), style.css, demo-year.js, assets/
+```
+index.html, app.js, style.css, demo-year.js, assets/
 ```
 
 `assets/` moet mee: de social-media-preview (`og:image`) verwijst naar `assets/geavanceerd_view.png` op je eigen domein. De mappen `src/`, `_validate/` en `docs/` zijn niet nodig op de server.

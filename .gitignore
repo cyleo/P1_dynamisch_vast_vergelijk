@@ -38,6 +38,6 @@ assistant/
 node_modules/
 dist/
 
-# Build output (gegenereerd door esbuild uit src/app.js)
-/app.js
+# Build output — app.js is getrackt in de repo (meegeleverd voor gebruikers zonder build-tooling)
+# app.js.map blijft lokaal (debug-artefact, niet nodig voor gebruik)
 /app.js.map
