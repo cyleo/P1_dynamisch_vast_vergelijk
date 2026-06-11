@@ -1060,7 +1060,12 @@ input:checked + .slider-round:before {
     min-height: 0;
     grid-template-rows: minmax(0, 1fr);
   }
-  .sidebar,
+  .sidebar {
+    min-height: 0;
+    max-height: 100%;
+    overflow: visible; /* Knop hangt buiten de rand — sidebar zelf niet scrollen */
+  }
+  .sidebar-content,
   .main-dashboard {
     overflow-y: auto;
     min-height: 0;
