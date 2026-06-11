@@ -3,6 +3,12 @@ import { appStore } from "../domain/store.js";
 import { toConsumerPrice, isoWeek } from "../domain/energyMath.js";
 
 let afnameDetailView = "hour"; // "day" | "hour"
+
+// Zoom state per chart (null = volledige weergave)
+let _overviewZoom = null; // { start, end, mode } indices in allDays
+let _simZoom = null;      // { start, end, mode } indices in allKeys
+let _dragJustEnded = false; // onderdrukt klik-na-sleep in sim drill-down
+
 export function setAfnameView(v) {
   afnameDetailView = v;
   renderAfnameDetail();
@@ -35,6 +41,108 @@ if (typeof document !== "undefined" && !document._chartTipDismissBound) {
     if (t && t.getAttribute && t.getAttribute("data-charttip") === "1") return; // staaf handelt zelf
     _activeTouchTip();
     _activeTouchTip = null;
+  }, { passive: true });
+}
+
+/**
+ * Voegt drag-to-zoom interactie toe aan een SVG-staafgrafiek.
+ * Sleep horizontaal om in te zoomen; dubbelklik of "× Zoom reset" om terug te gaan.
+ * Alleen aanroepen als het totale aantal datapunten > 20 is.
+ */
+function _addDragZoom(svg, W, PAD_L, PAD_T, chartW, chartH, allCount, zoomOffset, currentN, onZoom, onReset) {
+  const ns = "http://www.w3.org/2000/svg";
+  const mkEl = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
+  };
+
+  // Selectierechthoek (rubber-band)
+  const selRect = mkEl("rect", {
+    x: PAD_L, y: PAD_T, width: 0, height: chartH,
+    fill: "rgba(100,180,255,0.12)",
+    stroke: "rgba(100,180,255,0.55)",
+    "stroke-width": "1",
+    "pointer-events": "none"
+  });
+  selRect.style.display = "none";
+  svg.appendChild(selRect);
+
+  // "× Zoom reset" knop (alleen zichtbaar als ingezoomd)
+  const isZoomed = zoomOffset > 0 || currentN < allCount;
+  if (isZoomed) {
+    const lbl = mkEl("text", {
+      x: W - 14, y: PAD_T + 11,
+      "text-anchor": "end",
+      fill: "rgba(100,200,255,0.85)",
+      "font-size": "9",
+      cursor: "pointer",
+      "pointer-events": "all"
+    });
+    lbl.textContent = "× Zoom reset";
+    lbl.addEventListener("click", e => { e.stopPropagation(); onReset(); });
+    svg.appendChild(lbl);
+  }
+
+  let anchorX = null;
+  let dragging = false;
+  let lastTouchX = null;
+
+  const svgRelX = e => e.clientX - svg.getBoundingClientRect().left;
+
+  const onStart = x => { anchorX = x; dragging = false; };
+
+  const onMove = x => {
+    if (anchorX === null) return;
+    if (Math.abs(x - anchorX) > 5) {
+      dragging = true;
+      const x1 = Math.max(PAD_L, Math.min(anchorX, x));
+      const x2 = Math.min(W, Math.max(anchorX, x));
+      selRect.setAttribute("x", x1);
+      selRect.setAttribute("width", Math.max(0, x2 - x1));
+      selRect.style.display = "";
+    }
+  };
+
+  const onEnd = x => {
+    if (anchorX === null) return;
+    selRect.style.display = "none";
+    if (dragging) {
+      _dragJustEnded = true;
+      setTimeout(() => { _dragJustEnded = false; }, 150);
+      const x1 = Math.min(anchorX, x);
+      const x2 = Math.max(anchorX, x);
+      const f1 = Math.max(0, (x1 - PAD_L) / chartW);
+      const f2 = Math.min(1, (x2 - PAD_L) / chartW);
+      const newStart = zoomOffset + Math.floor(f1 * currentN);
+      const newEnd = zoomOffset + Math.ceil(f2 * currentN);
+      if (newEnd - newStart >= 3) onZoom(newStart, Math.min(allCount, newEnd));
+    }
+    anchorX = null;
+    dragging = false;
+  };
+
+  svg.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;
+    onStart(svgRelX(e));
+    document.addEventListener("mouseup", e2 => onEnd(svgRelX(e2)), { once: true });
+  });
+  svg.addEventListener("mousemove", e => onMove(svgRelX(e)));
+  svg.addEventListener("dblclick", () => { if (isZoomed) onReset(); });
+
+  svg.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) return;
+    lastTouchX = e.touches[0].clientX - svg.getBoundingClientRect().left;
+    onStart(lastTouchX);
+  }, { passive: true });
+  svg.addEventListener("touchmove", e => {
+    if (e.touches.length !== 1) return;
+    lastTouchX = e.touches[0].clientX - svg.getBoundingClientRect().left;
+    onMove(lastTouchX);
+  }, { passive: true });
+  svg.addEventListener("touchend", () => {
+    if (lastTouchX !== null) onEnd(lastTouchX);
+    lastTouchX = null;
   }, { passive: true });
 }
 
@@ -662,7 +770,13 @@ export function renderSimChart() {
     b.dyn += v.dynCost;
     b.fixed += v.fixedCost;
   });
-  const keys = [...buckets.keys()];
+  const allKeys = [...buckets.keys()];
+  // Valideer zoom (reset bij moduswissel of verouderde grenzen)
+  const simModeKey = isWeekMode ? "week" : "day";
+  if (_simZoom && (_simZoom.mode !== simModeKey || _simZoom.end > allKeys.length)) {
+    _simZoom = null;
+  }
+  const keys = _simZoom ? allKeys.slice(_simZoom.start, _simZoom.end) : allKeys;
   const dyns = keys.map(k => buckets.get(k).dyn);
   const fixeds = keys.map(k => buckets.get(k).fixed);
   const N = keys.length;
@@ -760,6 +874,7 @@ export function renderSimChart() {
     _bindTouchTip(ov, show, hide);
     // Drill-down on click (day mode only — week mode drills to the first day of that week)
     ov.addEventListener("click", () => {
+      if (_dragJustEnded) { _dragJustEnded = false; return; }
       if (!isWeekMode) {
         appStore.setState({ simDrillDay: keys[i] });
       } else {
@@ -769,6 +884,16 @@ export function renderSimChart() {
       renderSimChart();
     });
     svg.appendChild(ov);
+  }
+
+  // Drag-to-zoom (alleen bij > 20 datapunten)
+  if (allKeys.length > 20) {
+    _addDragZoom(
+      svg, W, PAD_L, PAD_T, cW, cH,
+      allKeys.length, _simZoom ? _simZoom.start : 0, N,
+      (s, e) => { _simZoom = { start: s, end: e, mode: simModeKey }; renderSimChart(); },
+      () => { _simZoom = null; renderSimChart(); }
+    );
   }
 }
 
@@ -1305,7 +1430,12 @@ export function renderOverviewChart() {
     });
   }
 
-  const days = Array.from(bucketMap.keys()).sort();
+  const allDays = Array.from(bucketMap.keys()).sort();
+  // Valideer zoom (reset bij moduswissel of verouderde grenzen)
+  if (_overviewZoom && (_overviewZoom.mode !== overviewMode || _overviewZoom.end > allDays.length)) {
+    _overviewZoom = null;
+  }
+  const days = _overviewZoom ? allDays.slice(_overviewZoom.start, _overviewZoom.end) : allDays;
   const values = days.map(d => bucketMap.get(d));
 
   const hasEv = !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
@@ -1723,6 +1853,16 @@ export function renderOverviewChart() {
 
     svg.appendChild(overlay);
   });
+
+  // Drag-to-zoom (alleen bij > 20 datapunten)
+  if (allDays.length > 20) {
+    _addDragZoom(
+      svg, W, PAD_L, PAD_T, chartW, chartH,
+      allDays.length, _overviewZoom ? _overviewZoom.start : 0, n,
+      (s, e) => { _overviewZoom = { start: s, end: e, mode: overviewMode }; renderOverviewChart(); },
+      () => { _overviewZoom = null; renderOverviewChart(); }
+    );
+  }
 }
 
 /**
