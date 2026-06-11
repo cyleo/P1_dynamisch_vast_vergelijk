@@ -18,7 +18,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:url" content="https://energie.vulpini.nl/">
 
-  <link rel="stylesheet" href="/style.css?v=87">
+  <link rel="stylesheet" href="/style.css?v=88">
   <style>
     /* CORS Setup Modal + generieke uitleg-modal + CSV mapping modal */
     #modal-backdrop,
@@ -549,9 +549,8 @@
   <div class="app-container">
 
     <!-- Top Header -->
-    <header style="display:flex; flex-direction:column; gap:1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:2rem;">
-        <!-- Left: Logo & Title -->
+    <header class="app-header">
+      <div class="header-top">
         <div class="logo-section">
           <h1>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -560,24 +559,23 @@
             </svg>
             Energiecontracten Analysator
           </h1>
-          <p>Dynamisch versus Vast &mdash; rekenmodel op basis van jouw echte P1 verbruiksprofiel</p>
         </div>
 
-        <!-- Right: Navigation at top -->
-        <nav class="header-nav" style="display:flex; gap:1.2rem; font-size:0.8rem; flex-wrap:wrap; justify-content:flex-end;">
-          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk/blob/main/blogpost.md" style="color:var(--text-muted); text-decoration:none; opacity:0.7; transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">Blog</a>
-          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk" style="color:var(--text-muted); text-decoration:none; opacity:0.7; display:inline-flex; align-items:center; gap:4px; transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle;">
+        <nav class="header-nav">
+          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk/blob/main/blogpost.md">Blog</a>
+          <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.483 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
             </svg>GitHub</a>
-          <button id="btn-show-guide" style="background:none; border:none; color:var(--text-muted); font-size:0.8rem; cursor:pointer; opacity:0.7; transition:opacity 0.2s; padding:0; font-family:inherit;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.7'">Handleiding</button>
+          <button id="btn-show-guide">Handleiding</button>
         </nav>
       </div>
 
-      <!-- Data Status Line below -->
-      <div class="header-status" style="display:flex; align-items:center;">
+      <p class="header-subtitle">Dynamisch versus Vast &mdash; rekenmodel op basis van jouw echte P1 verbruiksprofiel</p>
+
+      <div class="header-status">
         <span class="pulse-light"></span>
-        <span id="data-status" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.4rem;">Demo data geladen</span>
+        <span id="data-status">Demo data geladen</span>
       </div>
     </header>
 
@@ -1693,6 +1691,54 @@
           </div>
         </details>
 
+        <!-- Over dit model: aannames & beperkingen -->
+        <details class="glass-panel" id="model-assumptions" style="position:relative;margin-bottom:1rem;padding:0.9rem 1.1rem;">
+          <summary style="cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:0.95rem;">
+            <svg class="icon icon-inline" viewBox="0 0 24 24" style="margin-right: 0.35rem; color: var(--text-muted);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg> Over dit model — aannames &amp; beperkingen
+          </summary>
+          <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.65;margin-top:0.7rem;">
+
+            <p style="margin:0 0 0.6rem;"><strong>Vaste bedragen (beide contracten gelijk — comparison-neutraal)</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li><strong>Heffingskorting energiebelasting:</strong> €628,96/jaar (2026, incl. btw). Wordt van beide contracttotalen afgetrokken — het verschil tussen dynamisch en vast verandert niet, maar de absolute jaartotalen zijn realistisch.</li>
+              <li><strong>Netbeheerkosten:</strong> €480,00/jaar (gemiddelde 2026, incl. btw, regionale spreiding Liander/Enexis/Stedin). Opgeteld bij beide contracten.</li>
+            </ul>
+
+            <p style="margin:0 0 0.6rem;"><strong>Energiebelasting</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li>Het 2027-tarief is nog niet vastgesteld. De standaardwaarde (€0,11084/kWh) is een schatting op basis van het 2026-tarief. Aanpasbaar via de schuif onder Stap 2.</li>
+              <li><strong>2027-model:</strong> EB wordt geheven over de bruto afname — teruglevering wordt er niet meer van afgetrokken.</li>
+              <li><strong>2026-model (saldering):</strong> EB over de netto afname (import minus export, tot nul).</li>
+            </ul>
+
+            <p style="margin:0 0 0.6rem;"><strong>Saldering (2026) — jaarverrekening</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li>Saldering is van nature een verrekening over het hele jaar. De kopregel (besparingskaart + totaaltabellen) is correct genetto. De per-dag-grafieken tonen nog 2027-stijl uur-voor-uur-waardering — die wijken in 2026 licht af van de werkelijkheid.</li>
+            </ul>
+
+            <p style="margin:0 0 0.6rem;"><strong>VTK (vaste terugleverkosten)</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li>Gemodelleerd als een lineair tarief (€/kWh). Leveranciers met een vast jaarbedrag of staffels zijn niet apart gemodelleerd. Standaardwaarde €0,00/kWh — pas aan naar je eigen leveranciersvoorwaarden.</li>
+            </ul>
+
+            <p style="margin:0 0 0.6rem;"><strong>EPEX-prijzen</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li>Voor uren met echte historische prijzen worden die gebruikt. Voor uren zonder live data vult het model een zelf-gekalibreerd seizoensprofiel in (gebaseerd op je beschikbare EPEX-historie). Als er helemaal geen historische prijzen zijn, worden generieke NL-seizoensprofielen gebruikt. De EPEX-bronindicator boven de grafiek toont welk percentage echt gemeten is.</li>
+            </ul>
+
+            <p style="margin:0 0 0.6rem;"><strong>Jaarprognose (spiegelmaand-synthese)</strong></p>
+            <ul style="margin:0 0 0.8rem 1.1rem;padding:0;">
+              <li>Bij minder dan 365 dagen eigen data worden ontbrekende maanden gesynthetiseerd via een "spiegelmaand": de gemeten maand met de meest vergelijkbare daglengte (bijv. augustus ≈ april). De prognose-badge wordt oranje bij meer dan 40% geschatte data.</li>
+            </ul>
+
+            <p style="margin:0 0 0.4rem;font-size:0.78rem;">
+              Demo-data: OPSD Household Data, <em>residential4</em> (2017), fysisch herschaald naar NL-prosument — licentie CC-BY.
+              Broncode en methodologie:
+              <a href="https://github.com/cyleo/P1_dynamisch_vast_vergelijk" target="_blank" rel="noopener" style="color:var(--accent-cyan);">github.com/cyleo/P1_dynamisch_vast_vergelijk</a>.
+            </p>
+          </div>
+        </details>
+
         <!-- Download: eigen data met gematchte EPEX-prijzen -->
         <div style="display:flex;flex-direction:column;align-items:center;gap:0.4rem;margin-top:0.5rem;">
           <button id="btn-download-csv" class="btn-secondary" style="display:inline-flex;align-items:center;gap:0.5rem;">
@@ -1716,7 +1762,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=87"></script>
+  <script src="/app.js?v=88"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';
