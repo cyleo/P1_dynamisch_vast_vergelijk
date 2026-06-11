@@ -1530,9 +1530,9 @@
     const isZoomed = zoomOffset > 0 || currentN < allCount;
     if (isZoomed) {
       const lbl = mkEl("text", {
-        x: W - 14,
+        x: PAD_L + 2,
         y: PAD_T + 11,
-        "text-anchor": "end",
+        "text-anchor": "start",
         fill: "rgba(100,200,255,0.85)",
         "font-size": "9",
         cursor: "pointer",
@@ -6090,7 +6090,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     const content = document.getElementById("guide-content");
     if (!backdrop || !content) return;
     backdrop.style.display = "flex";
-    content.innerHTML = '<p style="text-align:center; color:var(--text-muted);">Handleiding laden...</p>';
+    content.innerHTML = '<p class="guide-loading">Handleiding laden&hellip;</p>';
     fetch("/docs/GEBRUIKERSHANDLEIDING.md").then((resp) => {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       return resp.text();
@@ -6100,7 +6100,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       if (modal) modal.scrollTop = 0;
     }).catch((err) => {
       console.error("Failed to load guide:", err);
-      content.innerHTML = `<p style="color:var(--accent-orange);">Handleiding kon niet worden geladen. Zorg dat <code>/docs/GEBRUIKERSHANDLEIDING.md</code> bestaat.</p>`;
+      content.innerHTML = `<p class="guide-error">Handleiding kon niet worden geladen. Zorg dat <code>/docs/GEBRUIKERSHANDLEIDING.md</code> bestaat.</p>`;
     });
   }
   function closeUserGuide() {
@@ -6108,57 +6108,91 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     if (backdrop) backdrop.style.display = "none";
   }
   function markdownToHtml(markdown) {
-    let html = markdown.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    html = html.replace(/^### (.*?)$/gm, '<h3 style="font-size:0.95rem; color:var(--accent-cyan); margin:1.2rem 0 0.5rem; font-weight:600;">$1</h3>');
-    html = html.replace(/^## (.*?)$/gm, '<h2 style="font-size:1.1rem; color:var(--accent-cyan); margin:1.5rem 0 0.6rem; font-weight:700;">$1</h2>');
-    html = html.replace(/^# (.*?)$/gm, '<h1 style="font-size:1.3rem; color:var(--accent-blue); margin:2rem 0 1rem; font-weight:700;">$1</h1>');
-    html = html.replace(/^> (.*?)$/gm, (match, text) => {
-      return `<div style="background:rgba(0,242,254,0.06); border-left:3px solid var(--accent-cyan); padding:0.8rem 1rem; margin:1rem 0; border-radius:6px;"><strong>${text}</strong></div>`;
-    });
-    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*(.*?)\*/g, (match, text) => {
-      if (match.startsWith("**")) return match;
-      return `<em>${text}</em>`;
-    });
-    html = html.replace(/_(.*?)_/g, "<em>$1</em>");
-    html = html.replace(/`(.*?)`/g, '<code style="background:rgba(0,0,0,0.3); padding:0.2rem 0.4rem; border-radius:3px; font-family:monospace; font-size:0.85em;">$1</code>');
-    html = html.replace(/^\s*[-*] (.*?)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
-      return `<ul style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ul>`;
-    });
-    html = html.replace(/^\s*(\d+)\. (.*?)$/gm, "<li>$2</li>");
-    html = html.replace(/(<li>.*?<\/li>)/s, (match) => {
-      if (match.includes("<ol")) return match;
-      return `<ol style="margin:0.5rem 0 0.5rem 1.5rem; padding:0;">${match}</ol>`;
-    });
-    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-cyan); text-decoration:underline;">$1</a>');
-    html = html.replace(/^(---|___|\\*\\*\\*)\s*$/gm, '<hr style="border:none; border-top:1px solid rgba(255,255,255,0.1); margin:1.5rem 0;">');
-    const lines = html.split("\n");
-    let inList = false;
-    let inBlockquote = false;
-    let result = [];
-    for (const line of lines) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const inline = (s) => s.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>").replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>'
+    );
+    const lines = esc(markdown).split("\n");
+    const out = [];
+    let i = 0;
+    const isTableSep = (s) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(s);
+    const splitRow = (s) => s.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+    while (i < lines.length) {
+      const line = lines[i];
       const trimmed = line.trim();
-      if (trimmed.startsWith("<ul") || trimmed.startsWith("<ol")) {
-        inList = true;
-      } else if (trimmed === "</ul>" || trimmed === "</ol>") {
-        inList = false;
+      if (trimmed === "") {
+        i++;
+        continue;
       }
-      if (trimmed.startsWith('<div style="background:rgba(0,242,254,0.06)')) {
-        inBlockquote = true;
-      } else if (inBlockquote && trimmed.endsWith("</div>")) {
-        inBlockquote = false;
+      if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
+        out.push("<hr>");
+        i++;
+        continue;
       }
-      if (trimmed === "" || trimmed.startsWith("<") || inList || inBlockquote) {
-        result.push(line);
-      } else {
-        result.push(trimmed ? `<p style="margin:0.5rem 0; line-height:1.7;">${trimmed}</p>` : "");
+      if (/^```/.test(trimmed)) {
+        const buf2 = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i].trim())) buf2.push(lines[i++]);
+        i++;
+        out.push(`<pre><code>${buf2.join("\n")}</code></pre>`);
+        continue;
       }
+      const h = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      if (h) {
+        const lvl = h[1].length;
+        out.push(`<h${lvl}>${inline(h[2])}</h${lvl}>`);
+        i++;
+        continue;
+      }
+      if (trimmed.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        const header = splitRow(trimmed);
+        i += 2;
+        const body = [];
+        while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+          body.push(splitRow(lines[i]));
+          i++;
+        }
+        const thead = "<thead><tr>" + header.map((c) => `<th>${inline(c)}</th>`).join("") + "</tr></thead>";
+        const tbody = "<tbody>" + body.map((r) => "<tr>" + r.map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+        out.push(`<table>${thead}${tbody}</table>`);
+        continue;
+      }
+      if (/^>\s?/.test(trimmed)) {
+        const buf2 = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          buf2.push(lines[i].replace(/^\s*>\s?/, ""));
+          i++;
+        }
+        out.push(`<blockquote>${inline(buf2.join(" "))}</blockquote>`);
+        continue;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        const buf2 = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          buf2.push(`<li>${inline(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`);
+          i++;
+        }
+        out.push(`<ol>${buf2.join("")}</ol>`);
+        continue;
+      }
+      if (/^[-*]\s+/.test(trimmed)) {
+        const buf2 = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          buf2.push(`<li>${inline(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>`);
+          i++;
+        }
+        out.push(`<ul>${buf2.join("")}</ul>`);
+        continue;
+      }
+      const buf = [];
+      while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|>\s?|[-*]\s|\d+\.\s|```|(-{3,}|_{3,}|\*{3,})$)/.test(lines[i].trim())) {
+        buf.push(lines[i].trim());
+        i++;
+      }
+      out.push(`<p>${inline(buf.join(" "))}</p>`);
     }
-    html = result.join("\n");
-    html = html.replace(/<\/p>\n<p/g, "</p>\n<p");
-    html = html.replace(/\n\n+/g, "\n");
-    return html;
+    return out.join("\n");
   }
   function _resolveCssVars(str) {
     const cs = getComputedStyle(document.documentElement);

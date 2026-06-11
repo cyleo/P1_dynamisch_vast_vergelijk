@@ -72,8 +72,8 @@ function _addDragZoom(svg, W, PAD_L, PAD_T, chartW, chartH, allCount, zoomOffset
   const isZoomed = zoomOffset > 0 || currentN < allCount;
   if (isZoomed) {
     const lbl = mkEl("text", {
-      x: W - 14, y: PAD_T + 11,
-      "text-anchor": "end",
+      x: PAD_L + 2, y: PAD_T + 11,
+      "text-anchor": "start",
       fill: "rgba(100,200,255,0.85)",
       "font-size": "9",
       cursor: "pointer",
