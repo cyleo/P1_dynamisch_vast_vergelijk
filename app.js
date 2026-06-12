@@ -693,7 +693,8 @@
       batArbitrage,
       batGridExport = false,
       batMode,
-      noSolar = false
+      noSolar = false,
+      measuredHardware = false
     } = cfg;
     const mode = batMode || (batGridExport ? "winst" : batArbitrage ? "kosten" : "zelf");
     const gridCharge = mode === "kosten" || mode === "winst";
@@ -762,10 +763,10 @@
       weekly[dow].dynCosts.push(dynHrCost);
       weekly[dow].fixedCosts.push(fxHrCost);
       hourly[hour].solar.push(solarYield);
-      hourly[hour].ev.push(evRes.evVal);
-      hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
-      hourly[hour].batCharge.push(batRes.batChargeVal);
-      hourly[hour].batDischarge.push(batRes.batDischargeVal);
+      hourly[hour].ev.push(measuredHardware ? h.measEv : evRes.evVal);
+      hourly[hour].hp.push(measuredHardware ? h.measHp : hasHeatPump ? hpLoad : 0);
+      hourly[hour].batCharge.push(measuredHardware ? h.measBatIn : batRes.batChargeVal);
+      hourly[hour].batDischarge.push(measuredHardware ? h.measBatOut : batRes.batDischargeVal);
       const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
       const evCostFx = evRes.evGridFx * tariff - evRes.evSolarFx * fixedReturnPrice;
       const evCostDyn = evRes.evGridDyn * allIn - evRes.evSolarDyn * returnPrice;
@@ -914,7 +915,11 @@
         evRes,
         batRes,
         impFx,
-        expFx
+        expFx,
+        measEv: row.measEv || 0,
+        measHp: row.measHp || 0,
+        measBatIn: row.measBatIn || 0,
+        measBatOut: row.measBatOut || 0
       });
     });
     const ys = ctx.yearScale;
@@ -1233,6 +1238,10 @@
       }
       rec.timestamp = r.timestamp;
       rec.solar_yield = r.solar_yield !== void 0 ? r.solar_yield : null;
+      rec.measEv = ev;
+      rec.measHp = hp;
+      rec.measBatIn = batIn;
+      rec.measBatOut = batOut;
       return rec;
     });
     out.untangle = {
@@ -1482,6 +1491,10 @@
       }
       rec.timestamp = new Date(curr).toISOString();
       rec.solar_yield = solarYieldKwh;
+      rec.measEv = evLoad;
+      rec.measHp = hpLoad;
+      rec.measBatIn = batIn;
+      rec.measBatOut = batOut;
       records.push(rec);
     }
     records.untangle = {
@@ -1709,7 +1722,7 @@
       batCharge: mean(h.batCharge || []),
       batDischarge: mean(h.batDischarge || [])
     }));
-    const isDtActive = __chartsDependencies.activeSimulation?.records?.untangle?.active || window.digitalTwinMode && window.digitalTwinMode.active;
+    const isDtActive = __chartsDependencies.activeSimulation?.records?.untangle?.active || window.digitalTwinMode && window.digitalTwinMode.active || window.dtMeasuredMode;
     document.querySelectorAll(".dt-legend").forEach((el) => {
       el.style.display = isDtActive ? "inline-flex" : "none";
     });
@@ -3865,6 +3878,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     const hasDevices = meta && (meta.active || meta.devices && (meta.devices.ev || meta.devices.hp || meta.devices.battery));
     window.digitalTwinMode = meta && meta.active ? meta : null;
     if (!hasDevices) {
+      window.dtMeasuredMode = false;
       banner.style.display = "none";
       return;
     }
@@ -3877,6 +3891,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     if (devEl) devEl.textContent = human || "hardware";
     const { dtViewMode: dtViewMode2 } = appStore.getState();
     const mode = dtViewMode2 || "simulate";
+    window.dtMeasuredMode = mode === "measured" && hasDevices;
     const accent = mode === "simulate" ? "var(--accent-cyan)" : mode === "measured" ? "var(--accent-green)" : "var(--accent-orange)";
     banner.style.border = `1px solid ${accent}`;
     banner.style.background = mode === "simulate" ? "rgba(56,189,248,0.08)" : mode === "measured" ? "rgba(74,222,128,0.08)" : "rgba(251,146,60,0.08)";
@@ -5382,8 +5397,8 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     }
     const mhAcc = {}, shAcc = {}, hAcc = {};
     const daysPerMonth = {};
-    const add = (bucket, key, imp, exp, sol) => {
-      const a = bucket[key] ||= { imp: 0, exp: 0, sol: 0, solN: 0, n: 0 };
+    const add = (bucket, key, imp, exp, sol, dev) => {
+      const a = bucket[key] ||= { imp: 0, exp: 0, sol: 0, solN: 0, n: 0, ev: 0, hp: 0, bi: 0, bo: 0 };
       a.imp += imp;
       a.exp += exp;
       a.n++;
@@ -5391,6 +5406,10 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
         a.sol += sol;
         a.solN++;
       }
+      a.ev += dev.ev;
+      a.hp += dev.hp;
+      a.bi += dev.bi;
+      a.bo += dev.bo;
     };
     let hasSolar = false;
     energyData.forEach((r) => {
@@ -5398,9 +5417,10 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       const t = _rowTotals(r);
       if (t.sol != null) hasSolar = true;
       (daysPerMonth[month] ||= /* @__PURE__ */ new Set()).add(date);
-      add(mhAcc, `${month}-${hour}`, t.imp, t.exp, t.sol);
-      add(shAcc, `${seasonOf(month)}-${hour}`, t.imp, t.exp, t.sol);
-      add(hAcc, `${hour}`, t.imp, t.exp, t.sol);
+      const dev = { ev: r.measEv || 0, hp: r.measHp || 0, bi: r.measBatIn || 0, bo: r.measBatOut || 0 };
+      add(mhAcc, `${month}-${hour}`, t.imp, t.exp, t.sol, dev);
+      add(shAcc, `${seasonOf(month)}-${hour}`, t.imp, t.exp, t.sol, dev);
+      add(hAcc, `${hour}`, t.imp, t.exp, t.sol, dev);
     });
     const MIN_PROFILE_DAYS = 5;
     const measuredMonths = Object.keys(daysPerMonth).map(Number).filter((m) => daysPerMonth[m].size >= MIN_PROFILE_DAYS);
@@ -5412,10 +5432,18 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
         sourceMonth[m] = null;
       } else sourceMonth[m] = measuredMonths.reduce((best, c) => Math.abs(SOLAR_MONTH_FACTOR[c] - SOLAR_MONTH_FACTOR[m]) < Math.abs(SOLAR_MONTH_FACTOR[best] - SOLAR_MONTH_FACTOR[m]) ? c : best);
     }
-    const mean = (a) => a && a.n ? { imp: a.imp / a.n, exp: a.exp / a.n, sol: a.solN ? a.sol / a.solN : 0 } : null;
+    const mean = (a) => a && a.n ? {
+      imp: a.imp / a.n,
+      exp: a.exp / a.n,
+      sol: a.solN ? a.sol / a.solN : 0,
+      ev: a.ev / a.n,
+      hp: a.hp / a.n,
+      bi: a.bi / a.n,
+      bo: a.bo / a.n
+    } : null;
     const synthProfileFor = (month, hour) => {
       const src = sourceMonth[month];
-      return src != null && mean(mhAcc[`${src}-${hour}`]) || mean(shAcc[`${seasonOf(month)}-${hour}`]) || mean(hAcc[`${hour}`]) || { imp: 0, exp: 0, sol: 0 };
+      return src != null && mean(mhAcc[`${src}-${hour}`]) || mean(shAcc[`${seasonOf(month)}-${hour}`]) || mean(hAcc[`${hour}`]) || { imp: 0, exp: 0, sol: 0, ev: 0, hp: 0, bi: 0, bo: 0 };
     };
     const realByMDH = /* @__PURE__ */ new Map();
     energyData.forEach((r) => {
@@ -5448,6 +5476,10 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
             export_t1: Math.max(0, p.exp),
             export_t2: 0,
             solar_yield: hasSolar ? p.sol : null,
+            measEv: p.ev,
+            measHp: p.hp,
+            measBatIn: p.bi,
+            measBatOut: p.bo,
             _synth: true
           });
           synthHours++;
@@ -5468,6 +5500,9 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     const isSimpleClass = document.body && document.body.classList && typeof document.body.classList.contains === "function" ? document.body.classList.contains("mode-simple") : true;
     const isSimple = isSimpleClass || dtViewMode === "measured";
     return {
+      // In de "Gemeten"-stand tekenen de grafieken je werkelijk gemeten EV/WP/accu-curve
+      // (de engine pusht dan de gemeten per-uur waarden i.p.v. de — uitgeschakelde — simulatie).
+      measuredHardware: dtViewMode === "measured",
       // Fiscaal scenariojaar (2026 = saldering · 2027 = bruto-EB, geen saldering).
       // Default 2027 zodat ontbrekende selector het bestaande gedrag behoudt.
       fiscalYear: parseInt(document.getElementById("scenario-year")?.value, 10) || 2027,

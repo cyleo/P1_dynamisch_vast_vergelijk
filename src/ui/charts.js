@@ -245,7 +245,11 @@ export function renderChart() {
     batDischarge: mean(h.batDischarge || [])
   }));
 
-  const isDtActive = __chartsDependencies.activeSimulation?.records?.untangle?.active || (window.digitalTwinMode && window.digitalTwinMode.active);
+  // "Gemeten"-stand: untangle.active is dan false (niet gestript), maar we tekenen wél
+  // de gemeten EV/WP/accu-curve → window.dtMeasuredMode forceert de hardware-lijnen aan.
+  const isDtActive = __chartsDependencies.activeSimulation?.records?.untangle?.active
+    || (window.digitalTwinMode && window.digitalTwinMode.active)
+    || window.dtMeasuredMode;
   
   // Show or hide digital twin legends
   document.querySelectorAll(".dt-legend").forEach(el => {

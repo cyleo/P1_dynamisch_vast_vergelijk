@@ -281,6 +281,10 @@ export function untangleHourlyRecords(records, dtEnabled, devices) {
     }
     rec.timestamp = r.timestamp;
     rec.solar_yield = r.solar_yield !== undefined ? r.solar_yield : null;
+    // Gemeten per-uur apparaatwaarden meedragen (voor de "Gemeten"-stand: de grafieken
+    // tekenen hiermee je werkelijke EV/WP/accu-curve i.p.v. een simulatie). Onafhankelijk
+    // van het strippen — puur observationeel.
+    rec.measEv = ev; rec.measHp = hp; rec.measBatIn = batIn; rec.measBatOut = batOut;
     return rec;
   });
   out.untangle = {
@@ -534,6 +538,8 @@ export function processHAStatistics(stats, roleMap, dtEnabled = true) {
     }
     rec.timestamp = new Date(curr).toISOString();
     rec.solar_yield = solarYieldKwh;
+    // Gemeten per-uur apparaatwaarden meedragen (voor de "Gemeten"-stand, zie boven).
+    rec.measEv = evLoad; rec.measHp = hpLoad; rec.measBatIn = batIn; rec.measBatOut = batOut;
     records.push(rec);
   }
 

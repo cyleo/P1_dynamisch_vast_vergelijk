@@ -1838,10 +1838,14 @@ function ensureFullYearData() {
   //     vlakke-basislast+piek-zon synthese (verbruik te laag, zon te hoog). ──
   const mhAcc = {}, shAcc = {}, hAcc = {};   // maand-uur / seizoen-uur / uur → accumulator
   const daysPerMonth = {};
-  const add = (bucket, key, imp, exp, sol) => {
-    const a = (bucket[key] ||= { imp: 0, exp: 0, sol: 0, solN: 0, n: 0 });
+  const add = (bucket, key, imp, exp, sol, dev) => {
+    const a = (bucket[key] ||= { imp: 0, exp: 0, sol: 0, solN: 0, n: 0, ev: 0, hp: 0, bi: 0, bo: 0 });
     a.imp += imp; a.exp += exp; a.n++;
     if (sol != null) { a.sol += sol; a.solN++; }
+    // Gemeten apparaatcurves (EV/WP/accu) net zo projecteren als import/export, zodat de
+    // "Gemeten"-stand ook in een seizoens-prognose een volledige jaarcurve toont i.p.v.
+    // alléén de gemeten maanden (synth-uren zouden 'm anders met nullen verdunnen).
+    a.ev += dev.ev; a.hp += dev.hp; a.bi += dev.bi; a.bo += dev.bo;
   };
   let hasSolar = false;
   energyData.forEach(r => {
@@ -1849,9 +1853,10 @@ function ensureFullYearData() {
     const t = _rowTotals(r);
     if (t.sol != null) hasSolar = true;
     (daysPerMonth[month] ||= new Set()).add(date);
-    add(mhAcc, `${month}-${hour}`, t.imp, t.exp, t.sol);
-    add(shAcc, `${seasonOf(month)}-${hour}`, t.imp, t.exp, t.sol);
-    add(hAcc, `${hour}`, t.imp, t.exp, t.sol);
+    const dev = { ev: r.measEv || 0, hp: r.measHp || 0, bi: r.measBatIn || 0, bo: r.measBatOut || 0 };
+    add(mhAcc, `${month}-${hour}`, t.imp, t.exp, t.sol, dev);
+    add(shAcc, `${seasonOf(month)}-${hour}`, t.imp, t.exp, t.sol, dev);
+    add(hAcc, `${hour}`, t.imp, t.exp, t.sol, dev);
   });
   const MIN_PROFILE_DAYS = 5;   // een maand telt pas als 'gemeten' bij ≥5 dagen data
   const measuredMonths = Object.keys(daysPerMonth).map(Number).filter(m => daysPerMonth[m].size >= MIN_PROFILE_DAYS);
@@ -1865,7 +1870,8 @@ function ensureFullYearData() {
     else sourceMonth[m] = measuredMonths.reduce((best, c) =>
       Math.abs(SOLAR_MONTH_FACTOR[c] - SOLAR_MONTH_FACTOR[m]) < Math.abs(SOLAR_MONTH_FACTOR[best] - SOLAR_MONTH_FACTOR[m]) ? c : best);
   }
-  const mean = a => (a && a.n) ? { imp: a.imp / a.n, exp: a.exp / a.n, sol: a.solN ? a.sol / a.solN : 0 } : null;
+  const mean = a => (a && a.n) ? { imp: a.imp / a.n, exp: a.exp / a.n, sol: a.solN ? a.sol / a.solN : 0,
+    ev: a.ev / a.n, hp: a.hp / a.n, bi: a.bi / a.n, bo: a.bo / a.n } : null;
 
   // Beste profiel voor (maand,uur): bronmaand → seizoen → uur → nul.
   const synthProfileFor = (month, hour) => {
@@ -1873,7 +1879,7 @@ function ensureFullYearData() {
     return (src != null && mean(mhAcc[`${src}-${hour}`]))
       || mean(shAcc[`${seasonOf(month)}-${hour}`])
       || mean(hAcc[`${hour}`])
-      || { imp: 0, exp: 0, sol: 0 };
+      || { imp: 0, exp: 0, sol: 0, ev: 0, hp: 0, bi: 0, bo: 0 };
   };
 
   // ── 2. Index echte uren op (maand,dag,uur) zodat we ze kunnen hergebruiken ──
@@ -1909,6 +1915,7 @@ function ensureFullYearData() {
           export_t1: Math.max(0, p.exp),
           export_t2: 0,
           solar_yield: hasSolar ? p.sol : null,
+          measEv: p.ev, measHp: p.hp, measBatIn: p.bi, measBatOut: p.bo,
           _synth: true,
         });
         synthHours++;
@@ -1962,6 +1969,9 @@ function readSimConfig() {
   // echte EV/accu die al in de meterstanden zit). Zelfde neutralisatie als basis-modus.
   const isSimple = isSimpleClass || dtViewMode === "measured";
   return {
+    // In de "Gemeten"-stand tekenen de grafieken je werkelijk gemeten EV/WP/accu-curve
+    // (de engine pusht dan de gemeten per-uur waarden i.p.v. de — uitgeschakelde — simulatie).
+    measuredHardware: dtViewMode === "measured",
     // Fiscaal scenariojaar (2026 = saldering · 2027 = bruto-EB, geen saldering).
     // Default 2027 zodat ontbrekende selector het bestaande gedrag behoudt.
     fiscalYear: parseInt(document.getElementById("scenario-year")?.value, 10) || 2027,

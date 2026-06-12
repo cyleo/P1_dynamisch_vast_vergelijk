@@ -98,6 +98,7 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     hasBattery, batCapacity, batPower, batEfficiency, batArbitrage, batGridExport = false,
     batMode,
     noSolar = false,
+    measuredHardware = false,
   } = cfg;
 
   // ── Accu-modus (v=38) ──
@@ -175,12 +176,15 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     weekly[dow].dynCosts.push(dynHrCost);
     weekly[dow].fixedCosts.push(fxHrCost);
 
-    // Collect simulated hardware values for 24h profile
+    // Verzamel de hardware-waarden voor de 24u-profielgrafiek. In de "Gemeten"-stand
+    // (measuredHardware) tekenen we de WERKELIJK gemeten per-uur waarden i.p.v. de
+    // simulatie (die staat in deze stand uit → nul); zo toont de grafiek je echte
+    // EV/WP/accu-curve. De rekening blijft ongemoeid (alleen deze profiel-arrays).
     hourly[hour].solar.push(solarYield);
-    hourly[hour].ev.push(evRes.evVal);
-    hourly[hour].hp.push(hasHeatPump ? hpLoad : 0);
-    hourly[hour].batCharge.push(batRes.batChargeVal);
-    hourly[hour].batDischarge.push(batRes.batDischargeVal);
+    hourly[hour].ev.push(measuredHardware ? h.measEv : evRes.evVal);
+    hourly[hour].hp.push(measuredHardware ? h.measHp : (hasHeatPump ? hpLoad : 0));
+    hourly[hour].batCharge.push(measuredHardware ? h.measBatIn : batRes.batChargeVal);
+    hourly[hour].batDischarge.push(measuredHardware ? h.measBatOut : batRes.batDischargeVal);
 
     // Detailed hourly calculations for savings breakdown
     const fixedReturnPrice = fixedFeedInRate - fixedFeedInFee;
@@ -318,6 +322,8 @@ export function _simulateCore(cfg, full = false, ctx = null) {
       hour, dow, dayKey, isPeak, spot, dynImp, dynExp, basePrice,
       rawImp, rawExp, solarYield,
       hpLoad, hpFromSolar, hpFromGrid, evRes, batRes, impFx, expFx,
+      measEv: row.measEv || 0, measHp: row.measHp || 0,
+      measBatIn: row.measBatIn || 0, measBatOut: row.measBatOut || 0,
     });
   });
 

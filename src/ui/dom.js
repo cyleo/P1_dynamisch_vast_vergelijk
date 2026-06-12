@@ -425,7 +425,7 @@ export function updateDigitalTwinBanner(meta) {
   const hasDevices = meta && (meta.active || (meta.devices &&
     (meta.devices.ev || meta.devices.hp || meta.devices.battery)));
   window.digitalTwinMode = meta && meta.active ? meta : null;
-  if (!hasDevices) { banner.style.display = "none"; return; }
+  if (!hasDevices) { window.dtMeasuredMode = false; banner.style.display = "none"; return; }
 
   const names = [];
   if (meta.devices?.ev) names.push("elektrische auto");
@@ -438,6 +438,8 @@ export function updateDigitalTwinBanner(meta) {
 
   const { dtViewMode } = appStore.getState();
   const mode = dtViewMode || "simulate";
+  // Forceert de hardware-lijnen in de 24u-grafiek aan voor de "Gemeten"-stand (zie charts.js).
+  window.dtMeasuredMode = mode === "measured" && hasDevices;
   const accent = mode === "simulate" ? "var(--accent-cyan)"
     : mode === "measured" ? "var(--accent-green)" : "var(--accent-orange)";
   banner.style.border = `1px solid ${accent}`;
