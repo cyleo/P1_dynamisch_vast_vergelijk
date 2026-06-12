@@ -11,7 +11,7 @@ import { getFallbackSpot, buildSimContext, _simulateCore } from "./domain/engine
 import {
   parseHAHistoryExportCSV, parseHAStatisticsWideCSVAsync,
   parseLongCSV, parseLongCSVWithMapping, guessColumnRoles,
-  processHAStatistics, normalizeToHourly
+  processHAStatistics, normalizeToHourly, untangleHourlyRecords
 } from "./domain/parser.js";
 
 /* Core Dashboard Logic & Simulation Engine */
@@ -47,7 +47,7 @@ import { rowMeta, epexKey, seasonOf, isoWeek } from "./domain/energyMath.js";
 // (__setTestState), die bewust mirror én store samen zet.
 let {
   energyData, sankeyInterval, sankeyValue, activeSimulation,
-  epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled, dtViewMode,
+  epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled, dtViewMode, dtReparse,
   isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta,
   prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta,
   untangle, dataQuality,
@@ -60,7 +60,7 @@ appStore.subscribe(state => {
   epexHistory = state.epexHistory; liveEnergyTax = state.liveEnergyTax;
   _lastHAStats = state._lastHAStats; _lastRoleMap = state._lastRoleMap;
   digitalTwinEnabled = state.digitalTwinEnabled; dtViewMode = state.dtViewMode;
-  isDemoData = state.isDemoData;
+  dtReparse = state.dtReparse; isDemoData = state.isDemoData;
   fullYearData = state.fullYearData; fullYearStamp = state.fullYearStamp;
   yearScale = state.yearScale; dataMeta = state.dataMeta;
   prognosisDismissed = state.prognosisDismissed;
@@ -790,6 +790,9 @@ function processFile(file) {
         appStore.setState({
           energyData: sorted,
           untangle: parsed.untangle || oldUntangle || { active: false },
+          // De parser geeft een re-parse bron mee (brede CSV → "hourly", long-CSV → "ha")
+          // zodat de Digital-Twin-stand achteraf gewisseld kan worden zonder her-upload.
+          dtReparse: parsed._reparse || null,
         });
 
         const span = energyData.length > 0
@@ -1294,6 +1297,7 @@ async function handleHAImport() {
     appStore.setState({
       _lastHAStats: stats,
       _lastRoleMap: roleMap,
+      dtReparse: { kind: "ha", stats, roleMap },
       energyData: haParsed,
       untangle: haParsed.untangle || { active: false },
       isDemoData: false,
@@ -1402,15 +1406,23 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 function setDtViewMode(mode) {
   const strip = mode === "simulate";
   appStore.setState({ dtViewMode: mode, digitalTwinEnabled: strip });
-  if (!_lastHAStats || !_lastRoleMap) { updateDigitalTwinBanner(untangle); return; }
-  const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, strip);
-  appStore.setState({
-    energyData: dtParsed,
-    untangle: dtParsed.untangle || { active: false },
-    isDemoData: false,
-  });
+
+  // Her-parse de import met de nieuwe strip-vlag, zodat "Gemeten"/"Uit" op de ruwe
+  // meterstanden rekent en "Simuleer" de echte hardware stript. De bron komt uit de
+  // import (HA-WebSocket/long-CSV → kind "ha"; brede CSV → kind "hourly").
+  const src = dtReparse;
+  if (src) {
+    const reparsed = src.kind === "ha"
+      ? processHAStatistics(src.stats, src.roleMap, strip)
+      : untangleHourlyRecords(src.hourly, strip, src.devices);
+    appStore.setState({
+      energyData: reparsed,
+      untangle: reparsed.untangle || { active: false },
+      isDemoData: false,
+      fullYearStamp: "",   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
+    });
+  }
   updateDigitalTwinBanner(untangle);
-  appStore.setState({ fullYearStamp: "" });   // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
   runSimulation();
 }
 

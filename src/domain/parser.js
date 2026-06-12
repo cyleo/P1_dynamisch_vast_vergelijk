@@ -39,7 +39,10 @@ export function parseHAHistoryExportCSV(lines, sep, headers, roleMap, dtEnabled)
       }));
   }
 
-  return processHAStatistics(stats, roleMap, dtEnabled);
+  const records = processHAStatistics(stats, roleMap, dtEnabled);
+  // Bewaar de re-parse bron zodat de Digital-Twin-stand achteraf gewisseld kan worden.
+  records._reparse = { kind: "ha", stats, roleMap };
+  return records;
 }
 
 /**
@@ -143,9 +146,11 @@ export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsv
   }
 
   const hourly = normalizeToHourly(raw);
-  const records = untangleHourlyRecords(hourly, dtEnabled, {
-    ev: !!ev, hp: !!hp, battery: !!(batIn || batOut),
-  });
+  const devices = { ev: !!ev, hp: !!hp, battery: !!(batIn || batOut) };
+  const records = untangleHourlyRecords(hourly, dtEnabled, devices);
+  // Bewaar de pre-strip uurrecords zodat de Digital-Twin-stand achteraf gewisseld kan
+  // worden (Uit/Gemeten/Simuleer) zonder het CSV-bestand opnieuw te parsen.
+  records._reparse = { kind: "hourly", hourly, devices };
 
   console.info(`HA Statistics CSV: ${records.length} uurrecords, sensors:`,
     { imp1: !!imp1, imp2: !!imp2, exp1: !!exp1, exp2: !!exp2, solar: !!solar,
@@ -258,12 +263,13 @@ export function normalizeToHourly(raw) {
  * `devices` = { ev, hp, battery } booleans op basis van de sensor-KOPPELING (niet de
  * waarden), consistent met processHAStatistics. Zet ook `records.untangle`.
  */
-function untangleHourlyRecords(records, dtEnabled, devices) {
+export function untangleHourlyRecords(records, dtEnabled, devices) {
   const anyDevice = dtEnabled && !!(devices.ev || devices.hp || devices.battery);
-  let totBatIn = 0, totBatOut = 0;
+  let totBatIn = 0, totBatOut = 0, totEv = 0, totHp = 0, totSolar = 0;
   const out = records.map(r => {
     const ev = r.ev || 0, hp = r.hp || 0, batIn = r.batIn || 0, batOut = r.batOut || 0;
-    totBatIn += batIn; totBatOut += batOut;
+    totBatIn += batIn; totBatOut += batOut; totEv += ev; totHp += hp;
+    if (r.solar_yield) totSolar += r.solar_yield;
     let rec;
     if (anyDevice) {
       const baseNet = (r.import_t1 + r.import_t2 - r.export_t1 - r.export_t2) - ev - hp - batIn + batOut;
@@ -280,6 +286,7 @@ function untangleHourlyRecords(records, dtEnabled, devices) {
   out.untangle = {
     active: anyDevice,
     batIn: totBatIn, batOut: totBatOut,
+    ev: totEv, hp: totHp, solar: totSolar,
     batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
     devices: { ev: !!devices.ev, hp: !!devices.hp, battery: !!devices.battery },
   };
@@ -423,7 +430,7 @@ export function processHAStatistics(stats, roleMap, dtEnabled = true) {
   });
   const timestamps = Array.from(allTs).sort((a, b) => a - b);
 
-  let totBatIn = 0, totBatOut = 0;
+  let totBatIn = 0, totBatOut = 0, totEv = 0, totHp = 0, totSolar = 0;
   // Eénmalig: zijn er apparaten gekoppeld én is Digital Twin ingeschakeld?
   // dtEnabled=false → bewaar ruwe meterstanden 1-op-1 (gebruiker koos voor uitschakelen).
   const anyDevice = dtEnabled && !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
@@ -500,9 +507,14 @@ export function processHAStatistics(stats, roleMap, dtEnabled = true) {
     const imp1 = delta(roleMap.imp1), imp2 = delta(roleMap.imp2);
     const exp1 = delta(roleMap.exp1), exp2 = delta(roleMap.exp2);
 
-    // Accumulate for the battery-boundary sanity check
+    // Accumuleer de gemeten apparaat-totalen (observationeel — onafhankelijk van de
+    // strip-beslissing). Voedt de "Gemeten"-stand: laat zien hoeveel er in de huidige
+    // opstelling echt door accu/auto/WP/zon ging, ook als we niet strippen.
     totBatIn  += batIn;
     totBatOut += batOut;
+    totEv     += evLoad;
+    totHp     += hpLoad;
+    if (solarYieldKwh) totSolar += solarYieldKwh;
 
     let rec;
     if (anyDevice) {
@@ -529,6 +541,7 @@ export function processHAStatistics(stats, roleMap, dtEnabled = true) {
   records.untangle = {
     active: anyDevice,
     batIn: totBatIn, batOut: totBatOut,
+    ev: totEv, hp: totHp, solar: totSolar,
     batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
     devices: {
       ev: !!roleMap.ev, hp: !!roleMap.hp,

@@ -62,9 +62,19 @@ export const appStore = new Store({
   fullYearData: null,
   _lastHAStats: null,
   _lastRoleMap: null,
+  // Bron om de Digital-Twin-stand achteraf te wisselen zonder opnieuw te importeren:
+  //  { kind: "ha", stats, roleMap }  → her-parse via processHAStatistics
+  //  { kind: "hourly", hourly, devices } → her-parse via untangleHourlyRecords (CSV)
+  dtReparse: null,
   isDemoData: true,
   digitalTwinEnabled: true,
-  
+  // Tri-state weergave van de gekoppelde hardware:
+  //  "simulate" → strip de echte apparaten, schuiven modelleren vervanging (= digitalTwinEnabled:true)
+  //  "measured" → ruwe P1-rekening + toon werkelijke kWh per apparaat (schuiven geneutraliseerd)
+  //  "off"      → ruwe P1, schuiven modelleren toevoegingen bovenop je situatie
+  // digitalTwinEnabled (de strip-vlag die de parser leest) blijft afgeleid = (dtViewMode === "simulate").
+  dtViewMode: "simulate",
+
   // UI & View State
   overviewMode: "day", // "day" | "week" | "month"
   overviewMetric: "energy", // "energy" | "cost" | "savings"

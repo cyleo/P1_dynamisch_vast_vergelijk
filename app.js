@@ -51,6 +51,10 @@
     fullYearData: null,
     _lastHAStats: null,
     _lastRoleMap: null,
+    // Bron om de Digital-Twin-stand achteraf te wisselen zonder opnieuw te importeren:
+    //  { kind: "ha", stats, roleMap }  → her-parse via processHAStatistics
+    //  { kind: "hourly", hourly, devices } → her-parse via untangleHourlyRecords (CSV)
+    dtReparse: null,
     isDemoData: true,
     digitalTwinEnabled: true,
     // Tri-state weergave van de gekoppelde hardware:
@@ -1024,7 +1028,9 @@
         sum: data.val
       }));
     }
-    return processHAStatistics(stats, roleMap, dtEnabled);
+    const records = processHAStatistics(stats, roleMap, dtEnabled);
+    records._reparse = { kind: "ha", stats, roleMap };
+    return records;
   }
   async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal2, dtEnabled = true) {
     const timestamps = headers.slice(3).map((h) => new Date(h.trim()));
@@ -1109,11 +1115,9 @@
       raw.push(rec);
     }
     const hourly = normalizeToHourly(raw);
-    const records = untangleHourlyRecords(hourly, dtEnabled, {
-      ev: !!ev,
-      hp: !!hp,
-      battery: !!(batIn || batOut)
-    });
+    const devices = { ev: !!ev, hp: !!hp, battery: !!(batIn || batOut) };
+    const records = untangleHourlyRecords(hourly, dtEnabled, devices);
+    records._reparse = { kind: "hourly", hourly, devices };
     console.info(
       `HA Statistics CSV: ${records.length} uurrecords, sensors:`,
       {
@@ -3937,6 +3941,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     _lastRoleMap,
     digitalTwinEnabled,
     dtViewMode,
+    dtReparse,
     isDemoData,
     fullYearData,
     fullYearStamp,
@@ -3960,6 +3965,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     _lastRoleMap = state._lastRoleMap;
     digitalTwinEnabled = state.digitalTwinEnabled;
     dtViewMode = state.dtViewMode;
+    dtReparse = state.dtReparse;
     isDemoData = state.isDemoData;
     fullYearData = state.fullYearData;
     fullYearStamp = state.fullYearStamp;
@@ -4537,7 +4543,10 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
           const sorted = Array.from(merged.values()).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
           appStore.setState({
             energyData: sorted,
-            untangle: parsed.untangle || oldUntangle || { active: false }
+            untangle: parsed.untangle || oldUntangle || { active: false },
+            // De parser geeft een re-parse bron mee (brede CSV → "hourly", long-CSV → "ha")
+            // zodat de Digital-Twin-stand achteraf gewisseld kan worden zonder her-upload.
+            dtReparse: parsed._reparse || null
           });
           const span = energyData.length > 0 ? ` (${new Date(energyData[0].timestamp).toLocaleDateString("nl-NL")} t/m ${new Date(energyData[energyData.length - 1].timestamp).toLocaleDateString("nl-NL")})` : "";
           document.getElementById("data-status").innerHTML = `${ICON_CHECK2} <span>${file.name} \u2014 ${parsed.length} records \xB7 ${energyData.length} totaal${span}</span>`;
@@ -4932,6 +4941,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       appStore.setState({
         _lastHAStats: stats,
         _lastRoleMap: roleMap,
+        dtReparse: { kind: "ha", stats, roleMap },
         energyData: haParsed,
         untangle: haParsed.untangle || { active: false },
         isDemoData: false
@@ -5015,18 +5025,18 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
   function setDtViewMode(mode) {
     const strip = mode === "simulate";
     appStore.setState({ dtViewMode: mode, digitalTwinEnabled: strip });
-    if (!_lastHAStats || !_lastRoleMap) {
-      updateDigitalTwinBanner(untangle);
-      return;
+    const src = dtReparse;
+    if (src) {
+      const reparsed = src.kind === "ha" ? processHAStatistics(src.stats, src.roleMap, strip) : untangleHourlyRecords(src.hourly, strip, src.devices);
+      appStore.setState({
+        energyData: reparsed,
+        untangle: reparsed.untangle || { active: false },
+        isDemoData: false,
+        fullYearStamp: ""
+        // invalideer cache zodat jaarprojectie opnieuw gebouwd wordt
+      });
     }
-    const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, strip);
-    appStore.setState({
-      energyData: dtParsed,
-      untangle: dtParsed.untangle || { active: false },
-      isDemoData: false
-    });
     updateDigitalTwinBanner(untangle);
-    appStore.setState({ fullYearStamp: "" });
     runSimulation();
   }
   async function fetchTarieven() {
