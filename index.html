@@ -1164,18 +1164,18 @@
             <div style="font-family:var(--font-display); font-weight:700; font-size:0.95rem; color:var(--accent-cyan);">
               <svg class="icon icon-inline" viewBox="0 0 24 24" style="color:var(--accent-cyan); margin-right: 0.35rem;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Digital Twin Mode <span id="dt-status-label">actief</span>
             </div>
-            <button type="button" id="dt-toggle-btn" 
-              style="font-size:0.78rem; padding:0.25rem 0.75rem; border-radius:6px; cursor:pointer;
-                     border:1px solid var(--accent-cyan); background:rgba(56,189,248,0.15);
-                     color:var(--accent-cyan); white-space:nowrap;">
-              Uitschakelen
-            </button>
+            <div id="dt-mode-switch" class="dt-mode-switch" role="group" aria-label="Digital Twin weergave">
+              <button type="button" class="dt-mode-btn" data-dt-mode="off">Uit</button>
+              <button type="button" class="dt-mode-btn" data-dt-mode="measured">Gemeten</button>
+              <button type="button" class="dt-mode-btn" data-dt-mode="simulate">Simuleer</button>
+            </div>
           </div>
           <div id="dt-banner-body" style="font-size:0.82rem; color:var(--text-muted); line-height:1.6; margin-top:0.4rem;">
             Je bestaande <span id="digital-twin-devices">hardware</span> is uit de historische baseline
             <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware,
             geen toevoegingen. Zet een schuif op <strong>nul</strong> om je huis volledig zónder dat apparaat te zien.
           </div>
+          <div id="dt-measured-breakdown" style="display:none; margin-top:0.7rem;"></div>
         </div>
  
         <!-- Top Metrics Cards -->
@@ -1406,7 +1406,7 @@
           </div>
           <div class="svg-chart-container" id="overview-svg-container" style="height:250px;">
             <svg id="overview-svg"></svg>
-            <div class="chart-export-wrap" data-chart-svg="overview-svg" data-chart-name="analyse">
+            <div class="chart-export-wrap" data-chart-svg="overview-svg" data-chart-name="analyse" data-legend-id="overview-legends">
               <button type="button" class="btn-chart-export" title="Grafiek exporteren"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporteer</button>
               <div class="chart-export-dropdown">
                 <button type="button" data-format="svg"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg> SVG</button>
@@ -1799,7 +1799,7 @@
   </div><!-- /.app-container -->
 
   <script src="/demo-year.js?v=1"></script>
-  <script src="/app.js?v=93"></script>
+  <script src="/app.js?v=94"></script>
   <script>
     function showModalTab(tab) {
       document.getElementById('modal-tab-direct').style.display = tab === 'direct' ? '' : 'none';

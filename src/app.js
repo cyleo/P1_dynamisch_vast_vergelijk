@@ -47,7 +47,7 @@ import { rowMeta, epexKey, seasonOf, isoWeek } from "./domain/energyMath.js";
 // (__setTestState), die bewust mirror én store samen zet.
 let {
   energyData, sankeyInterval, sankeyValue, activeSimulation,
-  epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled,
+  epexHistory, liveEnergyTax, _lastHAStats, _lastRoleMap, digitalTwinEnabled, dtViewMode,
   isDemoData, fullYearData, fullYearStamp, yearScale, dataMeta,
   prognosisDismissed, dataQualityDismissed, calibratedProfile, calibrationMeta,
   untangle, dataQuality,
@@ -59,7 +59,8 @@ appStore.subscribe(state => {
   activeSimulation = state.activeSimulation;
   epexHistory = state.epexHistory; liveEnergyTax = state.liveEnergyTax;
   _lastHAStats = state._lastHAStats; _lastRoleMap = state._lastRoleMap;
-  digitalTwinEnabled = state.digitalTwinEnabled; isDemoData = state.isDemoData;
+  digitalTwinEnabled = state.digitalTwinEnabled; dtViewMode = state.dtViewMode;
+  isDemoData = state.isDemoData;
   fullYearData = state.fullYearData; fullYearStamp = state.fullYearStamp;
   yearScale = state.yearScale; dataMeta = state.dataMeta;
   prognosisDismissed = state.prognosisDismissed;
@@ -468,9 +469,10 @@ function setupEventListeners() {
   document.getElementById('btn-explain-battery')?.addEventListener('click', () => showHardwareExplainer('battery'));
   document.getElementById('btn-explain-heatpump')?.addEventListener('click', () => showHardwareExplainer('heatpump'));
   
-  document.getElementById('dt-toggle-btn')?.addEventListener('click', () => {
-    // Note: digitalTwinEnabled is local to app.js
-    toggleDigitalTwin(!digitalTwinEnabled);
+  // 3-standen Digital-Twin-keuze (Uit / Gemeten / Simuleer) — gedelegeerd op de segmented control.
+  document.getElementById('dt-mode-switch')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-dt-mode]');
+    if (btn) setDtViewMode(btn.dataset.dtMode);
   });
 
   ['imp','exp','spot','solar','ev','hp','bat'].forEach(l => {
@@ -1389,10 +1391,19 @@ function fetchHAStatisticsWS(wsUrl, token, statIds, startTime, endTime, statusEl
 }
 
 // ── Convert HA statistics (cumulative sum per hour) to hourly P1 records ───
-function toggleDigitalTwin(enabled) {
-  appStore.setState({ digitalTwinEnabled: enabled });
-  if (!_lastHAStats || !_lastRoleMap) return;
-  const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled);
+/**
+ * Zet de Digital-Twin-weergave op een van de drie standen en herrekent.
+ * @param {"off"|"measured"|"simulate"} mode
+ *   - "simulate" → strip de echte hardware uit de P1-historie (schuiven = vervanging)
+ *   - "measured" → ruwe P1-rekening + toon werkelijke kWh per apparaat (schuiven uit, zie readSimConfig)
+ *   - "off"      → ruwe P1, schuiven modelleren toevoegingen
+ * De strip-vlag (`digitalTwinEnabled`, gelezen door de parser) is afgeleid = (mode === "simulate").
+ */
+function setDtViewMode(mode) {
+  const strip = mode === "simulate";
+  appStore.setState({ dtViewMode: mode, digitalTwinEnabled: strip });
+  if (!_lastHAStats || !_lastRoleMap) { updateDigitalTwinBanner(untangle); return; }
+  const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, strip);
   appStore.setState({
     energyData: dtParsed,
     untangle: dtParsed.untangle || { active: false },
@@ -1931,9 +1942,13 @@ function computeBillForConfig(cfg) {
 
 /** Leest alle contract-/hardware-instellingen eenmalig uit de DOM tot één cfg-object. */
 function readSimConfig() {
-  const isSimple = document.body && document.body.classList && typeof document.body.classList.contains === "function"
+  const isSimpleClass = document.body && document.body.classList && typeof document.body.classList.contains === "function"
     ? document.body.classList.contains("mode-simple")
     : true; // Default to simple if not in a proper browser environment
+  // In de "Gemeten"-stand toont de app je werkelijke situatie uit de ruwe P1-data; de
+  // speculatieve hardware-schuiven worden geneutraliseerd (anders dubbeltellen op je
+  // echte EV/accu die al in de meterstanden zit). Zelfde neutralisatie als basis-modus.
+  const isSimple = isSimpleClass || dtViewMode === "measured";
   return {
     // Fiscaal scenariojaar (2026 = saldering · 2027 = bruto-EB, geen saldering).
     // Default 2027 zodat ontbrekende selector het bestaande gedrag behoudt.
@@ -2982,12 +2997,45 @@ function _triggerDownload(blob, filename) {
 }
 
 /** Kloon de SVG, los CSS-variabelen op, voeg achtergrond en font-hint toe. */
-function _buildExportSvg(svgEl) {
+/** Converteert een HTML-legenda naar SVG-nodes + benodigde extra hoogte. */
+function _legendSvgNodes(legendEl, svgW) {
+  if (!legendEl) return { nodes: '', extraH: 0 };
+  const items = [...legendEl.querySelectorAll('.legend-item')];
+  if (!items.length) return { nodes: '', extraH: 0 };
+
+  const PAD = 14, ITEM_W = 160, ITEM_H = 20, R = 5;
+  const cols = Math.max(1, Math.floor((svgW - PAD * 2) / ITEM_W));
+  const rows = Math.ceil(items.length / cols);
+  const extraH = rows * ITEM_H + PAD * 2;
+
+  const escXml = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let s = '';
+  items.forEach((item, idx) => {
+    const colorEl = item.querySelector('.legend-color');
+    // getComputedStyle levert de werkelijke RGB-waarde, ook als de bron var(--…) is
+    const fill = colorEl ? getComputedStyle(colorEl).backgroundColor : '#888';
+    const label = escXml(item.textContent.trim());
+    const x = PAD + (idx % cols) * ITEM_W;
+    const y = PAD + Math.floor(idx / cols) * ITEM_H + R;
+    s += `<circle cx="${x + R}" cy="${y}" r="${R}" fill="${fill}"/>`;
+    s += `<text x="${x + R * 2 + 5}" y="${y + 4}" font-size="9" fill="rgba(160,170,190,0.9)" font-family="system-ui,-apple-system,sans-serif">${label}</text>`;
+  });
+  return { nodes: s, extraH };
+}
+
+/** Zoekt de optionele legenda-container op bij een SVG-id. */
+function _getLegendForSvg(svgId) {
+  const wrap = document.querySelector(`.chart-export-wrap[data-chart-svg="${svgId}"]`);
+  const id = wrap?.dataset.legendId;
+  return id ? document.getElementById(id) : null;
+}
+
+function _buildExportSvg(svgEl, legendEl) {
   const clone = svgEl.cloneNode(true);
   const vb = svgEl.viewBox.baseVal;
   const rect = svgEl.getBoundingClientRect();
   const w = vb.width || Math.round(rect.width);
-  const h = vb.height || Math.round(rect.height);
+  let h = vb.height || Math.round(rect.height);
 
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('width', w);
@@ -3006,6 +3054,26 @@ function _buildExportSvg(svgEl) {
   style.textContent = 'text, tspan { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }';
   clone.insertBefore(style, clone.firstChild);
 
+  // Legende onder de grafiek toevoegen (alleen als aanwezig)
+  const { nodes: legendNodes, extraH } = _legendSvgNodes(legendEl, w);
+  if (extraH > 0) {
+    const newH = h + extraH;
+    clone.setAttribute('height', newH);
+    clone.setAttribute('viewBox', `0 0 ${w} ${newH}`);
+    // Scheidingslijn
+    const sep = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    sep.setAttribute('x1', 0); sep.setAttribute('y1', h);
+    sep.setAttribute('x2', w); sep.setAttribute('y2', h);
+    sep.setAttribute('stroke', 'rgba(255,255,255,0.08)');
+    clone.appendChild(sep);
+    // Legenda-groep
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(0,${h})`);
+    g.innerHTML = legendNodes;
+    clone.appendChild(g);
+    h = newH;
+  }
+
   const raw = new XMLSerializer().serializeToString(clone);
   return { svg: _resolveCssVars(raw), w, h };
 }
@@ -3013,7 +3081,7 @@ function _buildExportSvg(svgEl) {
 function exportChartAsSvg(svgId, chartName) {
   const el = document.getElementById(svgId);
   if (!el) return;
-  const { svg } = _buildExportSvg(el);
+  const { svg } = _buildExportSvg(el, _getLegendForSvg(svgId));
   _triggerDownload(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), chartName + '.svg');
 }
 
@@ -3021,7 +3089,7 @@ function exportChartAsPng(svgId, chartName) {
   const el = document.getElementById(svgId);
   if (!el) return;
   const scale = 2; // 2× voor Retina-kwaliteit
-  const { svg, w, h } = _buildExportSvg(el);
+  const { svg, w, h } = _buildExportSvg(el, _getLegendForSvg(svgId));
   const blob = new Blob([svg], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
   const img = new Image();

@@ -53,6 +53,12 @@
     _lastRoleMap: null,
     isDemoData: true,
     digitalTwinEnabled: true,
+    // Tri-state weergave van de gekoppelde hardware:
+    //  "simulate" → strip de echte apparaten, schuiven modelleren vervanging (= digitalTwinEnabled:true)
+    //  "measured" → ruwe P1-rekening + toon werkelijke kWh per apparaat (schuiven geneutraliseerd)
+    //  "off"      → ruwe P1, schuiven modelleren toevoegingen bovenop je situatie
+    // digitalTwinEnabled (de strip-vlag die de parser leest) blijft afgeleid = (dtViewMode === "simulate").
+    dtViewMode: "simulate",
     // UI & View State
     overviewMode: "day",
     // "day" | "week" | "month"
@@ -1196,11 +1202,14 @@
   }
   function untangleHourlyRecords(records, dtEnabled, devices) {
     const anyDevice = dtEnabled && !!(devices.ev || devices.hp || devices.battery);
-    let totBatIn = 0, totBatOut = 0;
+    let totBatIn = 0, totBatOut = 0, totEv = 0, totHp = 0, totSolar = 0;
     const out = records.map((r) => {
       const ev = r.ev || 0, hp = r.hp || 0, batIn = r.batIn || 0, batOut = r.batOut || 0;
       totBatIn += batIn;
       totBatOut += batOut;
+      totEv += ev;
+      totHp += hp;
+      if (r.solar_yield) totSolar += r.solar_yield;
       let rec;
       if (anyDevice) {
         const baseNet = r.import_t1 + r.import_t2 - r.export_t1 - r.export_t2 - ev - hp - batIn + batOut;
@@ -1226,6 +1235,9 @@
       active: anyDevice,
       batIn: totBatIn,
       batOut: totBatOut,
+      ev: totEv,
+      hp: totHp,
+      solar: totSolar,
       batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
       devices: { ev: !!devices.ev, hp: !!devices.hp, battery: !!devices.battery }
     };
@@ -1391,7 +1403,7 @@
       if (hourlyMean[e]) hourlyMean[e].forEach((_, t) => allTs.add(t));
     });
     const timestamps = Array.from(allTs).sort((a, b) => a - b);
-    let totBatIn = 0, totBatOut = 0;
+    let totBatIn = 0, totBatOut = 0, totEv = 0, totHp = 0, totSolar = 0;
     const anyDevice = dtEnabled && !!(roleMap.ev || roleMap.hp || roleMap.batIn || roleMap.batOut);
     const highWaterMarks = {};
     const records = [];
@@ -1449,6 +1461,9 @@
       const exp1 = delta(roleMap.exp1), exp2 = delta(roleMap.exp2);
       totBatIn += batIn;
       totBatOut += batOut;
+      totEv += evLoad;
+      totHp += hpLoad;
+      if (solarYieldKwh) totSolar += solarYieldKwh;
       let rec;
       if (anyDevice) {
         const baseNet = imp1 + imp2 - exp1 - exp2 - evLoad - hpLoad - batIn + batOut;
@@ -1469,6 +1484,9 @@
       active: anyDevice,
       batIn: totBatIn,
       batOut: totBatOut,
+      ev: totEv,
+      hp: totHp,
+      solar: totSolar,
       batterySensorSuspect: (totBatIn > 0 || totBatOut > 0) && totBatOut > totBatIn * 1.05,
       devices: {
         ev: !!roleMap.ev,
@@ -3889,6 +3907,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     _lastHAStats,
     _lastRoleMap,
     digitalTwinEnabled,
+    dtViewMode,
     isDemoData,
     fullYearData,
     fullYearStamp,
@@ -3911,6 +3930,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     _lastHAStats = state._lastHAStats;
     _lastRoleMap = state._lastRoleMap;
     digitalTwinEnabled = state.digitalTwinEnabled;
+    dtViewMode = state.dtViewMode;
     isDemoData = state.isDemoData;
     fullYearData = state.fullYearData;
     fullYearStamp = state.fullYearStamp;
@@ -4233,8 +4253,9 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     document.getElementById("btn-explain-ev")?.addEventListener("click", () => showHardwareExplainer("ev"));
     document.getElementById("btn-explain-battery")?.addEventListener("click", () => showHardwareExplainer("battery"));
     document.getElementById("btn-explain-heatpump")?.addEventListener("click", () => showHardwareExplainer("heatpump"));
-    document.getElementById("dt-toggle-btn")?.addEventListener("click", () => {
-      toggleDigitalTwin(!digitalTwinEnabled);
+    document.getElementById("dt-mode-switch")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-dt-mode]");
+      if (btn) setDtViewMode(btn.dataset.dtMode);
     });
     ["imp", "exp", "spot", "solar", "ev", "hp", "bat"].forEach((l) => {
       document.getElementById("legend-" + l)?.addEventListener("click", () => toggleProfileLine(l));
@@ -4962,10 +4983,14 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       };
     });
   }
-  function toggleDigitalTwin(enabled) {
-    appStore.setState({ digitalTwinEnabled: enabled });
-    if (!_lastHAStats || !_lastRoleMap) return;
-    const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, digitalTwinEnabled);
+  function setDtViewMode(mode) {
+    const strip = mode === "simulate";
+    appStore.setState({ dtViewMode: mode, digitalTwinEnabled: strip });
+    if (!_lastHAStats || !_lastRoleMap) {
+      updateDigitalTwinBanner(untangle);
+      return;
+    }
+    const dtParsed = processHAStatistics(_lastHAStats, _lastRoleMap, strip);
     appStore.setState({
       energyData: dtParsed,
       untangle: dtParsed.untangle || { active: false },
@@ -5401,7 +5426,8 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     return _simulateCore(cfg, false);
   }
   function readSimConfig() {
-    const isSimple = document.body && document.body.classList && typeof document.body.classList.contains === "function" ? document.body.classList.contains("mode-simple") : true;
+    const isSimpleClass = document.body && document.body.classList && typeof document.body.classList.contains === "function" ? document.body.classList.contains("mode-simple") : true;
+    const isSimple = isSimpleClass || dtViewMode === "measured";
     return {
       // Fiscaal scenariojaar (2026 = saldering · 2027 = bruto-EB, geen saldering).
       // Default 2027 zodat ontbrekende selector het bestaande gedrag behoudt.
@@ -6210,12 +6236,38 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
   }
-  function _buildExportSvg(svgEl) {
+  function _legendSvgNodes(legendEl, svgW) {
+    if (!legendEl) return { nodes: "", extraH: 0 };
+    const items = [...legendEl.querySelectorAll(".legend-item")];
+    if (!items.length) return { nodes: "", extraH: 0 };
+    const PAD = 14, ITEM_W = 160, ITEM_H = 20, R = 5;
+    const cols = Math.max(1, Math.floor((svgW - PAD * 2) / ITEM_W));
+    const rows = Math.ceil(items.length / cols);
+    const extraH = rows * ITEM_H + PAD * 2;
+    const escXml = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    let s = "";
+    items.forEach((item, idx) => {
+      const colorEl = item.querySelector(".legend-color");
+      const fill = colorEl ? getComputedStyle(colorEl).backgroundColor : "#888";
+      const label = escXml(item.textContent.trim());
+      const x = PAD + idx % cols * ITEM_W;
+      const y = PAD + Math.floor(idx / cols) * ITEM_H + R;
+      s += `<circle cx="${x + R}" cy="${y}" r="${R}" fill="${fill}"/>`;
+      s += `<text x="${x + R * 2 + 5}" y="${y + 4}" font-size="9" fill="rgba(160,170,190,0.9)" font-family="system-ui,-apple-system,sans-serif">${label}</text>`;
+    });
+    return { nodes: s, extraH };
+  }
+  function _getLegendForSvg(svgId) {
+    const wrap = document.querySelector(`.chart-export-wrap[data-chart-svg="${svgId}"]`);
+    const id = wrap?.dataset.legendId;
+    return id ? document.getElementById(id) : null;
+  }
+  function _buildExportSvg(svgEl, legendEl) {
     const clone = svgEl.cloneNode(true);
     const vb = svgEl.viewBox.baseVal;
     const rect = svgEl.getBoundingClientRect();
     const w = vb.width || Math.round(rect.width);
-    const h = vb.height || Math.round(rect.height);
+    let h = vb.height || Math.round(rect.height);
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     clone.setAttribute("width", w);
     clone.setAttribute("height", h);
@@ -6228,20 +6280,38 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
     style.textContent = 'text, tspan { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }';
     clone.insertBefore(style, clone.firstChild);
+    const { nodes: legendNodes, extraH } = _legendSvgNodes(legendEl, w);
+    if (extraH > 0) {
+      const newH = h + extraH;
+      clone.setAttribute("height", newH);
+      clone.setAttribute("viewBox", `0 0 ${w} ${newH}`);
+      const sep = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      sep.setAttribute("x1", 0);
+      sep.setAttribute("y1", h);
+      sep.setAttribute("x2", w);
+      sep.setAttribute("y2", h);
+      sep.setAttribute("stroke", "rgba(255,255,255,0.08)");
+      clone.appendChild(sep);
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.setAttribute("transform", `translate(0,${h})`);
+      g.innerHTML = legendNodes;
+      clone.appendChild(g);
+      h = newH;
+    }
     const raw = new XMLSerializer().serializeToString(clone);
     return { svg: _resolveCssVars(raw), w, h };
   }
   function exportChartAsSvg(svgId, chartName) {
     const el = document.getElementById(svgId);
     if (!el) return;
-    const { svg } = _buildExportSvg(el);
+    const { svg } = _buildExportSvg(el, _getLegendForSvg(svgId));
     _triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), chartName + ".svg");
   }
   function exportChartAsPng(svgId, chartName) {
     const el = document.getElementById(svgId);
     if (!el) return;
     const scale = 2;
-    const { svg, w, h } = _buildExportSvg(el);
+    const { svg, w, h } = _buildExportSvg(el, _getLegendForSvg(svgId));
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const img = new Image();
