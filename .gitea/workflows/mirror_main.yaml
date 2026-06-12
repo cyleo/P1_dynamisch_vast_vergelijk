@@ -19,5 +19,6 @@ jobs:
           # Configure authentication using the secret token
           git remote add github https://x-token-auth:${{ secrets.GH_TOKEN }}@github.com/cyleo/P1_dynamisch_vast_vergelijk.git
           
-          # Force push or standard push main specifically
-          git push github main
+          # Force-push zodat een herschreven historie (bv. een privacy-scrub) ook
+          # doorkomt; bij een normale commit is dit gewoon een fast-forward.
+          git push github main --force
