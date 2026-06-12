@@ -14,10 +14,9 @@ p1_sample.json
 # zodat CI altijd een regression guard heeft zonder een lokale privacy-fixture te vereisen.
 !_validate/snapshot_synthetic_golden.json
 
-# Claude project bestanden — negeer alles ONDER .claude (lokale settings) ...
-.claude/*
-# ...behalve de gedeelde agent-definities (verifier-agents, zie docs/ENGINEERING_PRACTICES.md)
-!.claude/agents/
+# Claude project-bestanden (lokale settings, agents, launch-config) — privé/dev-only,
+# blijven lokaal op schijf voor de tooling maar worden gesynct via de private repo (_private).
+.claude/
 cline_mcp_settings.json
 
 # Cline/AI assistant bestanden
@@ -47,3 +46,13 @@ deploy.sh
 
 # Lokale privé-map, nooit committen
 _private/
+
+# Privé / dev-only — verplaatst naar de private repo (_private), niet in de publieke repo.
+# CLAUDE.md blijft lokaal op schijf (Claude/harness leest 'm) maar wordt via _private gesynct.
+CLAUDE.md
+blogpost.md
+docs/CODE_REVIEW.md
+docs/TODO_AGENTS.md
+_validate/analyze_pj*.js
+_validate/diag_realdata.js
+_validate/fetch_ha_data.js

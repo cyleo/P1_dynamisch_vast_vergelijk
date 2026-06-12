@@ -1,6 +1,6 @@
 # P1 Energie Contract Analysator — Complete Model Documentation
 
-> **Purpose**: This document comprehensively explains how the P1 Energie Contract Analysator works, including architecture, calculations, assumptions, data handling, and known limitations. For users, start with the website's tooltips and explanations. For developers, read [ENGINEERING_PRACTICES.md](./ENGINEERING_PRACTICES.md). For code review, see [CODE_REVIEW.md](./CODE_REVIEW.md).
+> **Purpose**: This document comprehensively explains how the P1 Energie Contract Analysator works, including architecture, calculations, assumptions, data handling, and known limitations. For users, start with the website's tooltips and explanations. For developers, read [ENGINEERING_PRACTICES.md](./ENGINEERING_PRACTICES.md).
 
 ---
 
