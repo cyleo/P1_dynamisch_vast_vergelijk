@@ -3000,7 +3000,9 @@ function _triggerDownload(blob, filename) {
 /** Converteert een HTML-legenda naar SVG-nodes + benodigde extra hoogte. */
 function _legendSvgNodes(legendEl, svgW) {
   if (!legendEl) return { nodes: '', extraH: 0 };
-  const items = [...legendEl.querySelectorAll('.legend-item')];
+  // Sla verborgen items over (bijv. DT-lijnen die nog niet actief zijn)
+  const items = [...legendEl.querySelectorAll('.legend-item')]
+    .filter(el => getComputedStyle(el).display !== 'none');
   if (!items.length) return { nodes: '', extraH: 0 };
 
   const PAD = 14, ITEM_W = 160, ITEM_H = 20, R = 5;

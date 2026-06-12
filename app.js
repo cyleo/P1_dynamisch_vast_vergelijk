@@ -3871,25 +3871,54 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     const human = names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " en " + names.slice(-1);
     const devEl = document.getElementById("digital-twin-devices");
     if (devEl) devEl.textContent = human || "hardware";
-    const { digitalTwinEnabled: digitalTwinEnabled2 } = appStore.getState();
-    const on = digitalTwinEnabled2;
-    banner.style.border = `1px solid ${on ? "var(--accent-cyan)" : "var(--accent-orange)"}`;
-    banner.style.background = on ? "rgba(56,189,248,0.08)" : "rgba(251,146,60,0.08)";
+    const { dtViewMode: dtViewMode2 } = appStore.getState();
+    const mode = dtViewMode2 || "simulate";
+    const accent = mode === "simulate" ? "var(--accent-cyan)" : mode === "measured" ? "var(--accent-green)" : "var(--accent-orange)";
+    banner.style.border = `1px solid ${accent}`;
+    banner.style.background = mode === "simulate" ? "rgba(56,189,248,0.08)" : mode === "measured" ? "rgba(74,222,128,0.08)" : "rgba(251,146,60,0.08)";
     const statusEl = document.getElementById("dt-status-label");
-    if (statusEl) statusEl.textContent = on ? "actief" : "uitgeschakeld";
-    statusEl && (statusEl.style.color = on ? "var(--accent-cyan)" : "var(--accent-orange)");
-    const btn = document.getElementById("dt-toggle-btn");
-    if (btn) {
-      btn.textContent = on ? "Uitschakelen" : "Inschakelen";
-      btn.style.borderColor = on ? "var(--accent-cyan)" : "var(--accent-orange)";
-      btn.style.background = on ? "rgba(56,189,248,0.15)" : "rgba(251,146,60,0.15)";
-      btn.style.color = on ? "var(--accent-cyan)" : "var(--accent-orange)";
+    if (statusEl) {
+      statusEl.textContent = mode === "simulate" ? "simuleren" : mode === "measured" ? "gemeten" : "uit";
+      statusEl.style.color = accent;
     }
+    document.querySelectorAll("#dt-mode-switch .dt-mode-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.dtMode === mode);
+    });
     const bodyEl = document.getElementById("dt-banner-body");
     if (bodyEl) {
-      bodyEl.innerHTML = on ? `Je bestaande <span id="digital-twin-devices">${human || "hardware"}</span> is uit de historische baseline <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware, geen toevoegingen.` : `Digital Twin is uitgeschakeld \u2014 ruwe meterstanden worden 1-op-1 gebruikt. De hardware-schuiven modelleren <strong>toevoegingen</strong> bovenop je bestaande situatie.`;
+      bodyEl.innerHTML = mode === "simulate" ? `Je bestaande <span id="digital-twin-devices">${human || "hardware"}</span> is uit de historische baseline <strong>gestript</strong>. De schuiven hieronder modelleren nu <strong>vervangende</strong> hardware, geen toevoegingen.` : mode === "measured" ? `<strong>Gemeten situatie.</strong> De rekening is op je ruwe meterstanden (je \xE9chte verbruik, inclusief je huidige <span id="digital-twin-devices">${human || "hardware"}</span>). De hardware-schuiven staan hieronder <strong>uit</strong> \u2014 dit is je werkelijkheid, geen simulatie.` : `De strip staat <strong>uit</strong> \u2014 ruwe meterstanden worden 1-op-1 gebruikt. De hardware-schuiven modelleren <strong>toevoegingen</strong> bovenop je bestaande <span id="digital-twin-devices">${human || "hardware"}</span>.`;
     }
+    renderMeasuredBreakdown(meta, mode);
     banner.style.display = "block";
+  }
+  function renderMeasuredBreakdown(meta, mode) {
+    const box = document.getElementById("dt-measured-breakdown");
+    if (!box) return;
+    if (mode !== "measured") {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+    const { energyData: energyData2 } = appStore.getState();
+    const hours = Array.isArray(energyData2) ? energyData2.length : 0;
+    const days = hours ? Math.max(1, Math.round(hours / 24)) : 0;
+    const fmt = (v) => (v || 0).toLocaleString("nl-NL", { maximumFractionDigits: 0 });
+    const rows = [];
+    if (meta.devices?.ev) rows.push(["Elektrische auto", `${fmt(meta.ev)} kWh geladen`]);
+    if (meta.devices?.hp) rows.push(["Warmtepomp", `${fmt(meta.hp)} kWh verbruikt`]);
+    if (meta.devices?.battery) {
+      rows.push(["Batterij \u2014 geladen", `${fmt(meta.batIn)} kWh in`]);
+      rows.push(["Batterij \u2014 ontladen", `${fmt(meta.batOut)} kWh uit`]);
+    }
+    if (meta.solar) rows.push(["Zonnepanelen", `${fmt(meta.solar)} kWh opgewekt`]);
+    if (!rows.length) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+    const period = days ? ` over je gemeten periode (${days} ${days === 1 ? "dag" : "dagen"})` : "";
+    box.innerHTML = `<div class="dt-measured-title">Huidige situatie \u2014 gemeten${period}</div><div class="dt-measured-grid">` + rows.map(([label, val]) => `<div class="dt-measured-row"><span>${label}</span><strong>${val}</strong></div>`).join("") + `</div>`;
+    box.style.display = "block";
   }
 
   // src/app.js
@@ -6238,7 +6267,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
   }
   function _legendSvgNodes(legendEl, svgW) {
     if (!legendEl) return { nodes: "", extraH: 0 };
-    const items = [...legendEl.querySelectorAll(".legend-item")];
+    const items = [...legendEl.querySelectorAll(".legend-item")].filter((el) => getComputedStyle(el).display !== "none");
     if (!items.length) return { nodes: "", extraH: 0 };
     const PAD = 14, ITEM_W = 160, ITEM_H = 20, R = 5;
     const cols = Math.max(1, Math.floor((svgW - PAD * 2) / ITEM_W));
