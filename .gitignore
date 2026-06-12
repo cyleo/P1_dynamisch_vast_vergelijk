@@ -41,3 +41,6 @@ dist/
 # Build output — app.js is getrackt in de repo (meegeleverd voor gebruikers zonder build-tooling)
 # app.js.map blijft lokaal (debug-artefact, niet nodig voor gebruik)
 /app.js.map
+
+# Lokaal deploy-script (Mac → SMB-webserver), niet delen
+deploy.sh
