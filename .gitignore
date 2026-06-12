@@ -56,3 +56,6 @@ docs/TODO_AGENTS.md
 _validate/analyze_pj*.js
 _validate/diag_realdata.js
 _validate/fetch_ha_data.js
+
+# Lokale privacy-fixture roleMap (echte sensornamen/serienummers) — nooit committen
+_validate/snapshot_rolemap.local.json

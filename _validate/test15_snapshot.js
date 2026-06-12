@@ -53,17 +53,24 @@ for (const [entity, hours] of Object.entries(hourlyData)) {
     }));
 }
 
-const roleMap = {
-  "sensor.p1_meter_energy_import_tariff_1": "imp1",
-  "sensor.p1_meter_energy_import_tariff_2": "imp2",
-  "sensor.p1_meter_energy_export_tariff_1": "exp1",
-  "sensor.p1_meter_energy_export_tariff_2": "exp2",
-  "sensor.home_battery_ac_aggr_charge": "batIn",
-  "sensor.home_battery_ac_aggr_discharge": "batOut",
-  "sensor.solar_inverter_lifetime_energy_production": "solar",
-  "sensor.ev_charger_charge_added_session": "ev",
-  "sensor.heat_pump_energy_consumption": "hp" 
-};
+// De echte sensor-namen van de privacy-fixture (incl. hardware-serienummers) horen NIET
+// in de publieke repo. Ze staan in een lokaal, gitignored bestand naast de CSV-fixture
+// (snapshot_rolemap.local.json). Ontbreekt dat → generieke placeholders (matcht dan geen
+// echte CSV, maar de test wordt sowieso alleen lokaal mét fixture gedraaid).
+const ROLEMAP_FILE = path.join(__dirname, 'snapshot_rolemap.local.json');
+const roleMap = fs.existsSync(ROLEMAP_FILE)
+  ? JSON.parse(fs.readFileSync(ROLEMAP_FILE, 'utf8'))
+  : {
+      "sensor.p1_meter_energy_import_tariff_1": "imp1",
+      "sensor.p1_meter_energy_import_tariff_2": "imp2",
+      "sensor.p1_meter_energy_export_tariff_1": "exp1",
+      "sensor.p1_meter_energy_export_tariff_2": "exp2",
+      "sensor.home_battery_charge": "batIn",
+      "sensor.home_battery_discharge": "batOut",
+      "sensor.solar_inverter_lifetime_energy_production": "solar",
+      "sensor.ev_charger_charge_added_session": "ev",
+      "sensor.heat_pump_energy_consumption": "hp"
+    };
 
 // Map inverted roles for processHAStatistics
 const invertedRoleMap = {};

@@ -135,9 +135,9 @@ export const DEMO_ROLEMAP = {
   evUnit: "kWh",
   hp: "sensor.heat_pump_energy_consumption",
   hpUnit: "kWh",
-  batIn: "sensor.home_battery_ac_aggr_charge",
+  batIn: "sensor.home_battery_charge",
   batInUnit: "kWh",
-  batOut: "sensor.home_battery_ac_aggr_discharge",
+  batOut: "sensor.home_battery_discharge",
   batOutUnit: "kWh",
 };
 
