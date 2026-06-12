@@ -1,6 +1,6 @@
-# P1 Energie Contract Analysator — Complete Model Documentation
+# WattNext — Complete Model Documentation
 
-> **Purpose**: This document comprehensively explains how the P1 Energie Contract Analysator works, including architecture, calculations, assumptions, data handling, and known limitations. For users, start with the website's tooltips and explanations. For developers, read [ENGINEERING_PRACTICES.md](./ENGINEERING_PRACTICES.md).
+> **Purpose**: This document comprehensively explains how WattNext works, including architecture, calculations, assumptions, data handling, and known limitations. For users, start with the website's tooltips and explanations. For developers, read [ENGINEERING_PRACTICES.md](./ENGINEERING_PRACTICES.md).
 
 ---
 
@@ -23,7 +23,7 @@
 
 ## Overview
 
-The P1 Energie Contract Analysator is a **local web application** that analyzes Dutch residential P1 smart meter data and compares two electricity contracts:
+WattNext is a **local web application** that analyzes Dutch residential P1 smart meter data and compares two electricity contracts:
 
 - **Fixed contract (Vaste vergoeding)**: piek/dal tariffs, return-to-grid rate, variable transfer costs (VTK)
 - **Dynamic contract (Dynamisch)**: hourly EPEX spot prices + markup + energy tax

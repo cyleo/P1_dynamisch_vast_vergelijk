@@ -179,6 +179,17 @@ function setViewMode(mode) {
   }
 }
 
+function applyTheme(theme) {
+  const body = document.body;
+  if (body) {
+    body.classList.remove("theme-cyberpunk", "theme-nextground");
+    body.classList.add(`theme-${theme}`);
+  }
+  if (typeof energyData !== "undefined" && energyData.length > 0) {
+    scheduleResize();
+  }
+}
+
 // Initialize Application
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
@@ -189,6 +200,20 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("intro-explainer")?.removeAttribute("open");
   }
   
+  // Theme initialiseren — URL-parameter (?theme=nextground) heeft voorrang boven localStorage
+  const VALID_THEMES = ["cyberpunk", "nextground"];
+  const urlThemeParam = new URLSearchParams(window.location.search).get("theme");
+  const urlTheme = VALID_THEMES.includes(urlThemeParam) ? urlThemeParam : null;
+  const savedTheme = urlTheme
+    || (typeof localStorage !== "undefined" && localStorage.getItem("app_theme"))
+    || "cyberpunk";
+  if (urlTheme && typeof localStorage !== "undefined") {
+    localStorage.setItem("app_theme", urlTheme);
+  }
+  const themeSelect = document.getElementById("theme-select");
+  if (themeSelect) themeSelect.value = savedTheme;
+  applyTheme(savedTheme);
+
   // View mode initialiseren
   const savedMode = (typeof localStorage !== "undefined" && localStorage.getItem("view_mode")) || "simple";
   setViewMode(savedMode);
@@ -306,6 +331,16 @@ function restoreDismissedElements() {
 }
 
 function setupEventListeners() {
+  // Theme selection listener
+  const themeSelect = document.getElementById("theme-select");
+  if (themeSelect) {
+    themeSelect.addEventListener("change", (e) => {
+      const selected = e.target.value;
+      localStorage.setItem("app_theme", selected);
+      applyTheme(selected);
+    });
+  }
+
   // Slider input reactive badges
   const sliders = document.querySelectorAll('input[type="range"]');
   sliders.forEach(slider => {

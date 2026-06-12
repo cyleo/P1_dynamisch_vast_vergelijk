@@ -405,17 +405,17 @@ export function renderChart() {
   // Draw simulated hardware lines in Digital Twin mode
   if (isDtActive) {
     if (profileVisibleLines.solar) {
-      drawLine(solarPathPoints, "#eab308", "1.5");
+      drawLine(solarPathPoints, "var(--accent-yellow)", "1.5");
     }
     if (profileVisibleLines.ev) {
-      drawLine(evPathPoints, "#667eea", "1.5");
+      drawLine(evPathPoints, "var(--accent-indigo)", "1.5");
     }
     if (profileVisibleLines.hp) {
-      drawLine(hpPathPoints, "#ff758c", "1.5");
+      drawLine(hpPathPoints, "var(--accent-orange)", "1.5");
     }
     if (profileVisibleLines.bat) {
-      drawLine(batChgPathPoints, "#4facfe", "1.5", "3,3"); // charging: dashed
-      drawLine(batDisPathPoints, "#00f2fe", "1.5"); // discharging: solid
+      drawLine(batChgPathPoints, "var(--accent-blue)", "1.5", "3,3"); // charging: dashed
+      drawLine(batDisPathPoints, "var(--accent-cyan)", "1.5"); // discharging: solid
     }
   }
 
@@ -516,17 +516,17 @@ export function renderChart() {
     let extraHtml = "";
     if (isDtActive) {
       if (profileVisibleLines.solar) {
-        extraHtml += `<div class="tooltip-row"><span>Zonnepanelen:</span><span class="val" style="color:#eab308;">${hm.solar.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Zonnepanelen:</span><span class="val" style="color:var(--accent-yellow);">${hm.solar.toFixed(2)} kW</span></div>`;
       }
       if (profileVisibleLines.ev) {
-        extraHtml += `<div class="tooltip-row"><span>Auto:</span><span class="val" style="color:#667eea;">${hm.ev.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Auto:</span><span class="val" style="color:var(--accent-indigo);">${hm.ev.toFixed(2)} kW</span></div>`;
       }
       if (profileVisibleLines.hp) {
-        extraHtml += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:#ff758c;">${hm.hp.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:var(--accent-orange);">${hm.hp.toFixed(2)} kW</span></div>`;
       }
       if (profileVisibleLines.bat) {
-        extraHtml += `<div class="tooltip-row"><span>Accu Laden:</span><span class="val" style="color:#4facfe;">${hm.batCharge.toFixed(2)} kW</span></div>`;
-        extraHtml += `<div class="tooltip-row"><span>Accu Ontladen:</span><span class="val" style="color:#00f2fe;">${hm.batDischarge.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Accu Laden:</span><span class="val" style="color:var(--accent-blue);">${hm.batCharge.toFixed(2)} kW</span></div>`;
+        extraHtml += `<div class="tooltip-row"><span>Accu Ontladen:</span><span class="val" style="color:var(--accent-cyan);">${hm.batDischarge.toFixed(2)} kW</span></div>`;
       }
     }
 
@@ -1274,7 +1274,7 @@ export function renderHwChart() {
     const isEnabled = data.enabled;
 
     const wrap = document.createElement("div");
-    wrap.style.cssText = "border-bottom:1px solid rgba(255,255,255,0.06);";
+    wrap.style.cssText = "border-bottom:1px solid var(--border-color);";
 
     // Header row
     const row = document.createElement("div");
@@ -1286,7 +1286,7 @@ export function renderHwChart() {
     left.style.cssText = "display:flex;align-items:center;gap:0.4rem;min-width:110px;";
     left.innerHTML = `<span style="font-size:1rem;">${icon}</span>
       <span style="font-size:0.8rem;color:${isEnabled ? "var(--text-primary)" : "var(--text-muted)"};">${label}</span>
-      <span style="font-size:0.65rem;padding:0.1rem 0.3rem;border-radius:3px;background:${isEnabled ? "rgba(56,239,125,0.15)" : "rgba(255,255,255,0.07)"};color:${isEnabled ? "var(--accent-green)" : "var(--text-muted)"};">${isEnabled ? "aan" : "uit"}</span>`;
+      <span style="font-size:0.65rem;padding:0.1rem 0.3rem;border-radius:3px;background:${isEnabled ? "rgba(56,239,125,0.15)" : "rgba(128,128,128,0.12)"};color:${isEnabled ? "var(--accent-green)" : "var(--text-muted)"};">${isEnabled ? "aan" : "uit"}</span>`;
 
     // Right: two bars + toggle icon
     const right = document.createElement("div");
@@ -1302,7 +1302,7 @@ export function renderHwChart() {
       const line = document.createElement("div");
       line.style.cssText = "display:flex;align-items:center;gap:0.4rem;";
       const barTrack = document.createElement("div");
-      barTrack.style.cssText = "flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;";
+      barTrack.style.cssText = "flex:1;height:8px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden;";
       const bar = document.createElement("div");
       const pct = Math.min(100, Math.abs(val) / maxAbsAll * 100);
       const isNeg = val < 0;

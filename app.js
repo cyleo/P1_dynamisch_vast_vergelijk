@@ -1890,17 +1890,17 @@
     }
     if (isDtActive) {
       if (profileVisibleLines.solar) {
-        drawLine(solarPathPoints, "#eab308", "1.5");
+        drawLine(solarPathPoints, "var(--accent-yellow)", "1.5");
       }
       if (profileVisibleLines.ev) {
-        drawLine(evPathPoints, "#667eea", "1.5");
+        drawLine(evPathPoints, "var(--accent-indigo)", "1.5");
       }
       if (profileVisibleLines.hp) {
-        drawLine(hpPathPoints, "#ff758c", "1.5");
+        drawLine(hpPathPoints, "var(--accent-orange)", "1.5");
       }
       if (profileVisibleLines.bat) {
-        drawLine(batChgPathPoints, "#4facfe", "1.5", "3,3");
-        drawLine(batDisPathPoints, "#00f2fe", "1.5");
+        drawLine(batChgPathPoints, "var(--accent-blue)", "1.5", "3,3");
+        drawLine(batDisPathPoints, "var(--accent-cyan)", "1.5");
       }
     }
     if (profileVisibleLines.spot) {
@@ -1982,17 +1982,17 @@
       let extraHtml = "";
       if (isDtActive) {
         if (profileVisibleLines.solar) {
-          extraHtml += `<div class="tooltip-row"><span>Zonnepanelen:</span><span class="val" style="color:#eab308;">${hm.solar.toFixed(2)} kW</span></div>`;
+          extraHtml += `<div class="tooltip-row"><span>Zonnepanelen:</span><span class="val" style="color:var(--accent-yellow);">${hm.solar.toFixed(2)} kW</span></div>`;
         }
         if (profileVisibleLines.ev) {
-          extraHtml += `<div class="tooltip-row"><span>Auto:</span><span class="val" style="color:#667eea;">${hm.ev.toFixed(2)} kW</span></div>`;
+          extraHtml += `<div class="tooltip-row"><span>Auto:</span><span class="val" style="color:var(--accent-indigo);">${hm.ev.toFixed(2)} kW</span></div>`;
         }
         if (profileVisibleLines.hp) {
-          extraHtml += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:#ff758c;">${hm.hp.toFixed(2)} kW</span></div>`;
+          extraHtml += `<div class="tooltip-row"><span>Warmtepomp:</span><span class="val" style="color:var(--accent-orange);">${hm.hp.toFixed(2)} kW</span></div>`;
         }
         if (profileVisibleLines.bat) {
-          extraHtml += `<div class="tooltip-row"><span>Accu Laden:</span><span class="val" style="color:#4facfe;">${hm.batCharge.toFixed(2)} kW</span></div>`;
-          extraHtml += `<div class="tooltip-row"><span>Accu Ontladen:</span><span class="val" style="color:#00f2fe;">${hm.batDischarge.toFixed(2)} kW</span></div>`;
+          extraHtml += `<div class="tooltip-row"><span>Accu Laden:</span><span class="val" style="color:var(--accent-blue);">${hm.batCharge.toFixed(2)} kW</span></div>`;
+          extraHtml += `<div class="tooltip-row"><span>Accu Ontladen:</span><span class="val" style="color:var(--accent-cyan);">${hm.batDischarge.toFixed(2)} kW</span></div>`;
         }
       }
       const pureSpot = hm.spot;
@@ -2732,7 +2732,7 @@
       const dynPm = data.dyn * mf;
       const isEnabled = data.enabled;
       const wrap = document.createElement("div");
-      wrap.style.cssText = "border-bottom:1px solid rgba(255,255,255,0.06);";
+      wrap.style.cssText = "border-bottom:1px solid var(--border-color);";
       const row = document.createElement("div");
       row.style.cssText = "display:grid;grid-template-columns:auto 1fr;gap:0.75rem;padding:0.55rem 0;cursor:pointer;align-items:start;";
       row.title = "Klik voor berekening";
@@ -2740,7 +2740,7 @@
       left.style.cssText = "display:flex;align-items:center;gap:0.4rem;min-width:110px;";
       left.innerHTML = `<span style="font-size:1rem;">${icon}</span>
       <span style="font-size:0.8rem;color:${isEnabled ? "var(--text-primary)" : "var(--text-muted)"};">${label}</span>
-      <span style="font-size:0.65rem;padding:0.1rem 0.3rem;border-radius:3px;background:${isEnabled ? "rgba(56,239,125,0.15)" : "rgba(255,255,255,0.07)"};color:${isEnabled ? "var(--accent-green)" : "var(--text-muted)"};">${isEnabled ? "aan" : "uit"}</span>`;
+      <span style="font-size:0.65rem;padding:0.1rem 0.3rem;border-radius:3px;background:${isEnabled ? "rgba(56,239,125,0.15)" : "rgba(128,128,128,0.12)"};color:${isEnabled ? "var(--accent-green)" : "var(--text-muted)"};">${isEnabled ? "aan" : "uit"}</span>`;
       const right = document.createElement("div");
       right.style.cssText = "display:flex;flex-direction:column;gap:4px;";
       const toggleIcon = document.createElement("div");
@@ -2754,7 +2754,7 @@
         const line = document.createElement("div");
         line.style.cssText = "display:flex;align-items:center;gap:0.4rem;";
         const barTrack = document.createElement("div");
-        barTrack.style.cssText = "flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;";
+        barTrack.style.cssText = "flex:1;height:8px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden;";
         const bar = document.createElement("div");
         const pct = Math.min(100, Math.abs(val) / maxAbsAll * 100);
         const isNeg = val < 0;
@@ -4114,6 +4114,16 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       setOverviewViewType(mode === "simple" ? "bars" : "sankey");
     }
   }
+  function applyTheme(theme) {
+    const body = document.body;
+    if (body) {
+      body.classList.remove("theme-cyberpunk", "theme-nextground");
+      body.classList.add(`theme-${theme}`);
+    }
+    if (typeof energyData !== "undefined" && energyData.length > 0) {
+      scheduleResize();
+    }
+  }
   document.addEventListener("DOMContentLoaded", () => {
     setupEventListeners();
     restoreDismissedElements();
@@ -4121,6 +4131,16 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     if (typeof window !== "undefined" && window.innerWidth <= 800) {
       document.getElementById("intro-explainer")?.removeAttribute("open");
     }
+    const VALID_THEMES = ["cyberpunk", "nextground"];
+    const urlThemeParam = new URLSearchParams(window.location.search).get("theme");
+    const urlTheme = VALID_THEMES.includes(urlThemeParam) ? urlThemeParam : null;
+    const savedTheme = urlTheme || typeof localStorage !== "undefined" && localStorage.getItem("app_theme") || "cyberpunk";
+    if (urlTheme && typeof localStorage !== "undefined") {
+      localStorage.setItem("app_theme", urlTheme);
+    }
+    const themeSelect = document.getElementById("theme-select");
+    if (themeSelect) themeSelect.value = savedTheme;
+    applyTheme(savedTheme);
     const savedMode = typeof localStorage !== "undefined" && localStorage.getItem("view_mode") || "simple";
     setViewMode(savedMode);
     loadDemoData().then(() => {
@@ -4221,6 +4241,14 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     });
   }
   function setupEventListeners() {
+    const themeSelect = document.getElementById("theme-select");
+    if (themeSelect) {
+      themeSelect.addEventListener("change", (e) => {
+        const selected = e.target.value;
+        localStorage.setItem("app_theme", selected);
+        applyTheme(selected);
+      });
+    }
     const sliders = document.querySelectorAll('input[type="range"]');
     sliders.forEach((slider) => {
       const initBadge = document.getElementById(`${slider.id}-val`);

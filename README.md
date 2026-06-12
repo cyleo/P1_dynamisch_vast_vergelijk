@@ -1,4 +1,4 @@
-# P1 Energie Contract Analysator
+# WattNext
 
 > Bereken op basis van je eigen P1 smart meter data welk energiecontract goedkoper is: **vast of dynamisch** — met de fiscale regels van 2027 (geen saldering) of het laatste salderingsjaar 2026.
 
