@@ -25,3 +25,6 @@ assistant/
 
 # Lokale preview-symlink (/energie/ pad-prefix) — nooit committen (recursief)
 /energie
+
+# node modules
+/node_modules
