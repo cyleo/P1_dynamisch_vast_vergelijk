@@ -44,3 +44,6 @@ dist/
 
 # Lokaal deploy-script (Mac → SMB-webserver), niet delen
 deploy.sh
+
+# Lokale privé-map, nooit committen
+_private/

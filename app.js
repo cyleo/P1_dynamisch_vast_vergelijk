@@ -777,8 +777,6 @@
       const batCostFx = batRes.batChargeSolarFxVal * fixedReturnPrice - batRes.batDischargeToHouseFxVal * tariff;
       const batCostDyn = batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice - (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
       const batSavings = batCostFx - batCostDyn;
-      const baseloadImportSavings = rawImp * (tariff - allIn);
-      const baseloadExportSavings = rawExp * (returnPrice - fixedReturnPrice);
       const pd = dayTot[dayKey] ||= makeDayTotal();
       pd.dynCost += dynHrCost;
       pd.fixedCost += fxHrCost;
@@ -790,34 +788,78 @@
         pd.spotSum += spot * dynImp;
         pd.spotN += dynImp;
       }
-      pd.rawImp += rawImp;
-      pd.rawExp += rawExp;
       pd.solarYield += solarYield;
-      pd.evKwh += evRes.evGridDyn + evRes.evSolarDyn;
-      pd.evCost += evCostDyn;
-      pd.evSavings += evSavings;
-      pd.evSolar += evRes.evSolarDyn;
-      pd.evGrid += evRes.evGridDyn;
-      pd.hpKwh += hpLoad;
-      pd.hpCost += hpCostDyn;
-      pd.hpSavings += hpSavings;
-      pd.hpSolar += hpFromSolar;
-      pd.hpGrid += hpFromGrid;
-      pd.batCharge += batRes.batChargeSolarVal + batRes.batChargeGridVal;
-      pd.batDischarge += batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal;
-      pd.batCost += batCostDyn;
-      pd.batSavings += batSavings;
-      pd.batChargeCost += batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice;
-      pd.batDischargeValue += batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice;
-      pd.batChargeGrid += batRes.batChargeGridVal;
-      pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
-      pd.batChargeSolar += batRes.batChargeSolarVal;
-      pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
-      pd.batDischargeToGrid += batRes.batDischargeToGridVal;
-      pd.baseloadCost += rawImp * allIn;
-      pd.baseloadReturn += rawExp * returnPrice;
-      pd.baseloadImportSavings += baseloadImportSavings;
-      pd.baseloadExportSavings += baseloadExportSavings;
+      if (!measuredHardware) {
+        pd.rawImp += rawImp;
+        pd.rawExp += rawExp;
+        pd.evKwh += evRes.evGridDyn + evRes.evSolarDyn;
+        pd.evCost += evCostDyn;
+        pd.evSavings += evSavings;
+        pd.evSolar += evRes.evSolarDyn;
+        pd.evGrid += evRes.evGridDyn;
+        pd.hpKwh += hpLoad;
+        pd.hpCost += hpCostDyn;
+        pd.hpSavings += hpSavings;
+        pd.hpSolar += hpFromSolar;
+        pd.hpGrid += hpFromGrid;
+        pd.batCharge += batRes.batChargeSolarVal + batRes.batChargeGridVal;
+        pd.batDischarge += batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal;
+        pd.batCost += batCostDyn;
+        pd.batSavings += batSavings;
+        pd.batChargeCost += batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice;
+        pd.batDischargeValue += batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice;
+        pd.batChargeGrid += batRes.batChargeGridVal;
+        pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
+        pd.batChargeSolar += batRes.batChargeSolarVal;
+        pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
+        pd.batDischargeToGrid += batRes.batDischargeToGridVal;
+        pd.baseloadCost += rawImp * allIn;
+        pd.baseloadReturn += rawExp * returnPrice;
+        pd.baseloadImportSavings += rawImp * (tariff - allIn);
+        pd.baseloadExportSavings += rawExp * (returnPrice - fixedReturnPrice);
+      } else {
+        const E = h.measEv, HP = h.measHp, BI = h.measBatIn, BO = h.measBatOut, S = solarYield;
+        const HO = Math.max(0, S + rawImp + BO - rawExp - E - HP - BI);
+        const selfSolar = Math.max(0, S - rawExp);
+        const L = HO + E + HP + BI;
+        const sf = L > 0 ? Math.min(1, selfSolar / L) : 0;
+        const hoS = HO * sf;
+        const eS = E * sf, eG = E - eS;
+        const hS = HP * sf, hG = HP - hS;
+        const biS = BI * sf, biG = BI - biS;
+        const riV = HO - hoS;
+        const reV = S - hoS;
+        const evCostDynM = eG * allIn - eS * returnPrice;
+        const hpCostDynM = hG * allIn - hS * returnPrice;
+        const batCostDynM = biG * allIn + biS * returnPrice - BO * allIn;
+        pd.rawImp += riV;
+        pd.rawExp += reV;
+        pd.evKwh += E;
+        pd.evCost += evCostDynM;
+        pd.evSavings += eG * tariff - eS * fixedReturnPrice - evCostDynM;
+        pd.evSolar += eS;
+        pd.evGrid += eG;
+        pd.hpKwh += HP;
+        pd.hpCost += hpCostDynM;
+        pd.hpSavings += hG * tariff - hS * fixedReturnPrice - hpCostDynM;
+        pd.hpSolar += hS;
+        pd.hpGrid += hG;
+        pd.batCharge += BI;
+        pd.batDischarge += BO;
+        pd.batCost += batCostDynM;
+        pd.batSavings += biS * fixedReturnPrice - BO * tariff - batCostDynM;
+        pd.batChargeCost += biG * allIn + biS * returnPrice;
+        pd.batDischargeValue += BO * allIn;
+        pd.batChargeGrid += biG;
+        pd.batChargeGridCost += biG * allIn;
+        pd.batChargeSolar += biS;
+        pd.batDischargeToHouse += BO;
+        pd.batDischargeToGrid += 0;
+        pd.baseloadCost += riV * allIn;
+        pd.baseloadReturn += reV * returnPrice;
+        pd.baseloadImportSavings += riV * (tariff - allIn);
+        pd.baseloadExportSavings += reV * (returnPrice - fixedReturnPrice);
+      }
       if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
       dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
     };
@@ -2869,9 +2911,10 @@
     }
     const days = _overviewZoom ? allDays.slice(_overviewZoom.start, _overviewZoom.end) : allDays;
     const values = days.map((d) => bucketMap.get(d));
-    const hasEv = !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
-    const hasHp = !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
-    const hasBat = !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
+    const measured = !!window.dtMeasuredMode;
+    const hasEv = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
+    const hasHp = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
+    const hasBat = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
     const colors = {
       import: "var(--accent-cyan)",
       return: "var(--accent-green)",
@@ -3272,9 +3315,10 @@
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.innerHTML = "";
     if (!pdt || Object.keys(pdt).length === 0) return;
-    const hasEv = !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
-    const hasHp = !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
-    const hasBat = !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
+    const measured = !!window.dtMeasuredMode;
+    const hasEv = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
+    const hasHp = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
+    const hasBat = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
     let solarYield = 0;
     let rawExp = 0;
     let evSolar = 0;
@@ -3936,7 +3980,8 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
       return;
     }
     const period = days ? ` over je gemeten periode (${days} ${days === 1 ? "dag" : "dagen"})` : "";
-    box.innerHTML = `<div class="dt-measured-title">Huidige situatie \u2014 gemeten${period}</div><div class="dt-measured-grid">` + rows.map(([label, val]) => `<div class="dt-measured-row"><span>${label}</span><strong>${val}</strong></div>`).join("") + `</div>`;
+    const note = (meta.devices?.ev || meta.devices?.hp || meta.devices?.battery) && meta.solar ? `<div class="dt-measured-note">De totalen zijn gemeten. In de Sankey en kosten-uitsplitsing is de <strong>zon-vs-net verdeling per apparaat geschat</strong> (je meter meet die niet) \u2014 energiebehoudend verdeeld over gelijktijdig verbruik.</div>` : "";
+    box.innerHTML = `<div class="dt-measured-title">Huidige situatie \u2014 gemeten${period}</div><div class="dt-measured-grid">` + rows.map(([label, val]) => `<div class="dt-measured-row"><span>${label}</span><strong>${val}</strong></div>`).join("") + `</div>` + note;
     box.style.display = "block";
   }
 

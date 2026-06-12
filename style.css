@@ -50,6 +50,13 @@
 }
 .dt-measured-row span { color: var(--text-muted); }
 .dt-measured-row strong { color: var(--text-primary); white-space: nowrap; }
+.dt-measured-note {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 

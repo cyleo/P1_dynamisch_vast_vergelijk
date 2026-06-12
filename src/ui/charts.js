@@ -1442,9 +1442,13 @@ export function renderOverviewChart() {
   const days = _overviewZoom ? allDays.slice(_overviewZoom.start, _overviewZoom.end) : allDays;
   const values = days.map(d => bucketMap.get(d));
 
-  const hasEv = !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
-  const hasHp = !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
-  const hasBat = !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
+  // In de "Gemeten"-stand zijn de hardware-schuiven uit (hwEffects.enabled=false), maar de
+  // gemeten apparaten zitten wél in perDayTotals → laat de segmenten/nodes toe; de `… > 0`-
+  // guards verbergen apparaten die niet gemeten zijn.
+  const measured = !!window.dtMeasuredMode;
+  const hasEv = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
+  const hasHp = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
+  const hasBat = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
 
   const colors = {
     import: "var(--accent-cyan)",
@@ -1888,9 +1892,13 @@ export function renderSankeyDiagram() {
   
   if (!pdt || Object.keys(pdt).length === 0) return;
 
-  const hasEv = !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
-  const hasHp = !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
-  const hasBat = !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
+  // In de "Gemeten"-stand zijn de hardware-schuiven uit (hwEffects.enabled=false), maar de
+  // gemeten apparaten zitten wél in perDayTotals → laat de segmenten/nodes toe; de `… > 0`-
+  // guards verbergen apparaten die niet gemeten zijn.
+  const measured = !!window.dtMeasuredMode;
+  const hasEv = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.ev?.enabled;
+  const hasHp = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.hp?.enabled;
+  const hasBat = measured || !!__chartsDependencies.activeSimulation?.hwEffects?.bat?.enabled;
 
   // 1. Gather all volumes
   let solarYield = 0;

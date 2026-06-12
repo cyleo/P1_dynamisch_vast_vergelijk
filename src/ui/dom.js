@@ -498,12 +498,17 @@ function renderMeasuredBreakdown(meta, mode) {
   if (!rows.length) { box.style.display = "none"; box.innerHTML = ""; return; }
 
   const period = days ? ` over je gemeten periode (${days} ${days === 1 ? "dag" : "dagen"})` : "";
+  // De per-apparaat totalen zijn gemeten; de zon-vs-net verdeling in de Sankey/kosten-
+  // uitsplitsing is een schatting (je P1-meter meet die split per apparaat niet).
+  const note = (meta.devices?.ev || meta.devices?.hp || meta.devices?.battery) && meta.solar
+    ? `<div class="dt-measured-note">De totalen zijn gemeten. In de Sankey en kosten-uitsplitsing is de <strong>zon-vs-net verdeling per apparaat geschat</strong> (je meter meet die niet) — energiebehoudend verdeeld over gelijktijdig verbruik.</div>`
+    : "";
   box.innerHTML =
     `<div class="dt-measured-title">Huidige situatie — gemeten${period}</div>` +
     `<div class="dt-measured-grid">` +
     rows.map(([label, val]) =>
       `<div class="dt-measured-row"><span>${label}</span><strong>${val}</strong></div>`).join("") +
-    `</div>`;
+    `</div>` + note;
   box.style.display = "block";
 }
 

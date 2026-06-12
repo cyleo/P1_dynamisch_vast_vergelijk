@@ -201,48 +201,102 @@ export function _simulateCore(cfg, full = false, ctx = null) {
     const batCostDyn = (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice) - (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
     const batSavings = batCostFx - batCostDyn;
 
-    const baseloadImportSavings = rawImp * (tariff - allIn);
-    const baseloadExportSavings = rawExp * (returnPrice - fixedReturnPrice);
-
     const pd = (dayTot[dayKey] ||= makeDayTotal());
     pd.dynCost += dynHrCost; pd.fixedCost += fxHrCost;
     pd.impKwh += dynImp; pd.expKwh += dynExp;
     pd.impCost += dynImp * allIn;
     pd.expRev += dynExp * returnPrice;
     if (dynImp > 0) { pd.spotSum += spot * dynImp; pd.spotN += dynImp; }
-
-    pd.rawImp += rawImp;
-    pd.rawExp += rawExp;
     pd.solarYield += solarYield;
 
-    pd.evKwh += (evRes.evGridDyn + evRes.evSolarDyn);
-    pd.evCost += evCostDyn;
-    pd.evSavings += evSavings;
-    pd.evSolar += evRes.evSolarDyn;
-    pd.evGrid += evRes.evGridDyn;
+    if (!measuredHardware) {
+      // ── SIMULATIE-pad (ongewijzigd; golden snapshot byte-identiek) ──
+      pd.rawImp += rawImp;
+      pd.rawExp += rawExp;
 
-    pd.hpKwh += hpLoad;
-    pd.hpCost += hpCostDyn;
-    pd.hpSavings += hpSavings;
-    pd.hpSolar += hpFromSolar;
-    pd.hpGrid += hpFromGrid;
+      pd.evKwh += (evRes.evGridDyn + evRes.evSolarDyn);
+      pd.evCost += evCostDyn;
+      pd.evSavings += evSavings;
+      pd.evSolar += evRes.evSolarDyn;
+      pd.evGrid += evRes.evGridDyn;
 
-    pd.batCharge += (batRes.batChargeSolarVal + batRes.batChargeGridVal);
-    pd.batDischarge += (batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal);
-    pd.batCost += batCostDyn;
-    pd.batSavings += batSavings;
-    pd.batChargeCost += (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice);
-    pd.batDischargeValue += (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
-    pd.batChargeGrid += batRes.batChargeGridVal;
-    pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
-    pd.batChargeSolar += batRes.batChargeSolarVal;
-    pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
-    pd.batDischargeToGrid += batRes.batDischargeToGridVal;
+      pd.hpKwh += hpLoad;
+      pd.hpCost += hpCostDyn;
+      pd.hpSavings += hpSavings;
+      pd.hpSolar += hpFromSolar;
+      pd.hpGrid += hpFromGrid;
 
-    pd.baseloadCost += rawImp * allIn;
-    pd.baseloadReturn += rawExp * returnPrice;
-    pd.baseloadImportSavings += baseloadImportSavings;
-    pd.baseloadExportSavings += baseloadExportSavings;
+      pd.batCharge += (batRes.batChargeSolarVal + batRes.batChargeGridVal);
+      pd.batDischarge += (batRes.batDischargeToHouseVal + batRes.batDischargeToGridVal);
+      pd.batCost += batCostDyn;
+      pd.batSavings += batSavings;
+      pd.batChargeCost += (batRes.batChargeGridVal * allIn + batRes.batChargeSolarVal * returnPrice);
+      pd.batDischargeValue += (batRes.batDischargeToHouseVal * allIn + batRes.batDischargeToGridVal * returnPrice);
+      pd.batChargeGrid += batRes.batChargeGridVal;
+      pd.batChargeGridCost += batRes.batChargeGridVal * allIn;
+      pd.batChargeSolar += batRes.batChargeSolarVal;
+      pd.batDischargeToHouse += batRes.batDischargeToHouseVal;
+      pd.batDischargeToGrid += batRes.batDischargeToGridVal;
+
+      pd.baseloadCost += rawImp * allIn;
+      pd.baseloadReturn += rawExp * returnPrice;
+      pd.baseloadImportSavings += rawImp * (tariff - allIn);
+      pd.baseloadExportSavings += rawExp * (returnPrice - fixedReturnPrice);
+    } else {
+      // ── "GEMETEN"-pad: energiebehoudende decompositie van de werkelijke
+      // meterstanden + gemeten apparaatverbruik. De zelf-geconsumeerde zon wordt
+      // EVENREDIG over de gelijktijdige lasten verdeeld (de zon/net-split per
+      // apparaat is NIET gemeten → schatting). De waarden zijn zo gekozen dat de
+      // Sankey-formules (`baseloadExport = rawExp − ΣdeviceSolar` enz.) exact
+      // sluiten: `rawExp_pd = S − hoS` → `baseloadExport = werkelijke meterexport`.
+      const E = h.measEv, HP = h.measHp, BI = h.measBatIn, BO = h.measBatOut, S = solarYield;
+      const HO = Math.max(0, S + rawImp + BO - rawExp - E - HP - BI);   // woning (overig)
+      const selfSolar = Math.max(0, S - rawExp);                        // zelf-verbruikte zon
+      const L = HO + E + HP + BI;                                       // totale gelijktijdige last
+      const sf = L > 0 ? Math.min(1, selfSolar / L) : 0;               // zon-aandeel per last
+      const hoS = HO * sf;
+      const eS = E * sf, eG = E - eS;
+      const hS = HP * sf, hG = HP - hS;
+      const biS = BI * sf, biG = BI - biS;
+      const riV = HO - hoS;   // woning-net-afname (baseload)
+      const reV = S - hoS;    // bruto teruglevering vóór apparaat-zoncapture (Sankey-conventie)
+
+      const evCostDynM = eG * allIn - eS * returnPrice;
+      const hpCostDynM = hG * allIn - hS * returnPrice;
+      const batCostDynM = (biG * allIn + biS * returnPrice) - (BO * allIn);
+
+      pd.rawImp += riV;
+      pd.rawExp += reV;
+
+      pd.evKwh += E;
+      pd.evCost += evCostDynM;
+      pd.evSavings += (eG * tariff - eS * fixedReturnPrice) - evCostDynM;
+      pd.evSolar += eS;
+      pd.evGrid += eG;
+
+      pd.hpKwh += HP;
+      pd.hpCost += hpCostDynM;
+      pd.hpSavings += (hG * tariff - hS * fixedReturnPrice) - hpCostDynM;
+      pd.hpSolar += hS;
+      pd.hpGrid += hG;
+
+      pd.batCharge += BI;
+      pd.batDischarge += BO;
+      pd.batCost += batCostDynM;
+      pd.batSavings += (biS * fixedReturnPrice - BO * tariff) - batCostDynM;
+      pd.batChargeCost += (biG * allIn + biS * returnPrice);
+      pd.batDischargeValue += BO * allIn;
+      pd.batChargeGrid += biG;
+      pd.batChargeGridCost += biG * allIn;
+      pd.batChargeSolar += biS;
+      pd.batDischargeToHouse += BO;
+      pd.batDischargeToGrid += 0;
+
+      pd.baseloadCost += riV * allIn;
+      pd.baseloadReturn += reV * returnPrice;
+      pd.baseloadImportSavings += riV * (tariff - allIn);
+      pd.baseloadExportSavings += reV * (returnPrice - fixedReturnPrice);
+    }
 
     if (!dayHour[dayKey]) dayHour[dayKey] = Array.from({ length: 24 }, () => null);
     dayHour[dayKey][hour] = { dynCost: dynHrCost, fixedCost: fxHrCost, spot, impKwh: dynImp, expKwh: dynExp };
