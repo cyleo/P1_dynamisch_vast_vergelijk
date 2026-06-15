@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 869 296" font-family="system-ui,sans-serif">
+<rect width="869" height="296" fill="#ffffff"/>
+<text x="16" y="32" font-size="16" font-weight="700" fill="#222">Zendure SolarFlow 2400 AC — wat de meterdata écht laat zien</text>
+<rect x="16" y="56" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="34" y="96" font-size="26" font-weight="800" fill="#1a7f4e">216</text>
+  <text x="34" y="120" font-size="14" font-weight="600" fill="#333">dagen gemeten</text>
+  <text x="34" y="142" font-size="12.5" fill="#777">sinds 6 nov 2025</text><rect x="299" y="56" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="317" y="96" font-size="26" font-weight="800" fill="#1a7f4e">700 kWh</text>
+  <text x="317" y="120" font-size="14" font-weight="600" fill="#333">erin geladen</text>
+  <text x="317" y="142" font-size="12.5" fill="#777">≈ 3,2 kWh per dag</text><rect x="582" y="56" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="600" y="96" font-size="26" font-weight="800" fill="#1a7f4e">569 kWh</text>
+  <text x="600" y="120" font-size="14" font-weight="600" fill="#333">eruit gehaald</text>
+  <text x="600" y="142" font-size="12.5" fill="#777">≈ 2,6 kWh per dag</text><rect x="16" y="172" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="34" y="212" font-size="26" font-weight="800" fill="#1a7f4e">81,2%</text>
+  <text x="34" y="236" font-size="14" font-weight="600" fill="#333">round-trip rendement</text>
+  <text x="34" y="258" font-size="12.5" fill="#777">131 kWh verdampt als warmte</text><rect x="299" y="172" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="317" y="212" font-size="26" font-weight="800" fill="#1a7f4e">0,82 kW</text>
+  <text x="317" y="236" font-size="14" font-weight="600" fill="#333">max. ontlaadvermogen</text>
+  <text x="317" y="258" font-size="12.5" fill="#777">laden piekt op 2,41 kW</text><rect x="582" y="172" width="271" height="104" fill="#f6f8fa" stroke="#e1e4e8" rx="10"/>
+  <text x="600" y="212" font-size="26" font-weight="800" fill="#1a7f4e">≈ 106</text>
+  <text x="600" y="236" font-size="14" font-weight="600" fill="#333">volle cycli</text>
+  <text x="600" y="258" font-size="12.5" fill="#777">≈ 0,5 cyclus per dag</text>
+<text x="16" y="284" font-size="11.5" fill="#888">Bron: Home Assistant uurstatistieken (aggr_charge / aggr_discharge), 6 nov 2025 – 11 jun 2026</text>
+</svg>

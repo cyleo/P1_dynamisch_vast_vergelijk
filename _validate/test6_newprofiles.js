@@ -14,7 +14,7 @@ function rep(t, rows, cfg){
   const ge=sum(rows,x=>x.export_t1);
   console.log(`${t.padEnd(34)} VAST €${r.fixedTotalBill.toFixed(0).padStart(4)} | DYN €${r.dynamicTotalBill.toFixed(0).padStart(4)} | ${r.totalSavings>=0?'DYN ':'VAST'} wint €${Math.abs(r.totalSavings).toFixed(0).padStart(3)} | dyn exportopbr €${r.dynamicRawExportRevenue.toFixed(0)}`);
 }
-const noVTK = {fixedPeakRate:0.27,fixedDalRate:0.24,fixedFeedInRate:0.07,fixedVastrecht:7.5,fixedFeedInFee:0.0,dynamicMarkup:0.018,dynamicVastrecht:6.0,stressMultiplier:1.0,solarDimmingMode:"off",hasHeatPump:false,hasEv:false,hasBattery:false};
+const noVTK = {fixedPeakRate:0.27,fixedDalRate:0.24,fixedFeedInRate:0.07,fixedVastrecht:7.5,fixedFeedInFee:0.0,dynamicMarkup:0.018,dynamicVastrecht:6.0,stressMultiplier:1.0,solarDimmingMode:"do_nothing",hasHeatPump:false,hasEv:false,hasBattery:false};
 const vtk   = {...noVTK, fixedPeakRate:0.28,fixedDalRate:0.25,fixedFeedInRate:0.045,fixedFeedInFee:0.045,dynamicMarkup:0.020};
 console.log("=== NIEUWE PROFIELEN (V_FINAL2) door de echte engine ===");
 console.log("-- Optimistisch vast contract (VTK €0) --");

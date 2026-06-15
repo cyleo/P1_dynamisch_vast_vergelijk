@@ -1,0 +1,29 @@
+{
+  "name": "p1-energie-contract-analysator",
+  "version": "0.45.0",
+  "description": "Bereken of een dynamisch of vast energiecontract goedkoper is op basis van jouw P1 smart meter data",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --outfile=app.js",
+    "dev": "esbuild src/app.js --bundle --outfile=app.js --watch",
+    "test": "npm run build && node _validate/bundle_canary.js && node _validate/run_tests.js",
+    "canary": "npm run build && node _validate/bundle_canary.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "npm run build && npx serve -l 3000 --config serve.json ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.3.0"
+  }
+}

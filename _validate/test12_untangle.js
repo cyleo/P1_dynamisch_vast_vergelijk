@@ -184,5 +184,28 @@ try {
   ok(false, "Live power fallback check crashed: " + e.message);
 }
 
+// Case 7: gemeten apparaat-totalen worden bewaard in untangle (voedt de "Gemeten"-stand).
+// Observationeel — moet aanwezig zijn ongeacht of de strip aan- of uitstaat.
+try {
+  const res7on = runUntangle({ rawImp: 5, rawExp: 0, ev: 3, hp: 2, batIn: 4, batOut: 3, solar: 6 });
+  const u = res7on.untangle;
+  ok(Math.abs(u.ev - 3) < 0.001, `Measured EV total: expected 3, got ${u.ev}`);
+  ok(Math.abs(u.hp - 2) < 0.001, `Measured HP total: expected 2, got ${u.hp}`);
+  ok(Math.abs(u.batIn - 4) < 0.001, `Measured batIn total: expected 4, got ${u.batIn}`);
+  ok(Math.abs(u.batOut - 3) < 0.001, `Measured batOut total: expected 3, got ${u.batOut}`);
+  ok(Math.abs(u.solar - 6) < 0.001, `Measured solar total: expected 6, got ${u.solar}`);
+
+  // Met strip UIT (dtEnabled=false) blijven de totalen even goed bewaard.
+  const res7off = processHAStatistics(
+    (() => { const s = {}; const add = (role, val) => { const id = roleMap[role]; if (id) s[id] = [{ start: 0, sum: 0 }, { start: 3600000, sum: val }]; };
+      add("imp1", 5); add("imp2", 0); add("exp1", 0); add("exp2", 0); add("ev", 3); add("hp", 2); add("batIn", 4); add("batOut", 3); add("solar", 6); return s; })(),
+    roleMap, false);
+  ok(res7off.untangle.active === false, "Strip uit → untangle.active false");
+  ok(Math.abs(res7off.untangle.ev - 3) < 0.001, `Measured EV total bewaard met strip uit: expected 3, got ${res7off.untangle.ev}`);
+  ok(Math.abs(res7off.untangle.solar - 6) < 0.001, `Measured solar total bewaard met strip uit: expected 6, got ${res7off.untangle.solar}`);
+} catch (e) {
+  ok(false, "Measured-totals check crashed: " + e.message);
+}
+
 console.log(`\n${fail === 0 ? "✅ ALLE" : "❌ " + fail + "/" + (pass + fail)} checks` + (fail === 0 ? " geslaagd" : " GEFAALD") + ` (${pass} pass)`);
 if (fail > 0) process.exitCode = 1;

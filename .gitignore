@@ -3,10 +3,19 @@ energy-3.csv
 p1_sample.json
 *.csv
 *.json
-# Uitzondering: lokale-preview config (geen persoonlijke data)
+# Uitzonderingen: dit zijn build-/config-bestanden, GEEN persoonlijke data, en ze MOETEN
+# mee in de repo — anders kan een verse clone niet bouwen/testen. De brede *.json/*.csv-regel
+# hierboven is een privacy-vangnet voor energie-exports, maar ving per ongeluk deze essentiële
+# bestanden (package.json/-lock.json stonden daardoor NIET in de repo → `npm install` faalt).
 !serve.json
+!package.json
+!package-lock.json
+# Synthetische (CC-BY demo-data) golden snapshot — geen privacy-data, MOET mee in de repo
+# zodat CI altijd een regression guard heeft zonder een lokale privacy-fixture te vereisen.
+!_validate/snapshot_synthetic_golden.json
 
-# Claude project bestanden
+# Claude project-bestanden (lokale settings, agents, launch-config) — privé/dev-only,
+# blijven lokaal op schijf voor de tooling maar worden gesynct via de private repo (_private).
 .claude/
 cline_mcp_settings.json
 
@@ -25,6 +34,28 @@ assistant/
 
 # Lokale preview-symlink (/energie/ pad-prefix) — nooit committen (recursief)
 /energie
+node_modules/
+dist/
 
-# node modules
-/node_modules
+# Build output — app.js is getrackt in de repo (meegeleverd voor gebruikers zonder build-tooling)
+# app.js.map blijft lokaal (debug-artefact, niet nodig voor gebruik)
+/app.js.map
+
+# Lokaal deploy-script (Mac → SMB-webserver), niet delen
+deploy.sh
+
+# Lokale privé-map, nooit committen
+_private/
+
+# Privé / dev-only — verplaatst naar de private repo (_private), niet in de publieke repo.
+# CLAUDE.md blijft lokaal op schijf (Claude/harness leest 'm) maar wordt via _private gesynct.
+CLAUDE.md
+blogpost.md
+docs/CODE_REVIEW.md
+docs/TODO_AGENTS.md
+_validate/analyze_pj*.js
+_validate/diag_realdata.js
+_validate/fetch_ha_data.js
+
+# Lokale privacy-fixture roleMap (echte sensornamen/serienummers) — nooit committen
+_validate/snapshot_rolemap.local.json

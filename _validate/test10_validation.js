@@ -14,7 +14,7 @@ const cfgBase = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07,
   fixedVastrecht: 7.50, fixedFeedInFee: 0.00,
   dynamicMarkup: 0.018, dynamicVastrecht: 6.00,
-  stressMultiplier: 1.0, solarDimmingMode: "off",
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
 const EB = 0.11084;

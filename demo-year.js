@@ -1,4 +1,4 @@
-/* Demo-jaarprofiel voor de Energie Contract Analysator.
+/* Demo-jaarprofiel voor WattNext.
  * Bron: Open Power System Data — Household Data (huishouden "residential4", kalenderjaar 2017,
  *   uurresolutie, CET/CEST). Cumulatieve meterstanden → uurdeltas, fysisch-consistent
  *   herschaald naar een typische NL-prosumer (~3200 kWh verbruik, ~3600 kWh zon).

@@ -6,29 +6,55 @@ const fs = require("fs");
 const path = require("path");
 
 const dir = __dirname;
+
+// Bouw de bundel ÉÉN keer vooraf, en vertel de child-processen via BUNDLE_FRESH=1 dat de
+// bundel vers is (de harness slaat z'n eigen auto-build dan over). Zo draait de hele suite
+// altijd tegen de huidige src/ — ook bij een directe `node _validate/run_tests.js` — zonder
+// dat elk testbestand opnieuw bouwt.
+try {
+  require("esbuild").buildSync({
+    entryPoints: [path.join(dir, "..", "src", "app.js")],
+    bundle: true,
+    outfile: path.join(dir, "..", "app.js"),
+  });
+} catch (e) {
+  console.error("WARN: vooraf bouwen van de bundel mislukt:\n" + e.message);
+}
+const CHILD_ENV = { ...process.env, BUNDLE_FRESH: "1" };
 const tests = fs.readdirSync(dir)
   .filter(f => f.match(/^test\d+.*\.js$/))
   .sort();
 
 let passed = 0, failed = 0;
 
+// Een test FAALT als: (a) hij een niet-nul exitcode geeft (assert-tests zetten
+// process.exitCode=1), of (b) de output een FAIL/GEFAALD/❌-regel bevat — ook als de
+// exitcode per ongeluk 0 bleef. Anders geslaagd (assert-test met PASS, óf diagnostisch).
+const FAIL_RE = /^(FAIL\b|❌)|GEFAALD/m;
+
 for (const t of tests) {
   const file = path.join(dir, t);
+  let out = "", code = 0, err = "";
   try {
-    const out = execFileSync(process.execPath, [file], { encoding: "utf8", stderr: "pipe" });
-    const ok = out.includes("PASS") || out.includes("geslaagd");
-    if (ok) {
-      console.log(`✅ ${t}`);
-      passed++;
-    } else {
-      // Diagnostische tests geven geen expliciete PASS maar falen ook niet
-      console.log(`ℹ️  ${t}  (geen PASS-marker — diagnostisch)`);
-      passed++;
-    }
+    out = execFileSync(process.execPath, [file], { encoding: "utf8", env: CHILD_ENV });
   } catch (e) {
-    console.error(`❌ ${t}\n${e.stdout || ""}\n${e.stderr || ""}`);
-    failed++;
+    code = e.status ?? 1;
+    out = e.stdout || "";
+    err = e.stderr || "";
   }
+
+  if (code !== 0 || FAIL_RE.test(out)) {
+    console.error(`❌ ${t}\n${out}\n${err}`);
+    failed++;
+    continue;
+  }
+
+  if (/\bPASS\b|geslaagd/.test(out)) {
+    console.log(`✅ ${t}`);
+  } else {
+    console.log(`ℹ️  ${t}  (geen PASS-marker — diagnostisch)`);
+  }
+  passed++;
 }
 
 console.log(`\n${passed} geslaagd, ${failed} mislukt`);

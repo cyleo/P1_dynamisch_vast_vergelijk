@@ -26,7 +26,7 @@ const cfg = {
   fixedPeakRate: 0.27, fixedDalRate: 0.24, fixedFeedInRate: 0.07,
   fixedVastrecht: 7.50, fixedFeedInFee: 0.00,
   dynamicMarkup: 0.018, dynamicVastrecht: 6.00,
-  stressMultiplier: 1.0, solarDimmingMode: "off",
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
 
@@ -36,17 +36,18 @@ const r = RUN({ rows, epex, cfg, eb: 0.11084, yearScale: 1.0 });
 // --- Handberekening ---
 const eb = 0.11084, markup = 0.018, spot = 0.10;
 const REBATE = 628.96;   // heffingskorting (EB-vermindering) — van beide totalen af
+const GRID_FEES = 480.00; // netbeheerkosten gemiddelde
 const totImp = 8760;
-const dynImpCost_hand = totImp * (spot + markup * 1.21);
+const dynImpCost_hand = totImp * (spot + markup);   // Pad 1: inkoop-opslag is incl. BTW → rechtstreeks
 const dynEB_hand = totImp * eb;
 const dynSub_hand = 6.00 * 12;
-const dynBill_hand = dynImpCost_hand + dynEB_hand + dynSub_hand - REBATE;
+const dynBill_hand = dynImpCost_hand + dynEB_hand + dynSub_hand - REBATE + GRID_FEES;
 
 // Peak/dal split — bepaald door engine; we lezen volumes terug en checken kosten consistent.
 const peakImp = r.fixedPeakImport, dalImp = r.fixedDalImport;
 const fixedImp_hand = peakImp * 0.27 + dalImp * 0.24;
 const fixedSub_hand = 7.50 * 12;
-const fixedBill_hand = fixedImp_hand + fixedSub_hand - REBATE;
+const fixedBill_hand = fixedImp_hand + fixedSub_hand - REBATE + GRID_FEES;
 
 function chk(name, a, b, tol = 0.01) {
   const ok = Math.abs(a - b) < tol;

@@ -1,0 +1,12 @@
+# Gebundelde/gegenereerde output — niet door Prettier laten formatteren
+app.js
+app.js.map
+worker.js
+worker.js.map
+dist/
+demo-year.js
+node_modules/
+# Data & lokale fixtures
+*.csv
+_validate/snapshot_golden.json
+package-lock.json

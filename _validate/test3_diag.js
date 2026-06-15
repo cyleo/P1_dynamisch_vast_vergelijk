@@ -22,7 +22,7 @@ const cfgVTK = {
   fixedPeakRate: 0.28, fixedDalRate: 0.25, fixedFeedInRate: 0.045,
   fixedVastrecht: 7.50, fixedFeedInFee: 0.045,   // <-- terugleverkosten per kWh export
   dynamicMarkup: 0.020, dynamicVastrecht: 6.00,
-  stressMultiplier: 1.0, solarDimmingMode: "off",
+  stressMultiplier: 1.0, solarDimmingMode: "do_nothing",
   hasHeatPump: false, hasEv: false, hasBattery: false,
 };
 function report(title, rows, cfg) {

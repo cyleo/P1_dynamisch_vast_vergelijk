@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 384" font-family="system-ui,sans-serif">
+<rect width="860" height="384" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="700" fill="#222">Mijn jaarrekening per scenario — echte meetdata door de simulatie-engine</text>
+<text x="282" y="61" text-anchor="end" font-size="13" fill="#333">2026 · vast, zonder accu</text>
+  <rect x="292" y="47" width="269.2" height="20" fill="#777" rx="3"/>
+  <text x="569.2096" y="62" font-size="13" font-weight="600" fill="#222">€ 704</text><text x="282" y="95" text-anchor="end" font-size="13" fill="#333">2026 · vast + Zendure</text>
+  <rect x="292" y="81" width="288.3" height="20" fill="#777" rx="3"/>
+  <text x="588.3296" y="96" font-size="13" font-weight="600" fill="#222">€ 754</text><text x="282" y="129" text-anchor="end" font-size="13" fill="#333">2026 · dynamisch + Zendure (winst)</text>
+  <rect x="292" y="115" width="298.7" height="20" fill="#777" rx="3"/>
+  <text x="598.6544" y="130" font-size="13" font-weight="600" fill="#222">€ 781</text><text x="282" y="163" text-anchor="end" font-size="13" fill="#333">2026 · dynamisch + slim EV-laden</text>
+  <rect x="292" y="149" width="260.8" height="20" fill="#3f9e6e" rx="3"/>
+  <text x="560.7968" y="164" font-size="13" font-weight="600" fill="#222">€ 682</text><text x="282" y="197" text-anchor="end" font-size="13" fill="#333">2027 · vast, zonder accu</text>
+  <rect x="292" y="183" width="424.8" height="20" fill="#e2574c" rx="3"/>
+  <text x="724.8464" y="198" font-size="13" font-weight="600" fill="#222">€ 1111</text><text x="282" y="231" text-anchor="end" font-size="13" fill="#333">2027 · dynamisch, zonder accu</text>
+  <rect x="292" y="217" width="458.9" height="20" fill="#e2574c" rx="3"/>
+  <text x="758.88" y="232" font-size="13" font-weight="600" fill="#222">€ 1200</text><text x="282" y="265" text-anchor="end" font-size="13" fill="#333">2027 · vast + Zendure</text>
+  <rect x="292" y="251" width="369.8" height="20" fill="#888" rx="3"/>
+  <text x="669.7808" y="266" font-size="13" font-weight="600" fill="#222">€ 967</text><text x="282" y="299" text-anchor="end" font-size="13" fill="#333">2027 · dynamisch + Zendure</text>
+  <rect x="292" y="285" width="389.7" height="20" fill="#888" rx="3"/>
+  <text x="689.6656" y="300" font-size="13" font-weight="600" fill="#222">€ 1019</text><text x="282" y="333" text-anchor="end" font-size="13" fill="#333">2027 · dyn. + slim EV + Zendure</text>
+  <rect x="292" y="319" width="315.1" height="20" fill="#3f9e6e" rx="3"/>
+  <text x="615.0976" y="334" font-size="13" font-weight="600" fill="#222">€ 824</text>
+<text x="16" y="374" font-size="11.5" fill="#888">Incl. vastrecht, netbeheer (€480) en heffingskorting (−€629) · EPEX = echte beursprijzen mei 2025 – juni 2026 (energyzero)</text>
+</svg>
