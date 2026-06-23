@@ -764,6 +764,23 @@ input:checked + .slider-round:before {
   transform: translateX(20px);
 }
 
+/* nextground (licht): de uit-stand was wit-op-wit (track, rand én knop wit) →
+   onzichtbaar. Geef de track een grijze vulling/rand en de knop een donkere kleur;
+   de aan-stand (cyaan track + witte knop) blijft ongewijzigd. */
+body.theme-nextground .slider-round {
+  background-color: rgba(26, 26, 46, 0.12);
+  border-color: rgba(26, 26, 46, 0.35);
+}
+body.theme-nextground .slider-round:before {
+  background-color: #6b7280;
+}
+body.theme-nextground input:checked + .slider-round {
+  background-color: var(--accent-cyan);
+}
+body.theme-nextground input:checked + .slider-round:before {
+  background-color: white;
+}
+
 /* Sub-panels for EV & Battery Params */
 .expandable-panel {
   max-height: 0;
@@ -849,6 +866,25 @@ input:checked + .slider-round:before {
 
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* ROI-knop: groene CTA. Donker thema = witte tekst op groene tint;
+   nextground (licht) krijgt een eigen, leesbare donkergroene variant. */
+.btn-roi {
+  background: rgba(56, 239, 125, 0.08);
+  border-color: var(--accent-green);
+  color: #ffffff;
+}
+.btn-roi:hover {
+  background: rgba(56, 239, 125, 0.16);
+}
+body.theme-nextground .btn-roi {
+  background: rgba(56, 239, 125, 0.12);
+  border-color: var(--accent-green);
+  color: #0b6b3a;
+}
+body.theme-nextground .btn-roi:hover {
+  background: rgba(56, 239, 125, 0.22);
 }
 
 /* Upload panel */
