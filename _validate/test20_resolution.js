@@ -46,6 +46,70 @@ console.log("=== TEST 20: IMPORT-RESOLUTIE & WIDE-CSV PASSTHROUGH ===\n");
     `uur-tidy: 1-op-1 doorgegeven (${recs.length} records, imp ${sumImp(recs)}, exp ${sumExp(recs)})`);
 }
 
+// ── (2b) Wide CUMULATIEVE meterstanden ("time"-kolom, "Import T1 kWh") → diffen ──
+// HomeWizard/P1-stijl export: oplopende tellerstanden op 15-min, headers met spatie+eenheid,
+// extra piekvermogen-kolommen (L1/L2/L3 max W) die genegeerd moeten worden.
+{
+  const rows = ["time,Import T1 kWh,Import T2 kWh,Export T1 kWh,Export T2 kWh,L1 max W"];
+  let i1 = 1000, i2 = 2000, e1 = 500, e2 = 0;   // beginstanden
+  let i1First = null, e1First = null;
+  for (let h = 0; h < 24; h++) for (let q = 0; q < 4; q++) {
+    const ts = `2025-06-01 ${String(h).padStart(2, "0")}:${String(q * 15).padStart(2, "0")}`;
+    const di1 = 0.05 + 0.001 * q, de1 = q === 0 ? 0.02 : 0;  // import altijd, export soms
+    i1 += di1; e1 += de1;                                     // cumulatief ophogen
+    if (i1First === null) { i1First = i1; e1First = e1; }      // 1e stand heeft geen voorganger
+    rows.push(`${ts},${i1.toFixed(3)},${i2.toFixed(3)},${e1.toFixed(3)},${e2.toFixed(3)},${100 + q}`);
+  }
+  // Cumulatief → meetbaar verbruik = laatste stand − eerste stand (1e interval is onmeetbaar).
+  const expI = i1 - i1First, expE = e1 - e1First;
+  const recs = parseLongCSV(rows, ",", rows[0].split(","));
+  ok(recs.length === 24, `wide-cumulatief: 96 kwartierstanden → ${recs.length} uurrecords (verwacht 24)`);
+  ok(near(sumImp(recs), expI, 1e-6) && near(sumExp(recs), expE, 1e-6),
+    `wide-cumulatief: standen GEDIFFT i.p.v. gesommeerd (imp ${sumImp(recs).toFixed(3)}=${expI.toFixed(3)}, exp ${sumExp(recs).toFixed(3)}=${expE.toFixed(3)})`);
+}
+
+// ── (2c) Getalnotaties: NL komma-decimaal, duizendtal-punt en gequote waarden ──
+// Vóór de fix parsten "13.935,295" en "\"13935,295\"" naar 0 → standen-verschil ≈ 0
+// → import 0 → "netto energiekosten € 0". Borgt dat álle gangbare exports werken.
+{
+  const mk = (a, b, c) => [   // a=import-stand reeks, ; als sep (komma-decimaal vereist ;)
+    "time;Import T1 kWh;Export T1 kWh",
+    `2025-06-01 00:00;${a};3297,644`,
+    `2025-06-01 01:00;${b};3297,644`,
+    `2025-06-01 02:00;${c};3297,644`,
+  ];
+  const cases = [
+    ["NL komma-decimaal", "13935,295", "13935,545", "13935,795"],
+    ["NL duizendtal+komma", "13.935,295", "13.935,545", "13.935,795"],
+    ["gequote NL", "\"13935,295\"", "\"13935,545\"", "\"13935,795\""],
+  ];
+  for (const [naam, a, b, c] of cases) {
+    const rows = mk(a, b, c);
+    const recs = parseLongCSV(rows, ";", rows[0].split(";"));
+    const imp = sumImp(recs);
+    ok(near(imp, 0.5, 1e-6), `getalnotatie ${naam}: Σimport=${imp.toFixed(3)} kWh (verwacht 0.500, niet 0)`);
+  }
+}
+
+// ── (2d) Cumulatief mét enkele dalingen (DST/dubbele-timestamp/correctie) → tolereren ──
+// Een vol jaar P1-export bevat een handvol niet-monotone punten (herordening rond DST,
+// dubbele timestamps). Nul-tolerantie zou heel het bestand naar het som-pad gooien →
+// astronomische kWh i.p.v. € 0/echte kost. Borgt dat <5% dalingen cumulatief blijft.
+{
+  const rows = ["timestamp;import_t1;export_t1"];
+  let i1 = 5000;
+  for (let h = 0; h < 200; h++) {
+    // monotoon stijgend, behalve 3 mini-dalingen (≈1,5% van de stappen)
+    i1 += (h === 50 || h === 120 || h === 180) ? -0.2 : 0.4;
+    rows.push(`${new Date(Date.UTC(2026, 0, 1 + Math.floor(h / 24), h % 24)).toISOString()};${i1.toFixed(3)};3000.000`);
+  }
+  const recs = parseLongCSV(rows, ";", rows[0].split(";"));
+  const imp = sumImp(recs);
+  // Verwacht ≈ netto stijging (laatste − eerste stand), NIET de som van alle standen.
+  ok(imp > 50 && imp < 100,
+    `cumulatief-met-dalingen: GEDIFFT ondanks 3 dalingen (Σimport=${imp.toFixed(1)} kWh ~netto-stijging, niet de som van ~5000-standen)`);
+}
+
 // ── (3) Tidy-CSV, DAG-resolutie → harde fout (geen 24×-opblazing meer) ──────────
 {
   const rows = ["timestamp;import_t1;export_t1"];

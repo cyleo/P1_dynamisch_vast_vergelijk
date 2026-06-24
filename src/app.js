@@ -888,7 +888,7 @@ async function parseAutoCSVAsync(text) {
     return await parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal, digitalTwinEnabled);
   }
 
-  if (headers.some(h => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
+  if (headers.some(h => ["timestamp", "datetime", "datum", "date", "time", "tijd"].includes(h.toLowerCase()))) {
     const result = parseLongCSV(lines, sep, headers);
     if (result !== null) return result;
     // Column auto-detection failed (e.g. unknown netbeheerder / HomeWizard column names).

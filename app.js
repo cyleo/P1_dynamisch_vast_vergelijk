@@ -1182,11 +1182,19 @@
     return records;
   }
   function normHeader(h) {
-    return h.toLowerCase().replace(/\s*\([^)]*\)\s*/g, "").trim();
+    return h.toLowerCase().replace(/\s*\([^)]*\)\s*/g, "").replace(/\s+(kwh|wh|mwh|kw|w)$/i, "").trim();
   }
   function parseDutchFloat(s) {
-    if (!s) return 0;
-    return Math.max(0, parseFloat(String(s).trim().replace(",", ".")) || 0);
+    if (s === null || s === void 0) return 0;
+    let t = String(s).trim().replace(/^"+|"+$/g, "").trim();
+    if (!t) return 0;
+    const hasDot = t.includes("."), hasComma = t.includes(",");
+    if (hasDot && hasComma) {
+      t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+    } else if (hasComma) {
+      t = t.replace(",", ".");
+    }
+    return Math.max(0, parseFloat(t) || 0);
   }
   function parseFlexDate(datePart, timePart = "") {
     const s = (datePart + (timePart ? " " + timePart : "")).trim();
@@ -1304,6 +1312,7 @@
       "afname_t1",
       "verbruik_piek",
       "delivery_t1",
+      "import t1",
       "verbruik hoog",
       "afname hoog",
       "levering hoog",
@@ -1320,6 +1329,7 @@
       "afname_t2",
       "verbruik_dal",
       "delivery_t2",
+      "import t2",
       "verbruik laag",
       "afname laag",
       "levering laag",
@@ -1335,6 +1345,7 @@
       "export_t1",
       "teruglevering_t1",
       "return_t1",
+      "export t1",
       "teruglevering hoog",
       "retour hoog",
       "stroom teruglever t1",
@@ -1349,6 +1360,7 @@
       "export_t2",
       "teruglevering_t2",
       "return_t2",
+      "export t2",
       "teruglevering laag",
       "retour laag",
       "stroom teruglever t2",
@@ -1368,7 +1380,7 @@
       }
       return -1;
     };
-    const tsIdx = find(["timestamp", "datetime", "datum", "date"]);
+    const tsIdx = find(["timestamp", "datetime", "datum", "date", "time", "tijd"]);
     if (tsIdx === -1) return null;
     const timeIdx = find(["van", "from", "start", "start time", "starttijd"]);
     const i1Idx = find(COLUMN_PATTERNS.imp1);
@@ -1377,6 +1389,22 @@
     const e1Idx = find(COLUMN_PATTERNS.exp1);
     const e2Idx = find(COLUMN_PATTERNS.exp2);
     return { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx };
+  }
+  var ENERGY_KEYS = ["import_t1", "import_t2", "export_t1", "export_t2"];
+  function isCumulativeSeries(raw, presentKeys) {
+    if (raw.length < 3) return false;
+    const steps = raw.length - 1;
+    let anyCumulative = false;
+    for (const k of presentKeys) {
+      if (raw[raw.length - 1][k] - raw[0][k] <= 1e-6) continue;
+      let decreases = 0;
+      for (let i = 1; i < raw.length; i++) {
+        if (raw[i][k] - raw[i - 1][k] < -0.01) decreases++;
+      }
+      if (decreases / steps > 0.05) return false;
+      anyCumulative = true;
+    }
+    return anyCumulative;
   }
   function parseLongCSVCore(lines, sep, { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx }) {
     const pf = (cols, i) => i !== -1 ? parseDutchFloat(cols[i]) : 0;
@@ -1393,6 +1421,18 @@
         export_t1: pf(cols, e1Idx),
         export_t2: pf(cols, e2Idx)
       });
+    }
+    raw.sort((a, b) => a.ts - b.ts);
+    const present = [];
+    if (i1Idx !== -1) present.push("import_t1");
+    if (i2Idx !== -1) present.push("import_t2");
+    if (e1Idx !== -1) present.push("export_t1");
+    if (e2Idx !== -1) present.push("export_t2");
+    if (raw.length >= 2 && isCumulativeSeries(raw, present)) {
+      for (let i = raw.length - 1; i >= 1; i--) {
+        for (const k of ENERGY_KEYS) raw[i][k] = Math.max(0, raw[i][k] - raw[i - 1][k]);
+      }
+      for (const k of ENERGY_KEYS) raw[0][k] = 0;
     }
     return normalizeToHourly(raw);
   }
@@ -1429,7 +1469,7 @@
       if (!name) return -1;
       return norm.indexOf(normHeader(name));
     };
-    const tsIdx = norm.findIndex((h) => ["timestamp", "datetime", "datum", "date"].includes(h));
+    const tsIdx = norm.findIndex((h) => ["timestamp", "datetime", "datum", "date", "time", "tijd"].includes(h));
     if (tsIdx === -1) throw new Error("Geen tijdstempelkolom gevonden.");
     const timeIdx = norm.findIndex((h) => ["van", "from", "start", "start time"].includes(h));
     const i1Idx = findIdx(mapping.imp1), i2Idx = findIdx(mapping.imp2);
@@ -4683,7 +4723,7 @@ gemiddelde_dagvraag  = (wekelijkse_afstand \xD7 verbruik_per_100km / 100) / 7 da
     if (headers[0].toLowerCase() === "entity_id" && headers[1].toLowerCase() === "type" && headers[2].toLowerCase() === "unit") {
       return await parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsvMapModal, digitalTwinEnabled);
     }
-    if (headers.some((h) => ["timestamp", "datetime", "datum", "date"].includes(h.toLowerCase()))) {
+    if (headers.some((h) => ["timestamp", "datetime", "datum", "date", "time", "tijd"].includes(h.toLowerCase()))) {
       const result = parseLongCSV(lines, sep, headers);
       if (result !== null) return result;
       const guesses = guessColumnRoles(headers);
