@@ -163,13 +163,38 @@ export async function parseHAStatisticsWideCSVAsync(lines, sep, headers, showCsv
 
 /** Strips unit suffixes like "(kWh)" and lowercases a CSV header. */
 function normHeader(h) {
-  return h.toLowerCase().replace(/\s*\([^)]*\)\s*/g, "").trim();
+  return h.toLowerCase()
+    .replace(/\s*\([^)]*\)\s*/g, "")        // strip "(kWh)"-achtige eenheid tussen haakjes
+    .replace(/\s+(kwh|wh|mwh|kw|w)$/i, "")  // strip losse eenheid-suffix: "import t1 kwh" → "import t1"
+    .trim();
 }
 
-/** Parses a number that may use a Dutch comma as decimal separator. */
+/**
+ * Parses a number from diverse CSV/export-notaties naar een float ≥ 0.
+ * Robuust voor:
+ *   "13935.295"   → 13935.295  (punt-decimaal)
+ *   "13935,295"   → 13935.295  (NL komma-decimaal)
+ *   "13.935,295"  → 13935.295  (NL duizendtal-punt + komma-decimaal)
+ *   "13,935.295"  → 13935.295  (EN duizendtal-komma + punt-decimaal)
+ *   "\"13935,295\"" → 13935.295 (Excel-gequote waarde)
+ * Vóór deze robuustmaking gaven gequote of duizendtal-genoteerde meterstanden 0 of een
+ * fout getal → standen-verschillen ≈ 0 → import 0 → "netto energiekosten € 0".
+ */
 function parseDutchFloat(s) {
-  if (!s) return 0;
-  return Math.max(0, parseFloat(String(s).trim().replace(",", ".")) || 0);
+  if (s === null || s === undefined) return 0;
+  let t = String(s).trim().replace(/^"+|"+$/g, "").trim();   // strip omringende quotes
+  if (!t) return 0;
+  const hasDot = t.includes("."), hasComma = t.includes(",");
+  if (hasDot && hasComma) {
+    // De LAATSTE van punt/komma is de decimaalscheiding; de andere is duizendtalscheiding.
+    t = t.lastIndexOf(",") > t.lastIndexOf(".")
+      ? t.replace(/\./g, "").replace(",", ".")   // 1.234,56 → 1234.56
+      : t.replace(/,/g, "");                       // 1,234.56 → 1234.56
+  } else if (hasComma) {
+    t = t.replace(",", ".");                        // 1234,56 → 1234.56
+  }
+  // Alleen een punt (of geen scheidingsteken): punt = decimaal → parseFloat handelt af.
+  return Math.max(0, parseFloat(t) || 0);
 }
 
 /**
@@ -303,22 +328,22 @@ export function untangleHourlyRecords(records, dtEnabled, devices) {
  */
 const COLUMN_PATTERNS = {
   imp1: [
-    "import_t1", "afname_t1", "verbruik_piek", "delivery_t1",
+    "import_t1", "afname_t1", "verbruik_piek", "delivery_t1", "import t1",
     "verbruik hoog", "afname hoog", "levering hoog", "stroom verbruik t1", "afname t1", "verbruik t1",
     "import high", "import-high", "consumption t1", "consumption high",
   ],
   imp2: [
-    "import_t2", "afname_t2", "verbruik_dal", "delivery_t2",
+    "import_t2", "afname_t2", "verbruik_dal", "delivery_t2", "import t2",
     "verbruik laag", "afname laag", "levering laag", "stroom verbruik t2", "afname t2", "verbruik t2",
     "import low", "import-low", "consumption t2", "consumption low",
   ],
   exp1: [
-    "export_t1", "teruglevering_t1", "return_t1",
+    "export_t1", "teruglevering_t1", "return_t1", "export t1",
     "teruglevering hoog", "retour hoog", "stroom teruglever t1", "teruglevering t1", "productie t1",
     "export high", "export-high", "production t1", "production high",
   ],
   exp2: [
-    "export_t2", "teruglevering_t2", "return_t2",
+    "export_t2", "teruglevering_t2", "return_t2", "export t2",
     "teruglevering laag", "retour laag", "stroom teruglever t2", "teruglevering t2", "productie t2",
     "export low", "export-low", "production t2", "production low",
   ],
@@ -331,7 +356,7 @@ const COLUMN_PATTERNS = {
  */
 function detectColumnIndices(norm) {
   const find = (names) => { for (const n of names) { const i = norm.indexOf(n); if (i !== -1) return i; } return -1; };
-  const tsIdx = find(["timestamp", "datetime", "datum", "date"]);
+  const tsIdx = find(["timestamp", "datetime", "datum", "date", "time", "tijd"]);
   if (tsIdx === -1) return null;
   const timeIdx = find(["van", "from", "start", "start time", "starttijd"]);
   const i1Idx = find(COLUMN_PATTERNS.imp1);
@@ -340,6 +365,36 @@ function detectColumnIndices(norm) {
   const e1Idx = find(COLUMN_PATTERNS.exp1);
   const e2Idx = find(COLUMN_PATTERNS.exp2);
   return { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2Idx };
+}
+
+const ENERGY_KEYS = ["import_t1", "import_t2", "export_t1", "export_t2"];
+
+/**
+ * Heuristiek: zijn dit cumulatieve meterstanden (HomeWizard/P1-export) i.p.v.
+ * per-interval energie?
+ *
+ * Een echte tellerstand loopt VRIJWEL altijd niet-omlaag, maar een vol jaar bevat
+ * doorgaans een handvol uitschieters: dubbele timestamps en herordening rond de
+ * DST-overgang, of een meter-correctie. Nul-tolerantie eisen zou dan onterecht naar
+ * het som-pad vallen → standen worden opgeteld → astronomische kWh. Daarom kijken we
+ * naar de DALINGSRATIO: per-interval energie daalt ~de helft van de stappen, een teller
+ * vrijwel nooit. Een stijgende kolom met <5% dalende stappen geldt als cumulatief.
+ * Vlakke/lege kolommen (bv. export zonder zon) dragen geen signaal en worden genegeerd.
+ */
+function isCumulativeSeries(raw, presentKeys) {
+  if (raw.length < 3) return false;
+  const steps = raw.length - 1;
+  let anyCumulative = false;
+  for (const k of presentKeys) {
+    if (raw[raw.length - 1][k] - raw[0][k] <= 1e-6) continue;   // geen netto stijging → geen signaal
+    let decreases = 0;
+    for (let i = 1; i < raw.length; i++) {
+      if (raw[i][k] - raw[i - 1][k] < -0.01) decreases++;
+    }
+    if (decreases / steps > 0.05) return false;   // stijgende kolom die vaak daalt → interval-data
+    anyCumulative = true;
+  }
+  return anyCumulative;
 }
 
 /** Core row parser shared by auto-detect and manual-mapping paths. */
@@ -353,6 +408,23 @@ function parseLongCSVCore(lines, sep, { tsIdx, timeIdx, i1Idx, i2Idx, e1Idx, e2I
     if (!ts) continue;
     raw.push({ ts, import_t1: pf(cols, i1Idx), import_t2: pf(cols, i2Idx),
                    export_t1: pf(cols, e1Idx), export_t2: pf(cols, e2Idx) });
+  }
+  // Chronologisch sorteren: nodig om cumulatieve standen correct te diffen, en veilig
+  // voor het uur-1-op-1-pad in normalizeToHourly (dat op invoervolgorde vertrouwt).
+  raw.sort((a, b) => a.ts - b.ts);
+
+  // Cumulatieve meterstanden (bv. "Import T1 kWh" = oplopende tellerstand) omzetten naar
+  // per-interval delta's, zodat normalizeToHourly ze net als interval-data per uur sommeert.
+  const present = [];
+  if (i1Idx !== -1) present.push("import_t1");
+  if (i2Idx !== -1) present.push("import_t2");
+  if (e1Idx !== -1) present.push("export_t1");
+  if (e2Idx !== -1) present.push("export_t2");
+  if (raw.length >= 2 && isCumulativeSeries(raw, present)) {
+    for (let i = raw.length - 1; i >= 1; i--) {
+      for (const k of ENERGY_KEYS) raw[i][k] = Math.max(0, raw[i][k] - raw[i - 1][k]);
+    }
+    for (const k of ENERGY_KEYS) raw[0][k] = 0;  // eerste stand: geen voorganger → 0 delta
   }
   return normalizeToHourly(raw);
 }
@@ -395,7 +467,7 @@ export function parseLongCSV(lines, sep, headers) {
 export function parseLongCSVWithMapping(lines, sep, headers, mapping) {
   const norm = headers.map(normHeader);
   const findIdx = (name) => { if (!name) return -1; return norm.indexOf(normHeader(name)); };
-  const tsIdx = norm.findIndex(h => ["timestamp", "datetime", "datum", "date"].includes(h));
+  const tsIdx = norm.findIndex(h => ["timestamp", "datetime", "datum", "date", "time", "tijd"].includes(h));
   if (tsIdx === -1) throw new Error("Geen tijdstempelkolom gevonden.");
   const timeIdx = norm.findIndex(h => ["van", "from", "start", "start time"].includes(h));
   const i1Idx = findIdx(mapping.imp1), i2Idx = findIdx(mapping.imp2);
